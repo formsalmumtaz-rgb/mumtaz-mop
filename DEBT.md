@@ -49,3 +49,54 @@ working tree that blocks a commit or push).
 mount (e.g. `~/Mumtaz-Cowork-Inbox/`) outside the repo, and make the owner's
 hand-off an explicit copy *into* `/seed`. Optionally add a pre-commit guard that
 refuses to stage unexpected top-level files.
+
+---
+
+## D2 — Database password contains URL-reserved characters
+
+**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN (mitigated)
+
+**The issue.** The Supabase database password contains characters that are
+reserved in a URI (`$ / ? &`). Placed raw into a `postgresql://user:pass@host/db`
+connection string, they corrupt parsing (the `/` and `?` truncate the password,
+`&` splits query params). The owner has chosen to keep this password as-is
+because it is already provisioned across other systems and must not diverge.
+
+**Mitigation in place.** The password is **URL-encoded** wherever it appears in a
+connection string (`$`→`%24`, `/`→`%2F`, `?`→`%3F`, `&`→`%26`). `.env.local`
+already holds the encoded form; connection verified with a live query.
+
+**Why this is debt, not just a footnote.** Every *new* environment that builds a
+connection string — CI secrets, the DigitalOcean worker host, Vercel env vars,
+a teammate's machine — must apply the same encoding. Pasting the raw password
+will fail in confusing, intermittent ways. Any tooling that itself re-encodes an
+already-encoded value will double-encode and also fail.
+
+**Repayment trigger.** A connection failure in **any** environment traced back to
+password encoding (or a double-encoding bug). At that point, either (a) document
+the encoded string as the canonical secret everywhere, or (b) if the owner ever
+rotates the password, rotate it to an alphanumeric value and delete this entry.
+
+---
+
+## D3 — Direct Postgres host is IPv6-only; must use the Supabase pooler
+
+**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN (mitigated)
+
+**The issue.** The Supabase direct host `db.<ref>.supabase.co` publishes only an
+IPv6 (AAAA) address. On IPv4-only networks (this dev Mac, and typically CI
+runners and many VPS hosts) the OS cannot resolve it — connections fail with
+"could not translate host name". This is a Supabase platform default for new
+projects, not a misconfiguration.
+
+**Mitigation in place.** All connections use the **IPv4 session pooler**:
+`postgresql://postgres.<ref>@aws-1-ap-south-1.pooler.supabase.com:5432/postgres`
+(note: the shard is **aws-1**, not aws-0, and the pooler username is
+`postgres.<ref>`, not `postgres`). Verified with a live query. The transaction
+pooler on `:6543` also works and is the right choice for serverless/edge
+(Vercel) runtimes later.
+
+**Repayment trigger.** A new environment failing to reach the database, or a need
+for true direct connections (e.g. certain logical-replication or session-pinned
+features the pooler restricts). Resolutions: purchase the Supabase IPv4 add-on
+for a direct host, or ensure the environment has working IPv6.
