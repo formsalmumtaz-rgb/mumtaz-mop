@@ -62,7 +62,9 @@ Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here
 - **No instant reset / no isolation:** the fast, disposable local loop (instant reset, no quotas, no network) is lost. Dev writes and staging data share one database; a bad migration in dev is a bad migration in staging.
 - **Network dependency:** development now requires connectivity to Mumbai, contradicting the spirit (not the letter) of the offline-first principle for the *build* loop.
 
-**Cheaper reversal available:** **Postgres.app** provides a Docker-free *local* Postgres with PostGIS bundled, restoring the fast local loop without Docker. Offered to the owner; staging-as-dev chosen instead. Revisit if dev/staging bleed-through causes a real incident — at which point introduce **Supabase branching** (per-branch ephemeral databases) or Postgres.app.
+**Cheaper reversal available:** **Postgres.app** provides a Docker-free *local* Postgres with PostGIS bundled, restoring the fast local loop without Docker. Offered to the owner; staging-as-dev chosen instead.
+
+**Switch trigger (recorded 23 Jul 2026).** Revisit a local Postgres (Postgres.app or Docker) **once a production database exists and we need a safe, isolated place to run destructive migrations** — i.e. the moment "test this migration somewhere it cannot touch real data" becomes a genuine need. A second option at that point is **Supabase branching** (per-branch ephemeral databases). Until production exists, staging-as-dev stands.
 
 ---
 
