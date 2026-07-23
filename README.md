@@ -20,7 +20,7 @@ Pest control is the first vertical.
 ## Setup
 
 Requires Node 20+ and pnpm. Copy `.env.example` to `.env.local` and fill in the
-Supabase values (never commit `.env.local`). Local Postgres (Docker) is added at
-the start of task K1.
+Supabase values (never commit `.env.local`). There is no local Docker database —
+development runs against the Supabase staging project directly (see DECISIONS.md §2.A).
 
 Current status: **K0 — environment setup.** No platform code yet.

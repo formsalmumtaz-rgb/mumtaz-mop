@@ -37,8 +37,8 @@ Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here
 
 | Layer | Decision | When to change |
 |---|---|---|
-| **Dev database** | **Postgres 16 + PostGIS in local Docker** | Never. Fastest inner loop, no quotas, instant reset. |
-| **Staging database** | **Supabase free project** | — |
+| **Dev database** | **~~Postgres 16 + PostGIS in local Docker~~ → Supabase staging project (`mumtaz-mop-staging`)** — *amended 23 Jul 2026, see §2.A* | If dev/staging separation becomes necessary — introduce Supabase branching or a local Postgres. |
+| **Staging database** | **Supabase free project** — *now also serves as the dev database (§2.A)* | — |
 | **Production database** | **Supabase Pro, $25/mo** | Created the day a real technician's work depends on it. Not before. |
 | **Region** | **Closest available to the UAE — Mumbai (ap-south-1) preferred, Frankfurt (eu-central-1) as fallback.** Mumbai is typically 30–50 ms from the UAE vs ~120 ms from Frankfurt. **Verify available regions at project creation. This cannot be changed later without a migration.** | — |
 | **App hosting** | **Vercel** — Hobby now, Pro when commercial | At first paying customer or team member |
@@ -48,6 +48,21 @@ Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here
 | **Repo** | **GitHub, private, single monorepo** | — |
 
 **Escape hatch (Art. VII, D7):** if a client ever imposes UAE data residency, self-hosted Supabase on the DigitalOcean VPS is the documented answer. Nothing in this stack blocks it.
+
+### 2.A — Amendment: no local Docker; Supabase staging is the dev database *(23 Jul 2026, owner-directed)*
+
+**Decision.** Docker is **not** installed. Local development runs directly against the **Supabase staging project** (`mumtaz-mop-staging`, ref `xpkniuhcjysisfbfiqhn`, region ap-south-1 / Mumbai). There is, for now, a single shared Supabase environment serving both development and staging.
+
+**Why.** The owner is a non-developer and a single-builder team at this stage. Installing and maintaining Docker (Desktop licensing, a daemon to keep running, an image to manage) is overhead with no operator to absorb it. The staging project is already provisioned in the correct region, already connected, and already verified reachable. Removing Docker removes a whole class of "it won't start" failures that only the owner would be blocked by.
+
+**What this supersedes.** This diverges from `CONSTITUTION.md` Art. XIII §1 (which lists the dev DB as local Docker Postgres) and from the original "Never change" note in the table above. **DECISIONS.md is subordinate to the Constitution**, so a matching amendment to Art. XIII §1 should be ratified by the owner (Art. XII) to keep the documents consistent. Recorded here as owner-directed pending that ratification.
+
+**Risks accepted (eyes-open).**
+- **Free-tier pause:** the staging project pauses after ~7 days of inactivity and has **no backups**. Dev work can hit a paused DB (restartable from the dashboard). The ledger never lives here — production remains Supabase Pro.
+- **No instant reset / no isolation:** the fast, disposable local loop (instant reset, no quotas, no network) is lost. Dev writes and staging data share one database; a bad migration in dev is a bad migration in staging.
+- **Network dependency:** development now requires connectivity to Mumbai, contradicting the spirit (not the letter) of the offline-first principle for the *build* loop.
+
+**Cheaper reversal available:** **Postgres.app** provides a Docker-free *local* Postgres with PostGIS bundled, restoring the fast local loop without Docker. Offered to the owner; staging-as-dev chosen instead. Revisit if dev/staging bleed-through causes a real incident — at which point introduce **Supabase branching** (per-branch ephemeral databases) or Postgres.app.
 
 ---
 
@@ -199,3 +214,4 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 23 Jul 2026 | Operating numbers confirmed. Infrastructure decided. Invoicing/agreements module boundary ruled. Admin console and bulk import added to Sprint Zero. |
+| 1.1 | 23 Jul 2026 | §2.A — Docker dropped; Supabase staging becomes the dev database (owner-directed). Diverges from Constitution Art. XIII §1 pending ratification. Risks recorded. |
