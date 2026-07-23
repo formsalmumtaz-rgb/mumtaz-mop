@@ -67,6 +67,25 @@ New fields are declared per service line in `field_definitions`; writes to
 missing required fields are rejected). When a custom field becomes load-bearing
 for money or scheduling, it graduates to a real typed column via a migration.
 
+## 7. External tools plug into MOP; MOP owns the vocabulary
+
+MOP is the **single source of truth**. External tools are pure renderers/adapters
+that *read* MOP reference data and *write back* frozen artefacts — they never keep
+their own parallel lists.
+
+- **Agreement generator (Phase 2, not built here).** `facility_types` is a
+  MOP-owned reference catalogue; the generator reads it. Per-facility-type form
+  schemas ride `field_definitions` + `attributes` — adding a facility type is
+  reference data in MOP, never a new JSON file in two systems. Every field in the
+  generator's agreements table has a home on `contracts` / `contract_services` /
+  `customers`. The rendered agreement lands in `generated_documents` (append-only)
+  with a frozen `snapshot`, linked to its contract.
+- **e-invoicing ASP (Phase 3).** Same shape: MOP produces the invoice object; an
+  adapter serialises PINT AE and hands it to the ASP.
+
+**`customers.trade_license`** is first-class — the source of the TRN and the field
+whose capture at contract signing closes the 220-record TRN gap over time.
+
 ## 6. Provenance on everything editable
 
 Every editable row carries `updated_by`, `updated_at`, and `is_assumed`
