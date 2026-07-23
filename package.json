@@ -11,5 +11,13 @@
     "apps/*",
     "packages/*",
     "services/*"
-  ]
+  ],
+  "scripts": {
+    "test:worker": "node --env-file=.env.local --import tsx --test services/worker/test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
 }

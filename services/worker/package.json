@@ -2,5 +2,13 @@
   "name": "@mop/worker",
   "version": "0.0.0",
   "private": true,
-  "description": "Outbox drain loop — polls unprocessed events, dispatches to idempotent handlers. Built in K1."
+  "type": "module",
+  "description": "Outbox drain loop — polls unprocessed events, dispatches to idempotent handlers.",
+  "dependencies": {
+    "@mop/domain": "workspace:*",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10"
+  }
 }

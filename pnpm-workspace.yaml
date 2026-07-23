@@ -2,3 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
   - "services/*"
+
+allowBuilds:
+  esbuild: set this to true or false
+
+# Allow these dependencies to run install/build scripts (pnpm blocks them by default).
+onlyBuiltDependencies:
+  - esbuild
