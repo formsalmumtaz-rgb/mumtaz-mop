@@ -1,0 +1,35 @@
+# ── Secrets — never commit ────────────────────────────────────────────
+# Supabase keys, database passwords, connection strings live here.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Dependencies & build output ───────────────────────────────────────
+node_modules/
+.pnpm-store/
+dist/
+build/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# ── OS / editor noise ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Claude Code machine-local settings (per developer, not shared) ─────
+.claude/settings.local.json
+
+# ── Raw source exports (working files, not the canonical seed) ─────────
+# The canonical, cleaned seed data lives in /seed and IS committed.
+# These root-level files are the raw originals / byte-identical duplicates.
+/ALL CONTRACTS.xlsx
+/customers.csv
+/branches.csv
+/contacts.csv
+/contracts.csv

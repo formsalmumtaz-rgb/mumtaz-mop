@@ -1,0 +1,23 @@
+﻿source_row,field,raw_value,issue
+5,TOTAL AMOUNT VAT INCL,*** RE,"amount ambiguous / contains text, raw: '*** RE'"
+7,TOTAL AMOUNT VAT INCL,4800**,cleaned formatting characters from raw amount: '4800**'
+11,TOTAL AMOUNT VAT INCL,7000**,cleaned formatting characters from raw amount: '7000**'
+13,TOTAL AMOUNT VAT INCL,1909-11-08 00:00:00,"amount field contains a date value (likely data entry error / shifted column), raw: datetime.datetime(1909, 11, 8, 0, 0)"
+16,TOTAL AMOUNT VAT INCL,1904-12-04 00:00:00,"amount field contains a date value (likely data entry error / shifted column), raw: datetime.datetime(1904, 12, 4, 0, 0)"
+17,TOTAL AMOUNT VAT INCL,1918-08-17 00:00:00,"amount field contains a date value (likely data entry error / shifted column), raw: datetime.datetime(1918, 8, 17, 0, 0)"
+18,TOTAL AMOUNT VAT INCL,1904-12-04 00:00:00,"amount field contains a date value (likely data entry error / shifted column), raw: datetime.datetime(1904, 12, 4, 0, 0)"
+19,CONTRACT DATE,12/08/0/2025,cleaned extra token(s) from raw date: '12/08/0/2025'
+20,TOTAL AMOUNT VAT INCL,1909-11-08 00:00:00,"amount field contains a date value (likely data entry error / shifted column), raw: datetime.datetime(1909, 11, 8, 0, 0)"
+21,TOTAL AMOUNT VAT INCL,****,"no numeric value found in amount field, raw: '****'"
+22,TOTAL AMOUNT VAT INCL,****,"no numeric value found in amount field, raw: '****'"
+51,TOTAL AMOUNT VAT INCL,1200 EACH TREATMENT,"amount ambiguous / contains text, raw: '1200 EACH TREATMENT'"
+78,END DATE,17/11/20326,"invalid/implausible year in date, raw: '17/11/20326'"
+103,TOTAL AMOUNT VAT INCL,****,"no numeric value found in amount field, raw: '****'"
+124,MONTHLY/WEEKLY,M.TIME,"service frequency text not confidently classified, raw: 'M.TIME'"
+161,TOTAL AMOUNT VAT INCL,: 2520,cleaned formatting characters from raw amount: ': 2520'
+196,END DATE,30/04/20217,"invalid/implausible year in date, raw: '30/04/20217'"
+202,CONTRACT DATE,11/60/2026,"invalid month (60) in date, raw: '11/60/2026' (possibly transposed digits)"
+203,CONTRACT DATE,14/60/2026,"invalid month (60) in date, raw: '14/60/2026' (possibly transposed digits)"
+204,CONTRACT DATE,08/60/2026,"invalid month (60) in date, raw: '08/60/2026' (possibly transposed digits)"
+210,END DATE,05/07/05/07/2027,cleaned extra token(s) from raw date: '05/07/05/07/2027'
+216,LOCATION/emirate,DUBAI/SHARJAH,"multiple emirates mentioned in location text, raw: 'DUBAI/SHARJAH'"

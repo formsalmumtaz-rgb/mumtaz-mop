@@ -1,0 +1,6 @@
+{
+  "name": "@mop/db",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Database migrations and the transactional outbox. Migrations only, never dashboard edits. Built in K1."
+}

@@ -1,0 +1,201 @@
+# DECISIONS.md — Sprint Zero
+# Infrastructure, scope, and module boundary rulings
+
+**Date:** 23 July 2026 · **Governed by:** `CONSTITUTION.md` v1.0
+**Supersedes:** conflicting assumptions in `CONTEXT.md` §9 and `EXECUTION.md` §5
+
+---
+
+## 1. Confirmed operating numbers
+
+| Figure | Value |
+|---|---|
+| Active AMCs (pest control) | **~300** |
+| Technicians (pest control) | **10** |
+| Teams at launch | **2** |
+| Estimated jobs/day | **15–40** |
+| Estimated jobs/year | ~3,600–9,000 |
+| Service records after 5 years | ~45,000 |
+
+### What these numbers settle
+
+**1.1 — Offline sync: hand-rolled, confirmed.**
+Constitution Art. V §6 set a migration trigger at 20 concurrent field users. You have 10. Dexie.js + an explicit outbox queue is the correct answer and will remain correct for years. **PowerSync is off the table until headcount doubles.** Saves roughly $49/month and a large dependency.
+
+**1.2 — Route optimisation: deferred, and more firmly than before.**
+Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here would save minutes, not hours. Stays in Phase 4. Revisit at 5+ teams.
+
+**1.3 — Database size is a non-issue.**
+300 customers and ~9,000 jobs/year is small. The 500 MB free-tier ceiling is years away. **The reason to pay for Supabase Pro is backups and the 7-day pause — not capacity.** That reason still stands: this database will hold your ledger.
+
+**1.4 — Photo storage, recalculated.**
+25 jobs/day × 6 photos × 150 KB compressed ≈ **675 MB/year.** Cloudflare R2's 10 GB free tier covers roughly 14 years. Photos are no longer a cost risk — *provided* client-side WebP compression ships in Sprint Zero. Without it, the same figure is ~9 GB/year and the free tier is gone in 13 months.
+
+---
+
+## 2. Infrastructure — decided
+
+| Layer | Decision | When to change |
+|---|---|---|
+| **Dev database** | **Postgres 16 + PostGIS in local Docker** | Never. Fastest inner loop, no quotas, instant reset. |
+| **Staging database** | **Supabase free project** | — |
+| **Production database** | **Supabase Pro, $25/mo** | Created the day a real technician's work depends on it. Not before. |
+| **Region** | **Closest available to the UAE — Mumbai (ap-south-1) preferred, Frankfurt (eu-central-1) as fallback.** Mumbai is typically 30–50 ms from the UAE vs ~120 ms from Frankfurt. **Verify available regions at project creation. This cannot be changed later without a migration.** | — |
+| **App hosting** | **Vercel** — Hobby now, Pro when commercial | At first paying customer or team member |
+| **Background workers** | **Existing DigitalOcean VPS**, PM2 | Already paid for by the content engine |
+| **Photo storage** | **Cloudflare R2** | ~14 years of headroom |
+| **Auth** | **Supabase Auth** — phone OTP for technicians, email for office | — |
+| **Repo** | **GitHub, private, single monorepo** | — |
+
+**Escape hatch (Art. VII, D7):** if a client ever imposes UAE data residency, self-hosted Supabase on the DigitalOcean VPS is the documented answer. Nothing in this stack blocks it.
+
+---
+
+## 3. RULING — Invoicing and Agreements: one platform, separate modules, phased
+
+**The question:** build invoicing and agreements inside this platform, or as separate systems integrated later, to reduce complexity?
+
+**The ruling: one database, one repository, one platform. Separate *modules*, not separate *systems*. Phased in time, not split in architecture.**
+
+### Why separate systems would be a mistake
+
+Look at what an invoice actually needs:
+
+```
+INVOICE requires:
+  ├─ customer legal name, TRN, address, place of supply  → CRM
+  ├─ contract terms, rate, frequency, VAT treatment      → Contracts
+  ├─ proof the service was delivered                     → Jobs
+  └─ payment status                                      → Ledger
+```
+
+Every one of those lives here. Put invoicing in a separate system and you must **synchronise customers, contracts, and job completion across a boundary** — building a sync problem, a reconciliation problem, and two versions of the truth.
+
+That is precisely the disease this platform exists to cure. Constitution Art. III: *no duplicate entry, no manual reconciliation.* A separate invoicing system violates the founding philosophy on day one.
+
+**Separating them doesn't reduce complexity. It relocates complexity into the integration — which is the most expensive place to put it.**
+
+### Same reasoning, stronger, for agreements
+
+An "agreement module" is not a system at all. It is **document generation from contract data** — a template engine over the `contracts` table. Your bilingual EN/AR templates with correct RTL rendering already exist and become the templates. Split out, you would be re-keying contract terms into a separate tool, which is exactly what you're eliminating.
+
+### What genuinely reduces complexity — and what you should do
+
+Complexity is reduced by **sequencing in time**, not by splitting the architecture:
+
+| Item | Sprint Zero | Phase 2 | Phase 3 |
+|---|---|---|---|
+| `invoices` / `invoice_lines` **tables**, PINT AE fields | ✅ built now | | |
+| Invoice row queued on `job.completed` | ✅ built now | | |
+| Contract → agreement PDF generation | | ✅ | |
+| Invoice PDF, numbering, VAT, credit notes | | | ✅ |
+| AR ageing, statements, dunning | | | ✅ |
+| e-invoicing ASP adapter | | | ✅ |
+
+**The table is cheap now and expensive later. The module is expensive now and cheap later.**
+
+Building the `invoices` table in Sprint Zero with the full PINT AE field set costs perhaps an hour. Retrofitting those fields after 12 months of live invoices is a data migration under a legal deadline (Art. V §7 — ASP by 31 March 2027, live 1 July 2027).
+
+**Module boundaries are enforced by Art. V §4:** no module reads another module's tables. Invoicing consumes `job.completed` and calls published contract functions. It never issues a SELECT against `jobs`. That gives you every benefit of separation with none of the sync cost.
+
+---
+
+## 4. Added to Sprint Zero scope
+
+Two items from tonight's discussion, both now on the critical path.
+
+### 4.1 Admin Console (master data UI)
+
+You asked for a UI to maintain backend data. This is not a nice-to-have — it is what makes the `ASSUMED`-defaults strategy work. Without it, every unknown business rule needs a code deploy to correct.
+
+Scope: CRUD over customers, branches, contacts, contracts, items, **treatment recipes**, users, teams, technicians, service lines, and system settings. Every field seeded as `ASSUMED` renders with a visible flag until an owner confirms it.
+
+Agent compute makes this genuinely cheap. Build it early.
+
+### 4.2 Bulk Import
+
+**Binding rule: imports never write directly to live tables.**
+
+```
+CSV → staging tables → validation → dry-run report → owner approves → commit → audit log
+```
+
+The dry-run report must state: rows accepted, rows rejected with reasons, duplicates detected, and every field left blank. Rollback by import batch ID. Re-runnable — importing the same file twice must not create 600 customers.
+
+This matters more than it looks: those 300 AMCs are the foundation of e-invoicing compliance. Garbage in now is a legal problem in 2027.
+
+---
+
+## 5. Revised task assignments
+
+Replaces `EXECUTION.md` §5 for Claude Code. Cowork tasks C1–C3 are unchanged.
+
+**K1 — Foundations** *(unchanged from EXECUTION.md, plus:)*
+> Additionally: seed reference data for 2 teams, 10 technicians, 1 service line (pest control), and a chart of service types. Include `invoices` and `invoice_lines` tables with the full PINT AE mandatory field set per CONTEXT.md §4.1 — tables only, no invoicing logic in this task.
+
+**K1b — Admin Console** *(new, Thursday night / Friday)*
+> Build an admin console in `apps/ops-console` for master data maintenance: CRUD over customers, customer_branches (with a map pin picker using MapLibre), contacts, contracts, items, treatment_recipes, teams, technicians, users, and settings.
+>
+> Requirements:
+> - Any field whose value was seeded as `ASSUMED` renders with a visible warning badge and an "I confirm this value" action that clears the flag and writes to the audit log.
+> - Table views with search, filter, and sort. No pagination gymnastics — 300 customers fits comfortably.
+> - Every write goes through the domain layer, never raw. Every write is audit-logged.
+> - Treatment recipes are editable here without a deploy. This is the point of the whole screen.
+>
+> Proof-of-Work per Art. X §5.
+
+**K5 — Bulk Import** *(new, assign when Cowork's C1 output lands)*
+> Build the bulk import pipeline for customer master data.
+>
+> Flow: upload CSV → write to staging tables → validate → produce a dry-run report → owner approves → commit to live tables → record in an import audit log.
+>
+> Requirements:
+> - **Never write to live tables before approval.**
+> - Validation covers: required fields, TRN format, duplicate detection (exact and fuzzy on legal name + emirate), GPS coordinate sanity, and referential integrity.
+> - The dry-run report states rows accepted, rows rejected with per-row reasons, duplicates flagged for human decision, and a count of blank fields per column.
+> - Idempotent by import batch ID — re-running the same file must not duplicate records.
+> - Rollback by batch ID.
+> - Blank means unknown. Never substitute a default for a missing value.
+>
+> Test with the real CSV in `/seed`, deliberately corrupted in three ways, and show me the rejection report.
+>
+> Proof-of-Work per Art. X §5.
+
+---
+
+## 6. Who instructs whom
+
+**You do. The tools do not talk to each other.**
+
+There is no mechanism by which Cowork hands a task to Claude Code, or by which either "takes over." You are the integration point, and files are the interface.
+
+```
+        ┌──────────────── YOU ────────────────┐
+        │                                     │
+    assign C1/C2/C3                    assign K1/K1b/K2…
+        │                                     │
+        ▼                                     ▼
+   ┌─────────┐                          ┌───────────┐
+   │ COWORK  │                          │  CLAUDE   │
+   │         │  writes CSV → you copy → │   CODE    │
+   │ mounted │     into repo /seed      │           │
+   │ folder  │                          │   repo    │
+   └─────────┘                          └───────────┘
+        │                                     │
+   no repo access                      no access to
+   no git, no terminal                 Cowork's folder
+```
+
+**Both must be given the same governing documents:**
+- Claude Code reads `CLAUDE.md` at the repo root automatically every session, which points it to the constitution.
+- Cowork must have `CONSTITUTION.md` and `CONTEXT.md` **copied into its mounted folder** — it cannot see your repo.
+
+**The handoff you will actually perform:** Cowork finishes C1 and writes `customers_clean.csv`. You copy that file into the repo at `/seed/`. You commit it. Then you tell Claude Code to run K5 against it. That copy step is manual, it takes ten seconds, and forgetting it is the single most common way this setup stalls.
+
+---
+
+## Changelog
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | 23 Jul 2026 | Operating numbers confirmed. Infrastructure decided. Invoicing/agreements module boundary ruled. Admin console and bulk import added to Sprint Zero. |

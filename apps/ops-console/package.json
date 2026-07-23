@@ -1,0 +1,6 @@
+{
+  "name": "@mop/ops-console",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Office-facing admin console (Next.js 15 App Router). Scaffolded in K1."
+}

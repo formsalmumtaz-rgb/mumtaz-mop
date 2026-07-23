@@ -1,0 +1,6 @@
+{
+  "name": "@mop/domain",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared domain types, event schemas (Zod), and business rules. Defined once, imported everywhere. Built in K1."
+}
