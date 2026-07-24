@@ -12,6 +12,7 @@
   "dependencies": {
     "@googlemaps/js-api-loader": "^1.16.8",
     "@mop/domain": "workspace:*",
+    "@mop/worker": "workspace:*",
     "next": "^15.0.3",
     "pg": "^8.13.1",
     "react": "^18.3.1",

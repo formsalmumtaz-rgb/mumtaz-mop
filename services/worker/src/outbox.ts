@@ -50,6 +50,10 @@ export interface DrainResult {
 
 // Drain all currently-unprocessed events once.
 export async function drainOnce(pool: Pool, consumers: Consumer[]): Promise<DrainResult> {
+  // No consumers registered yet (pre-K2): do nothing, so events are never marked
+  // processed before anyone can handle them. K2 registers the real consumers.
+  if (consumers.length === 0) return { scanned: 0, dispatched: 0 };
+
   const { rows: events } = await pool.query(
     `select * from outbox_events where processed_at is null order by occurred_at asc limit 500`,
   );

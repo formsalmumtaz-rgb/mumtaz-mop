@@ -105,3 +105,34 @@ test("event is atomic with its business write: rollback leaves no event", async 
   const after = (await pool.query(`select count(*)::int n from outbox_events`)).rows[0].n;
   assert.equal(after, before, "a rolled-back event leaves no trace in the outbox");
 });
+
+test("concurrent pickup (webhook + sweeper) is still exactly-once", async () => {
+  // Event-driven: a DB webhook AND the safety-net sweeper can both fire a drain
+  // for the same event at the same time. The (consumer_name,event_id) PK must
+  // still guarantee each handler runs exactly once.
+  await drainOnce(pool, sinkConsumers()); // clear backlog
+  await pool.query(`delete from _k1_test_sink`);
+
+  const client = await pool.connect();
+  let eventId: string;
+  try {
+    await client.query("begin");
+    eventId = await emitEvent(client, {
+      tenant_id: tenantId,
+      event_type: "job.completed",
+      payload: { job_id: randomUUID() },
+    });
+    await client.query("commit");
+  } finally {
+    client.release();
+  }
+
+  // two drains race — the webhook and the sweeper hitting the same event
+  const [r1, r2] = await Promise.all([drainOnce(pool, sinkConsumers()), drainOnce(pool, sinkConsumers())]);
+  assert.equal(r1.dispatched + r2.dispatched, 2, "exactly two dispatches total across both racers (2 consumers × once)");
+
+  const n = async (consumer: string) =>
+    (await pool.query(`select count(*)::int n from _k1_test_sink where consumer=$1 and event_id=$2`, [consumer, eventId])).rows[0].n;
+  assert.equal(await n("test_counter_a"), 1, "handler A ran exactly once despite concurrent pickup");
+  assert.equal(await n("test_counter_b"), 1, "handler B ran exactly once despite concurrent pickup");
+});

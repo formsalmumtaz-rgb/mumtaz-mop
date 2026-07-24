@@ -3,7 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Outbox drain loop — polls unprocessed events, dispatches to idempotent handlers.",
+  "description": "Outbox drain — event-driven (webhook) with a scheduled sweeper safety net; idempotent handlers.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "dependencies": {
     "@mop/domain": "workspace:*",
     "pg": "^8.13.1"
