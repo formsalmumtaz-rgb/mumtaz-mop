@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
 import type { Consumer, ParsedEvent } from "./outbox";
-import { generateVisitDates, buildPricingSnapshot, type FrequencySpec } from "./schedule";
+import { generateVisitDates, buildPricingSnapshot, normaliseSpacing, type FrequencySpec, type VisitSpacing } from "./schedule";
 
 // K2 contract fan-out. Three independent, idempotent consumers of
 // contract.activated. Registered schedule-first so jobs see a committed schedule.
@@ -11,20 +11,23 @@ interface SchedSettings {
   horizonMonths: number;
   jobDays: number;
   renewalDays: number;
+  spacing: VisitSpacing; // driven by the ASSUMED `visit_spacing` setting, not hardcoded
 }
 
 async function loadSettings(c: PoolClient, tenantId: string, slId: string | null): Promise<SchedSettings> {
   const { rows } = await c.query(
     `select key, value from settings
       where tenant_id = $1 and (service_line_id = $2 or service_line_id is null)
-        and key in ('schedule_horizon_months','job_generation_days','renewal_reminder_days')`,
+        and key in ('schedule_horizon_months','job_generation_days','renewal_reminder_days','visit_spacing')`,
     [tenantId, slId],
   );
-  const m = new Map(rows.map((r) => [r.key, Number(r.value)]));
+  const m = new Map(rows.map((r) => [r.key, r.value as unknown]));
+  const num = (k: string, d: number) => (m.get(k) == null ? d : Number(m.get(k)));
   return {
-    horizonMonths: m.get("schedule_horizon_months") ?? 12,
-    jobDays: m.get("job_generation_days") ?? 30,
-    renewalDays: m.get("renewal_reminder_days") ?? 60,
+    horizonMonths: num("schedule_horizon_months", 12),
+    jobDays: num("job_generation_days", 30),
+    renewalDays: num("renewal_reminder_days", 60),
+    spacing: normaliseSpacing(m.get("visit_spacing") as string | undefined),
   };
 }
 
@@ -72,7 +75,7 @@ const scheduleGenerator: Consumer = {
     const settings = await loadSettings(c, ct.tenant_id, ct.service_line_id);
     const recipeVersionId = await resolveRecipeVersion(c, contractId);
 
-    const dates = generateVisitDates(ct.start_date, freq, settings.horizonMonths);
+    const dates = generateVisitDates(ct.start_date, freq, settings.horizonMonths, settings.spacing);
     const pricing = buildPricingSnapshot(
       { pricing_model_code: ct.pricing_model_code, contract_value: ct.contract_value, currency: ct.currency },
       freq,

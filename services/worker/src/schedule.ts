@@ -27,11 +27,26 @@ function iso(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Even-spacing rule (ASSUMED, editable). Month-based periods use exact month
-// arithmetic so counts are clean (monthly×2 → 24/yr, monthly×1 → 12, bimonthly → 6).
-export function generateVisitDates(startISO: string, freq: FrequencySpec, horizonMonths: number): string[] {
+// How multiple visits within a period are placed. The CHOICE is data (the
+// `visit_spacing` setting, seeded ASSUMED); the strategies are code. 'even' places
+// visits at slot midpoints; 'from_start' places them at slot starts. Unknown
+// values fall back to 'even'. Add new strategies here, then select via the setting.
+export type VisitSpacing = "even" | "from_start";
+export function normaliseSpacing(v: string | null | undefined): VisitSpacing {
+  return v === "from_start" ? "from_start" : "even";
+}
+
+// Month-based periods use exact month arithmetic so counts are clean (monthly×2 →
+// 24/yr, monthly×1 → 12, bimonthly → 6). Counts do not depend on spacing.
+export function generateVisitDates(
+  startISO: string,
+  freq: FrequencySpec,
+  horizonMonths: number,
+  spacing: VisitSpacing = "even",
+): string[] {
   const start = new Date(`${startISO}T00:00:00Z`);
   const out: string[] = [];
+  const frac = (v: number) => (spacing === "from_start" ? v / freq.visits_per_period : (v + 0.5) / freq.visits_per_period);
 
   if (freq.period_unit === "month") {
     const periods = Math.floor(horizonMonths / freq.period_count);
@@ -40,8 +55,7 @@ export function generateVisitDates(startISO: string, freq: FrequencySpec, horizo
       const periodEnd = addMonths(start, (p + 1) * freq.period_count);
       const periodDays = daysBetween(periodStart, periodEnd);
       for (let v = 0; v < freq.visits_per_period; v++) {
-        const offset = Math.round(((v + 0.5) / freq.visits_per_period) * periodDays);
-        out.push(iso(addDays(periodStart, offset)));
+        out.push(iso(addDays(periodStart, Math.round(frac(v) * periodDays))));
       }
     }
     return out;
@@ -50,9 +64,10 @@ export function generateVisitDates(startISO: string, freq: FrequencySpec, horizo
   // day/week/year: step by an even interval across the horizon
   const periodDays = (UNIT_DAYS[freq.period_unit] ?? 30) * freq.period_count;
   const interval = periodDays / freq.visits_per_period;
+  const base = spacing === "even" ? interval / 2 : 0;
   const horizonDays = horizonMonths * 30;
   for (let i = 0; ; i++) {
-    const d = addDays(start, Math.round(i * interval));
+    const d = addDays(start, Math.round(base + i * interval));
     if (daysBetween(start, d) >= horizonDays) break;
     out.push(iso(d));
   }

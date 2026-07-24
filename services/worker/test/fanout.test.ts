@@ -7,12 +7,19 @@ import { pool } from "../src/db.js";
 import { emitEvent, drainOnce, consumers } from "../src/index.js";
 import { generateVisitDates } from "../src/schedule.js";
 
-test("even-spacing visit dates produce clean counts", () => {
-  const m = (pc: number, v: number) =>
-    generateVisitDates("2026-07-25", { period_unit: "month", period_count: pc, visits_per_period: v }, 12).length;
-  assert.equal(m(1, 2), 24, "monthly × 2 → 24/yr");
-  assert.equal(m(1, 1), 12, "monthly × 1 → 12/yr");
-  assert.equal(m(2, 1), 6, "bi-monthly → 6/yr");
+test("visit dates: counts from frequency spec; spacing is config-driven", () => {
+  const freq = (pc: number, v: number) => ({ period_unit: "month" as const, period_count: pc, visits_per_period: v });
+  const count = (pc: number, v: number) => generateVisitDates("2026-07-25", freq(pc, v), 12).length;
+  // count comes from visits_per_period × periods — NOT hardcoded, not doubled
+  assert.equal(count(1, 2), 24, "monthly × 2 → 24/yr");
+  assert.equal(count(1, 1), 12, "monthly × 1 → 12/yr (a monthly contract is NOT 24)");
+  assert.equal(count(2, 1), 6, "bi-monthly → 6/yr");
+
+  // the visit_spacing setting genuinely changes placement (not hardcoded)
+  const even = generateVisitDates("2026-07-25", freq(1, 2), 12, "even");
+  const fromStart = generateVisitDates("2026-07-25", freq(1, 2), 12, "from_start");
+  assert.equal(even.length, fromStart.length, "spacing does not change the count");
+  assert.notEqual(even[0], fromStart[0], "spacing strategy changes the dates — driven by the setting");
 });
 
 let tenantId: string, slId: string, customerId: string, freqId: string, contractId: string;
