@@ -66,6 +66,25 @@ Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here
 
 **Switch trigger (recorded 23 Jul 2026).** Revisit a local Postgres (Postgres.app or Docker) **once a production database exists and we need a safe, isolated place to run destructive migrations** — i.e. the moment "test this migration somewhere it cannot touch real data" becomes a genuine need. A second option at that point is **Supabase branching** (per-branch ephemeral databases). Until production exists, staging-as-dev stands.
 
+### 2.B — Amendment: Google Maps for display, geocoding & navigation — NOT routing/matrix *(24 Jul 2026, owner-directed)*
+
+**Decision.** Adopt the **Google Maps Platform** for three things, and only these:
+
+| Use | Provider | Why Google here |
+|---|---|---|
+| **Map display** (admin console pin picker; any future map surface) | **Google Maps JavaScript API** | Better UAE base map and labelling than OSM; the owner already has an account |
+| **Geocoding** (address → GPS, once per site) | **Google Geocoding** (client-side, same key) | Google's UAE address data is materially better; we geocode each site **once**, so volume is trivial and does not scale with operations |
+| **Navigation** (technician app) | **Deep-link to the Google Maps app** (`https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>`) | Opens the installed app; **free, no API call** |
+
+**Explicitly kept OFF Google — Art. XIII §2 stands for this specifically:**
+- **Route optimisation and the distance/time matrix.** Google Fleet Routing is an Enterprise SKU (only ~1,000 free events/month) and matrix cost scales with **jobs × teams × days** — exactly the "cost scales with operations" failure Art. XIII §2 rejects. **VROOM / OpenRouteService** does multi-vehicle VRP with skills and time windows for free and remains the choice (Phase 4).
+
+**The boundary in one line:** *Google for what a human looks at and for one-time address lookup; never for the per-operation math that scales with the fleet.*
+
+**What this supersedes.** The map-rendering choice (MapLibre GL + self-hosted Protomaps PMTiles) and the geocoding choice (Nominatim/Photon) in **CONTEXT.md §9.1/§9.3** and the general stack in §2 above. **Art. XIII §2 (routing/matrix) is unchanged and reaffirmed.** MapLibre remains a documented, zero-cost fallback if Google billing ever becomes a concern.
+
+**Cost control (binding).** The Google key is (a) newly created, (b) restricted to only the Maps JavaScript + Geocoding APIs and to our specific domains/referrers, (c) capped with a **per-API daily quota** (a hard technical ceiling) plus a billing **budget with alerts**. Key lives in `.env.local`, git-ignored, never committed. Nothing calls Google on the per-job critical path (Art. III P2).
+
 ---
 
 ## 3. RULING — Invoicing and Agreements: one platform, separate modules, phased
@@ -217,3 +236,4 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 |---|---|---|
 | 1.0 | 23 Jul 2026 | Operating numbers confirmed. Infrastructure decided. Invoicing/agreements module boundary ruled. Admin console and bulk import added to Sprint Zero. |
 | 1.1 | 23 Jul 2026 | §2.A — Docker dropped; Supabase staging becomes the dev database (owner-directed). Diverges from Constitution Art. XIII §1 pending ratification. Risks recorded. |
+| 1.2 | 24 Jul 2026 | §2.B — Google Maps adopted for display, geocoding, and navigation deep-links (owner-directed). Routing/matrix stays off Google (VROOM/ORS); Art. XIII §2 reaffirmed. Supersedes the MapLibre/Protomaps/Nominatim choices in CONTEXT §9. |
