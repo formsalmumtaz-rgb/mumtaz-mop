@@ -21,6 +21,8 @@ export const listFrequencies = (t: string) => listRef("frequencies", t);
 export const listPricingModels = (t: string) => listRef("pricing_models", t);
 export const listFacilityTypes = (t: string) => listRef("facility_types", t);
 export const listServiceTypes = (t: string) => listRef("service_types", t);
+export const listJobSources = (t: string) => listRef("job_sources", t);
+export const listTeams = (t: string) => listRef("teams", t);
 
 export async function getServiceLineId(tenantId: string): Promise<string> {
   const { rows } = await pool.query(
