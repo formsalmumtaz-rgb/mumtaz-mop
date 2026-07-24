@@ -100,3 +100,56 @@ pooler on `:6543` also works and is the right choice for serverless/edge
 for true direct connections (e.g. certain logical-replication or session-pinned
 features the pooler restricts). Resolutions: purchase the Supabase IPv4 add-on
 for a direct host, or ensure the environment has working IPv6.
+
+---
+
+## D4 — TLS certificate verification disabled on the DB connection
+
+**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — **MUST fix before production**
+
+**The shortcut.** `services/worker/src/db.ts` connects with
+`ssl: { rejectUnauthorized: false }`. Node treats the Supabase pooler's
+certificate chain as self-signed and refuses it with `SELF_SIGNED_CERT_IN_CHAIN`;
+disabling verification was the fastest way to a working dev connection.
+
+**What it costs us.** With chain verification off, the client will trust *any*
+certificate — it encrypts the traffic but does **not** authenticate the server,
+so it is vulnerable to a man-in-the-middle. Acceptable against a throwaway dev/
+staging database; **unacceptable for production data**, which includes the ledger
+and customer PII.
+
+**Repayment trigger.** **Before any production deployment.** This must never ship.
+
+**Repayment.** Bundle the correct CA certificate (Supabase's pooler CA, or the
+system trust store if the chain validates there), set
+`ssl: { rejectUnauthorized: true, ca: <cert> }`, and confirm the worker and any
+app connections still succeed. Add a startup assertion that refuses to run with
+verification disabled when `NODE_ENV=production`.
+
+---
+
+## D5 — Duplicate migration numbering (process cause, now resolved)
+
+**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** RESOLVED (recorded to prevent recurrence)
+
+**What happened.** The operations migration was submitted via the Supabase MCP
+`apply_migration` tool. The tool-call approval was **rejected in the UI, but the
+statement had already executed on the server** — `apply_migration` is not
+transactional with the client-side approval. Believing it had not applied, the
+file was renumbered and a new `005_agreement_schema` was authored, producing two
+migrations numbered `005` and a mismatch between the repo files and the recorded
+Supabase migration history.
+
+**Why it is debt.** Two migrations sharing a number makes apply-order ambiguous
+and breaks the "files == what built the database" guarantee that reproducibility
+depends on.
+
+**Prevention (the lesson).**
+1. Treat a "rejected" MCP mutation as **possibly applied** — verify ground truth
+   with `list_migrations` / `list_tables` before reworking.
+2. **Never reuse or renumber a migration number** once it may have been applied.
+3. Migration numbers are strictly sequential and immutable once shipped.
+
+**Resolution.** Renumbered to a strict `001`–`010` sequence and proved the set by
+applying it to a completely empty database with an identical-schema check
+(see the reproducibility rebuild).
