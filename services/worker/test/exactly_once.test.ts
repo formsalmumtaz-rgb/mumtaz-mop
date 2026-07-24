@@ -26,10 +26,12 @@ function sinkConsumers(): Consumer[] {
 }
 
 before(async () => {
-  const { rows } = await pool.query(
-    `select id from tenants where name = 'Mumtaz Integrated Services Group' limit 1`,
-  );
-  tenantId = rows[0].id;
+  // A DEDICATED throwaway tenant — never the real Mumtaz tenant — so draining in
+  // tests can never consume real events. All drains below are scoped to it.
+  const existing = await pool.query(`select id from tenants where name = 'MOP Test Tenant' limit 1`);
+  tenantId = existing.rows[0]
+    ? existing.rows[0].id
+    : (await pool.query(`insert into tenants(name) values ('MOP Test Tenant') returning id`)).rows[0].id;
   await pool.query(
     `create table if not exists _k1_test_sink (consumer text, event_id uuid, ts timestamptz default now())`,
   );
@@ -46,7 +48,7 @@ after(async () => {
 
 test("exactly-once delivery to two independent handlers; replay is a no-op", async () => {
   // Clear any backlog from earlier runs, then reset the sink.
-  await drainOnce(pool, sinkConsumers());
+  await drainOnce(pool, sinkConsumers(), { tenantId });
   await pool.query(`delete from _k1_test_sink`);
 
   // 1. Emit inside a transaction, atomically with a business write.
@@ -67,7 +69,7 @@ test("exactly-once delivery to two independent handlers; replay is a no-op", asy
   }
 
   // 2. First drain: each handler runs exactly once.
-  const r1 = await drainOnce(pool, sinkConsumers());
+  const r1 = await drainOnce(pool, sinkConsumers(), { tenantId });
   assert.equal(r1.dispatched, 2, "two consumers each dispatched once");
 
   const countA = async () =>
@@ -82,7 +84,7 @@ test("exactly-once delivery to two independent handlers; replay is a no-op", asy
   assert.ok(proc.rows[0].processed_at, "event marked processed after all consumers handled it");
 
   // 3. Replay: draining again changes nothing.
-  const r2 = await drainOnce(pool, sinkConsumers());
+  const r2 = await drainOnce(pool, sinkConsumers(), { tenantId });
   assert.equal(r2.dispatched, 0, "replay dispatches nothing");
   assert.equal(await countA(), 1, "handler A still exactly once after replay");
   assert.equal(await countB(), 1, "handler B still exactly once after replay");
@@ -110,7 +112,7 @@ test("concurrent pickup (webhook + sweeper) is still exactly-once", async () => 
   // Event-driven: a DB webhook AND the safety-net sweeper can both fire a drain
   // for the same event at the same time. The (consumer_name,event_id) PK must
   // still guarantee each handler runs exactly once.
-  await drainOnce(pool, sinkConsumers()); // clear backlog
+  await drainOnce(pool, sinkConsumers(), { tenantId }); // clear backlog
   await pool.query(`delete from _k1_test_sink`);
 
   const client = await pool.connect();
@@ -128,7 +130,7 @@ test("concurrent pickup (webhook + sweeper) is still exactly-once", async () => 
   }
 
   // two drains race — the webhook and the sweeper hitting the same event
-  const [r1, r2] = await Promise.all([drainOnce(pool, sinkConsumers()), drainOnce(pool, sinkConsumers())]);
+  const [r1, r2] = await Promise.all([drainOnce(pool, sinkConsumers(), { tenantId }), drainOnce(pool, sinkConsumers(), { tenantId })]);
   assert.equal(r1.dispatched + r2.dispatched, 2, "exactly two dispatches total across both racers (2 consumers × once)");
 
   const n = async (consumer: string) =>

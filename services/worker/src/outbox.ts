@@ -49,14 +49,25 @@ export interface DrainResult {
 }
 
 // Drain all currently-unprocessed events once.
-export async function drainOnce(pool: Pool, consumers: Consumer[]): Promise<DrainResult> {
+export async function drainOnce(
+  pool: Pool,
+  consumers: Consumer[],
+  opts: { tenantId?: string } = {},
+): Promise<DrainResult> {
   // No consumers registered yet (pre-K2): do nothing, so events are never marked
   // processed before anyone can handle them. K2 registers the real consumers.
   if (consumers.length === 0) return { scanned: 0, dispatched: 0 };
 
-  const { rows: events } = await pool.query(
-    `select * from outbox_events where processed_at is null order by occurred_at asc limit 500`,
-  );
+  // opts.tenantId scopes the drain (tests use a throwaway tenant so they never
+  // touch real events). The production endpoint passes no tenant — drains all.
+  const { rows: events } = opts.tenantId
+    ? await pool.query(
+        `select * from outbox_events where processed_at is null and tenant_id = $1 order by occurred_at asc limit 500`,
+        [opts.tenantId],
+      )
+    : await pool.query(
+        `select * from outbox_events where processed_at is null order by occurred_at asc limit 500`,
+      );
   let dispatched = 0;
 
   for (const ev of events) {
