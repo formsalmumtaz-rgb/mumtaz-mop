@@ -26,6 +26,7 @@ Mumtaz Operations Platform (MOP) — integrated ERP + Field Service Management f
 6. **Append-only:** service records, ledger entries, stock movements, cash receipts, audit log. Corrections are reversing entries, never edits or deletes.
 7. **Migrations only.** No schema change is ever made by hand in a dashboard. If it isn't in a migration file, it doesn't exist.
 8. **Two-Speed Rule.** Schema, events, ledger, audit and security are ten-year grade. UI and workflows are production-quality but explicitly disposable — expect to rewrite the technician screens after real field use. Deliberate shortcuts go in `DEBT.md` with an owner and a repayment trigger. Undocumented debt is a defect.
+9. **Maps go through `RouteProvider`, never business logic.** Business logic never calls Google (or any map/route provider) directly — all geocoding, ETA, and route optimisation go through the internal `RouteProvider` interface (Art. XVII). Geocoding is **server-side only**. The scheduler decides *which* jobs; routing only *sequences* them; the platform must still schedule if Google is down.
 
 ## Business rules
 
@@ -33,9 +34,9 @@ Mumtaz Operations Platform (MOP) — integrated ERP + Field Service Management f
 
 ## Stack
 
-Postgres (PostGIS, local Docker in dev) · Next.js 15 App Router + Tailwind · PWA field app with Dexie.js/IndexedDB and an explicit outbox queue · transactional outbox event bus in Postgres · Cloudflare R2 for photos · MapLibre + Protomaps · OpenRouteService/VROOM for routing (later phases) · jsPDF client-side.
+Postgres (PostGIS; Supabase staging doubles as dev, DECISIONS §2.A) · Next.js 15 App Router + Tailwind · PWA field app with Dexie.js/IndexedDB and an explicit outbox queue · transactional outbox event bus in Postgres · Cloudflare R2 for photos · **Google Maps** for display + server-side geocoding, behind a `RouteProvider` interface, VROOM/ORS as fallback (Art. XVII) · MOP background jobs on Vercel Cron + Supabase (no DigitalOcean, DECISIONS §2.C) · jsPDF client-side.
 
-Explicitly rejected: Google Maps Platform for routing or matrix (cost scales with operations) · Kafka/RabbitMQ/SQS (Postgres is the bus) · repository-pattern abstraction over Postgres (we build *on* RLS, pg_cron, PostGIS and constraints deliberately).
+Explicitly rejected: Kafka/RabbitMQ/SQS (Postgres is the bus) · repository-pattern abstraction over Postgres (we build *on* RLS, pg_cron, PostGIS and constraints deliberately) · any provider on the per-job operational critical path.
 
 ## Security
 

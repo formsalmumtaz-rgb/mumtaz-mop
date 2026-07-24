@@ -66,24 +66,39 @@ Two teams and ~20 jobs a day is a problem a human solves well. An optimiser here
 
 **Switch trigger (recorded 23 Jul 2026).** Revisit a local Postgres (Postgres.app or Docker) **once a production database exists and we need a safe, isolated place to run destructive migrations** — i.e. the moment "test this migration somewhere it cannot touch real data" becomes a genuine need. A second option at that point is **Supabase branching** (per-branch ephemeral databases). Until production exists, staging-as-dev stands.
 
-### 2.B — Amendment: Google Maps for display, geocoding & navigation — NOT routing/matrix *(24 Jul 2026, owner-directed)*
+### 2.B — Hybrid Google Maps architecture *(24 Jul 2026; ratified in CONSTITUTION Art. XVII)*
 
-**Decision.** Adopt the **Google Maps Platform** for three things, and only these:
+Google Maps Platform provides mapping intelligence only; the platform owns all business logic. Full doctrine in Constitution Art. XVII. Supersedes the MapLibre/Protomaps/Nominatim choices in CONTEXT §9.
 
-| Use | Provider | Why Google here |
+| Capability | Provider | Phase |
 |---|---|---|
-| **Map display** (admin console pin picker; any future map surface) | **Google Maps JavaScript API** | Better UAE base map and labelling than OSM; the owner already has an account |
-| **Geocoding** (address → GPS, once per site) | **Google Geocoding** (client-side, same key) | Google's UAE address data is materially better; we geocode each site **once**, so volume is trivial and does not scale with operations |
-| **Navigation** (technician app) | **Deep-link to the Google Maps app** (`https://www.google.com/maps/dir/?api=1&destination=<lat>,<lng>`) | Opens the installed app; **free, no API call** |
+| Map display | Google Maps JavaScript API (browser key) | now |
+| Geocoding (once per site, **server-side**) | Google Geocoding API (server key) | now |
+| Navigation | Deep-link to the Google Maps app — free, no API call | K3 |
+| Route optimisation & matrix | Google Route Optimization, behind `RouteProvider` | Phase 4 (per §1.2) |
+| Fallback for all routing | VROOM / OpenRouteService (satisfies Art. XVII §2) | documented |
 
-**Explicitly kept OFF Google — Art. XIII §2 stands for this specifically:**
-- **Route optimisation and the distance/time matrix.** Google Fleet Routing is an Enterprise SKU (only ~1,000 free events/month) and matrix cost scales with **jobs × teams × days** — exactly the "cost scales with operations" failure Art. XIII §2 rejects. **VROOM / OpenRouteService** does multi-vehicle VRP with skills and time windows for free and remains the choice (Phase 4).
+**Boundary:** Google for what a human looks at and for one-time address lookup; a deferred, interchangeable provider for route math. Never on the per-job critical path (Art. III P2).
 
-**The boundary in one line:** *Google for what a human looks at and for one-time address lookup; never for the per-operation math that scales with the fleet.*
+**Keys (two).** Browser key: Maps JavaScript API only, domain-restricted, `NEXT_PUBLIC_`-prefixed. Server key: Geocoding only (Route Optimization added at Phase 4), never browser-exposed, API-restricted + hard quota cap. Both in `.env.local`, git-ignored. IP-restriction of the server key is a pre-production item (DEBT.md D7).
 
-**What this supersedes.** The map-rendering choice (MapLibre GL + self-hosted Protomaps PMTiles) and the geocoding choice (Nominatim/Photon) in **CONTEXT.md §9.1/§9.3** and the general stack in §2 above. **Art. XIII §2 (routing/matrix) is unchanged and reaffirmed.** MapLibre remains a documented, zero-cost fallback if Google billing ever becomes a concern.
+**SKU finding (verify against live Google pricing before Phase 4).** Maps JavaScript + Geocoding are **Essentials** SKUs (~10,000 free events/month). Google **Route Optimization is an Enterprise** SKU (~1,000 free events/month — 10× tighter). Open question to confirm before building routing: does it bill **per request** or **per shipment/stop**? At 25 jobs/day those differ ~10×.
 
-**Cost control (binding).** The Google key is (a) newly created, (b) restricted to only the Maps JavaScript + Geocoding APIs and to our specific domains/referrers, (c) capped with a **per-API daily quota** (a hard technical ceiling) plus a billing **budget with alerts**. Key lives in `.env.local`, git-ignored, never committed. Nothing calls Google on the per-job critical path (Art. III P2).
+### 2.C — MOP background-job runtime: Vercel + Supabase, no DigitalOcean *(24 Jul 2026, owner-directed)*
+
+MOP's scheduled and event-driven work runs on **Vercel + Supabase**; the DigitalOcean VPS is **not** a MOP dependency.
+
+| Work | Runs on |
+|---|---|
+| Outbox drain (event-driven) | HTTP drain endpoint on Vercel, fired by a Supabase database webhook on event insert |
+| Outbox sweeper (safety net) | Vercel Cron, every few minutes |
+| Nightly job generation, renewal reminders, compliance expiry, invoice runs, AR ageing | Vercel Cron and/or Supabase `pg_cron` |
+
+The DigitalOcean droplet hosts an **unrelated AI content engine**; whether it stays is not MOP's decision. Supersedes the "Background workers: DigitalOcean VPS + PM2" row in §2 for MOP.
+
+### 2.D — Deferred: no messaging intake bot *(24 Jul 2026)*
+
+No Telegram/WhatsApp job-intake bot. Parsing free-text messages means brittle matching or AI on the operational path (Art. IV forbids the latter). Ad-hoc jobs are created via the admin console instead. Revisit as a candidate **after Phase 1**, once real message patterns are known.
 
 ---
 
@@ -237,3 +252,4 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 | 1.0 | 23 Jul 2026 | Operating numbers confirmed. Infrastructure decided. Invoicing/agreements module boundary ruled. Admin console and bulk import added to Sprint Zero. |
 | 1.1 | 23 Jul 2026 | §2.A — Docker dropped; Supabase staging becomes the dev database (owner-directed). Diverges from Constitution Art. XIII §1 pending ratification. Risks recorded. |
 | 1.2 | 24 Jul 2026 | §2.B — Google Maps adopted for display, geocoding, and navigation deep-links (owner-directed). Routing/matrix stays off Google (VROOM/ORS); Art. XIII §2 reaffirmed. Supersedes the MapLibre/Protomaps/Nominatim choices in CONTEXT §9. |
+| 1.3 | 24 Jul 2026 | Ratified hybrid Google (CONSTITUTION Art. XVII): §2.B rewritten — Google routing adopted for Phase 4 behind `RouteProvider`, VROOM/ORS as fallback; two keys, server-side geocoding, SKU finding. §2.C — MOP runtime is Vercel + Supabase, DigitalOcean dropped for MOP. §2.D — no messaging intake bot. |

@@ -178,3 +178,21 @@ localhost.** It must never be deployed publicly in this state.
 actor from the authenticated session, switch DB access to the `authenticated`
 role so RLS is actively enforced (not merely present), and populate
 `created_by`/`actor_id`/`confirmed_by` from the real user.
+
+---
+
+## D7 — Server Google key not IP-restricted (Vercel dynamic egress)
+
+**Logged:** 24 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — pre-production
+
+**The gap.** Art. XVII §4 requires server keys to be **IP-restricted**. The server
+Geocoding key runs from Vercel serverless functions, which have **no stable
+egress IP** on Hobby/Pro — so IP-restriction cannot be applied there yet. Interim
+protection: the key is **API-restricted (Geocoding only)**, **server-side only**
+(never sent to the browser), and **hard quota-capped** in Google Cloud.
+
+**Repayment trigger.** **Before production deployment.** Give the server key a
+stable egress IP to lock to — a Vercel static-IP/egress option, or route Google
+calls through a fixed-IP proxy (e.g. a small function on infrastructure with a
+static IP) — then add the IP restriction. The API restriction + quota cap remain
+either way.

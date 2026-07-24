@@ -363,11 +363,10 @@ Researched July 2026. Every figure below should be re-verified at build time —
 | **Hosting (web)** | **Vercel** Hobby → Pro when commercial | Existing deployment target. | $0–20 |
 | **Workers / self-hosted services** | **Existing DigitalOcean VPS** + PM2 | Already paid for by the AI content engine. | ~$0 marginal |
 | **Object storage (photos)** | **Cloudflare R2** | 10 GB free, **zero egress fees**. The single most important cost decision — see 9.4. | $0 → ~$5 |
-| **Map rendering** | **MapLibre GL JS** (MIT, no API key) | Free fork of Mapbox GL; no vendor key in the client. | $0 |
-| **Map tiles** | **Protomaps PMTiles, UAE extract, self-hosted on R2** | One file, byte-range served, no tile server, no per-tile billing, ever. MapTiler free tier (~100k tiles/mo) as quick-start fallback. | $0 |
-| **Geocoding** | **Nominatim / Photon** — *but see 9.3* | | $0 |
-| **Routing & matrix** | **OpenRouteService free key** → **self-hosted OSRM** at scale | See 9.7 | $0 |
-| **Route optimisation (VRP)** | **VROOM** (via ORS `/optimization`, later self-hosted) | Purpose-built VRP solver: time windows, skills, capacities, multi-vehicle. | $0 |
+| **Map rendering** | **Google Maps JavaScript API** (browser key, domain-restricted) | Hybrid Google (Art. XVII). Better UAE base map. MapLibre GL is the documented zero-cost fallback. | Essentials free tier |
+| **Geocoding** | **Google Geocoding API** — *server-side only* (server key) | Better UAE address data; run once per site (§9.3). Nominatim/Photon is the fallback. | Essentials free tier |
+| **Routing & matrix** | **Google Route Optimization**, behind `RouteProvider` — **Phase 4** | Deferred (DECISIONS §1.2); VROOM/ORS is the availability fallback (Art. XVII §2, §9.7). | Enterprise SKU — §11 |
+| **Route optimisation (VRP)** | **VROOM / OpenRouteService** — documented fallback | Free multi-vehicle VRP (skills, time windows) if Google is unavailable or too costly. | $0 |
 | **Offline sync** | **Hand-rolled outbox on IndexedDB (Dexie.js)** Phase 1; re-evaluate **PowerSync** at Phase 4 | See 9.5 | $0 |
 | **PDF generation** | **jsPDF client-side** (offline) + server-side render for archival | Technician must produce a report with no signal. Proven in the Field Ops PWA. | $0 |
 | **OCR (receipts)** | **Tesseract.js**, client-side, *optional assist only* | Never blocking; technician always confirms the number. | $0 |
@@ -403,7 +402,7 @@ Verified July 2026, the free tier gives: 500 MB database, 1 GB file storage, 5 G
 
 **Doctrine:** the **GPS pin captured by the surveyor standing at the door is the address.** Everything else — text address, building name, Makani number, emirate — is metadata attached to that pin. Reverse geocoding is used only to *suggest* a human-readable label, which a human confirms or overwrites.
 
-This inverts the usual design and it is correct here. It also means we geocode a site once and never again, which keeps us permanently inside any free tier.
+This inverts the usual design and it is correct here. It also means we geocode a site once and never again, which keeps us permanently inside any free tier. Geocoding and reverse-geocoding run through **Google (server-side, server key)** per Art. XVII; Nominatim/Photon remain the documented fallback.
 
 Store coordinates in PostGIS geography columns. Store access notes (gate code, which lift, security desk, parking) against the branch — high-value operational knowledge that currently lives only in a technician's memory.
 
@@ -461,7 +460,7 @@ Going direct to Meta's Cloud API avoids BSP platform fees entirely. Telegram sta
 - We need same-day dynamic re-optimisation (emergency call inserted at 11am), or
 - We need a hard guarantee that no customer address ever leaves our infrastructure.
 
-**Explicit rejection: Google Maps Platform.** Directions and Distance Matrix are pay-as-you-go, and cost scales exactly with operational activity — which violates the core philosophy of this project. We use Google for the one thing it is uniquely good at: **handing off to the Google Maps app for turn-by-turn navigation via a deep link**, which is free.
+**Routing provider — hybrid, superseded to Google (Art. XVII).** Route optimisation and the matrix are adopted from **Google Route Optimization**, deferred to **Phase 4** (DECISIONS §1.2) and reached **only through the `RouteProvider` interface**. **VROOM/ORS (above) is the availability fallback** required by Art. XVII §2 — if Google is unavailable, the platform still schedules. Navigation remains a **free deep-link** to the Google Maps app. Route Optimization is an Enterprise SKU with a tight free tier; confirm per-request vs per-stop billing before implementing (DECISIONS §2.B).
 
 **Explicit rejection (for now): Google OR-Tools.** Excellent, but VROOM already solves our VRP shape out of the box. Writing a custom solver is a month of work to beat a free service we are not straining. Revisit only if we hit constraints VROOM genuinely cannot express.
 
@@ -523,9 +522,10 @@ On reconnect: drain in order, dedupe by client UUID, surface any rejected item t
 | Supabase Pro (production) | 25 |
 | Supabase free (staging) | 0 |
 | Vercel (Hobby → Pro when commercial) | 0–20 |
-| DigitalOcean VPS (already paid; marginal) | 0 |
+| DigitalOcean VPS | — (not a MOP dependency; DECISIONS §2.C) |
 | Cloudflare R2 (within 10 GB free, then ~$0.015/GB) | 0–5 |
-| Maps, tiles, routing, optimisation | 0 |
+| Google Maps (display + server-side geocoding, Essentials free tier) | 0 |
+| Route optimisation (Phase 4; Enterprise SKU, quota-capped) | 0 now |
 | Telegram, Web Push, Sentry, UptimeRobot, GitHub Actions | 0 |
 | WhatsApp initiated templates (~1,500/mo) | ~2–15 |
 | AI layer (Phase 6, capped) | 10–30 |
@@ -537,7 +537,7 @@ On reconnect: drain in order, dedupe by client UUID, surface any rejected item t
 |---|---|---|
 | Uncompressed photos | Storage + egress becomes the largest line | §9.4 client-side WebP compression, R2 zero egress |
 | AI in the operational loop | Per-action inference cost scaling with headcount | D1 — architecturally prevented |
-| Google Maps for routing/matrix | Cost scales with jobs | §9.7 — explicitly rejected |
+| Google Route Optimization (Phase 4) | Enterprise SKU, tight free tier | Deferred behind `RouteProvider`; hard quota cap; VROOM/ORS fallback (Art. XVII) |
 | Real-time GPS tracking at high frequency | Realtime connections + row volume explode | Track at 60–120s intervals, not 5s. Store as a compressed trace, not a row per ping. |
 | Per-seat SaaS creeping in | Cost scales with headcount, defeating the point | §14 non-goals |
 

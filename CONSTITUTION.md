@@ -375,7 +375,7 @@ Amended only by the owner, only with a version bump and a changelog entry. An ag
 
 ### §2 Rejected
 
-Google Maps Platform for routing or matrix (cost scales with operations) · Kafka/RabbitMQ/SQS (Postgres is the bus) · Google Sheets or any spreadsheet as a database (no transactions, no constraints, no RLS — Art. VII §1 and Art. V §3 are impossible on it) · PowerSync at current scale (Art. V §6).
+~~Google Maps Platform for routing or matrix~~ *(superseded by Art. XVII, v1.2 — Google routing adopted behind the `RouteProvider` interface with a deterministic fallback)* · Kafka/RabbitMQ/SQS (Postgres is the bus) · Google Sheets or any spreadsheet as a database (no transactions, no constraints, no RLS — Art. VII §1 and Art. V §3 are impossible on it) · PowerSync at current scale (Art. V §6).
 
 ### §3 Admin Console — on the critical path
 
@@ -491,9 +491,34 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 
 ---
 
+## ARTICLE XVII — MAPS & ROUTING ARCHITECTURE *(new in v1.2)*
+
+Hybrid architecture: the platform owns all business logic; Google Maps Platform provides mapping intelligence only. **This supersedes the routing/matrix rejection in Art. XIII §2** — Google routing is permitted, on these terms.
+
+### §1 Responsibility split
+- **Platform (deterministic, ours):** scheduling · municipality frequency rules · skill matching · working hours & leave · vehicle assignment · emergency prioritisation · chemical calculation · inventory reservation · customer priority · revenue · accounting · dashboards.
+- **Google Maps (intelligence only):** geocoding · reverse geocoding · places · traffic & ETA · route calculation & optimisation · navigation · map rendering.
+
+The scheduler decides **which** jobs need service; route optimisation decides the **most efficient sequence**; the platform writes the technician schedule from the optimised route. Google is never relied on for a business rule.
+
+### §2 Availability — BINDING
+If Google APIs are unavailable, the platform must still produce schedules by deterministic logic. VROOM / OpenRouteService is the documented fallback.
+
+### §3 Data capture & caching
+GPS is captured once at customer/contract creation and stored permanently. Addresses are re-geocoded only when edited. Route and location data is cached wherever practical.
+
+### §4 Keys & cost
+Keys are restricted — browser by domain, mobile by app, server by IP. Budget alerts, hard quota caps, monitoring and logging are configured before production. All geocoding runs server-side.
+
+### §5 Provider interchangeability
+Mapping and routing sit behind an internal **`RouteProvider`** interface. Switching to HERE, Mapbox, TomTom, VROOM or OR-Tools replaces only the implementation, never scheduling logic.
+
+---
+
 ## CHANGELOG
 
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 23 Jul 2026 | Ratified. Merged draft Project Constitution with CONTEXT.md v0.1. Seven rulings under Art. V. |
 | **1.1** | **23 Jul 2026** | Operating scale confirmed (Art. II §3) — settles Art. V §6 in favour of hand-rolled sync. Art. X §4 amendment ratified (`ASSUMED` defaults + admin console). Bulk import doctrine added (Art. VII §5). Photo compression made binding (Art. IX). Owner-is-not-a-developer duty added (Art. I §6). Four new articles: XIII Infrastructure, XIV Module Boundaries (invoicing/agreements ruling), XV Roadmap (revised to ~4 months), XVI Operating Model. Build authorised for Sprint Zero. Article numbers I–XII frozen as stable identifiers. |
+| **1.2** | **24 Jul 2026** | Article XVII — Maps & Routing Architecture added: hybrid Google Maps (mapping intelligence only; platform owns all business logic), binding deterministic-fallback clause, capture-GPS-once, restricted keys, `RouteProvider` interchangeability. Supersedes the routing/matrix rejection in Art. XIII §2. |
