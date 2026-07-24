@@ -73,6 +73,29 @@ export async function createContract(
   });
 }
 
+export interface ScheduleSummary {
+  scheduleCount: number;
+  firstDate: string | null;
+  lastDate: string | null;
+  jobsCount: number;
+  remindersCount: number;
+}
+
+// What one activated contract produced — for the UI (demo moment #1).
+export async function getScheduleSummary(tenantId: string, contractId: string): Promise<ScheduleSummary> {
+  const { rows: s } = await pool.query(
+    `select count(*)::int n, min(scheduled_date)::text f, max(scheduled_date)::text l
+       from contract_schedule where tenant_id=$1 and contract_id=$2`,
+    [tenantId, contractId],
+  );
+  const { rows: j } = await pool.query(
+    `select count(*)::int n from jobs where tenant_id=$1 and contract_id=$2`, [tenantId, contractId]);
+  const { rows: r } = await pool.query(
+    `select count(*)::int n from reminders where tenant_id=$1 and entity_id=$2 and reminder_type='contract_renewal'`,
+    [tenantId, contractId]);
+  return { scheduleCount: s[0].n, firstDate: s[0].f, lastDate: s[0].l, jobsCount: j[0].n, remindersCount: r[0].n };
+}
+
 // Activate a contract and emit contract.activated in the SAME transaction
 // (Art. VII §1). K2's consumers fan out from this event.
 export async function activateContract(tenantId: string, id: string): Promise<void> {

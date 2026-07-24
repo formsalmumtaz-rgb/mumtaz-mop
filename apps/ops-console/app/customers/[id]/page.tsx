@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getCustomer } from "@/lib/domain/customers";
 import { listBranches } from "@/lib/domain/branches";
-import { listContracts } from "@/lib/domain/contracts";
+import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
 import { listFrequencies, listPricingModels, listFacilityTypes } from "@/lib/domain/reference";
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { PinPicker } from "@/components/PinPicker";
@@ -29,6 +29,9 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
     listPricingModels(tenantId),
     listFacilityTypes(tenantId),
   ]);
+  const summaries = new Map(
+    await Promise.all(contracts.map(async (ct) => [ct.id, await getScheduleSummary(tenantId, ct.id)] as const)),
+  );
 
   return (
     <div className="space-y-8">
@@ -135,28 +138,40 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
         <h2 className="mb-4 font-medium">Contracts <span className="text-neutral-400">({contracts.length})</span></h2>
         <div className="mb-4 space-y-2">
           {contracts.length === 0 && <p className="text-sm text-neutral-500">No contracts yet.</p>}
-          {contracts.map((ct) => (
-            <div key={ct.id} className="flex items-center justify-between rounded border border-neutral-200 px-3 py-2 text-sm">
-              <div>
-                <span className="font-medium">{ct.contract_number ?? "(no number)"}</span>
-                <span className="ml-2 text-neutral-500">
-                  {ct.frequency_name ?? "no frequency"} · {ct.contract_value ? `${ct.contract_value} ${ct.currency}` : "no value"} · {ct.start_date ?? "?"}→{ct.end_date ?? "?"}
-                </span>
+          {contracts.map((ct) => {
+            const sum = summaries.get(ct.id);
+            return (
+            <div key={ct.id} className="rounded border border-neutral-200 px-3 py-2 text-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-medium">{ct.contract_number ?? "(no number)"}</span>
+                  <span className="ml-2 text-neutral-500">
+                    {ct.frequency_name ?? "no frequency"} · {ct.contract_value ? `${ct.contract_value} ${ct.currency}` : "no value"} · {ct.start_date ?? "?"}→{ct.end_date ?? "?"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusPill status={ct.lifecycle_status} />
+                  {ct.lifecycle_status !== "active" && (
+                    <form action={activateContractAction}>
+                      <input type="hidden" name="customer_id" value={customer.id} />
+                      <input type="hidden" name="contract_id" value={ct.id} />
+                      <button className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700">
+                        Activate ▶
+                      </button>
+                    </form>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusPill status={ct.lifecycle_status} />
-                {ct.lifecycle_status !== "active" && (
-                  <form action={activateContractAction}>
-                    <input type="hidden" name="customer_id" value={customer.id} />
-                    <input type="hidden" name="contract_id" value={ct.id} />
-                    <button className="rounded bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700">
-                      Activate ▶
-                    </button>
-                  </form>
-                )}
-              </div>
+              {sum && sum.scheduleCount > 0 && (
+                <div className="mt-2 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                  Auto-generated: <b>{sum.scheduleCount}</b> scheduled visits
+                  {sum.firstDate && <> ({sum.firstDate} → {sum.lastDate})</>} ·{" "}
+                  <b>{sum.jobsCount}</b> jobs created · <b>{sum.remindersCount}</b> renewal reminder
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         <details className="rounded border border-neutral-200 p-4" open={contracts.length === 0}>

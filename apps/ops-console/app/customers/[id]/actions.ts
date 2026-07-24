@@ -1,5 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { drainOnce, consumers } from "@mop/worker";
+import { pool } from "@/lib/db";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
 import { updateCustomer, confirmCustomer } from "@/lib/domain/customers";
@@ -70,5 +72,12 @@ export async function activateContractAction(formData: FormData): Promise<void> 
   const contractId = String(formData.get("contract_id"));
   const tenantId = await getTenantId();
   await activateContract(tenantId, contractId);
+  // Fan out immediately (mirrors the production Supabase webhook). If the drain
+  // fails, the event stays queued for the sweeper — activation still succeeds.
+  try {
+    await drainOnce(pool, consumers, { tenantId });
+  } catch (e) {
+    console.error("[activate] fan-out drain failed; event remains queued:", e);
+  }
   revalidatePath(`/customers/${customerId}`);
 }
