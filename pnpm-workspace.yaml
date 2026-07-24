@@ -4,8 +4,10 @@ packages:
   - "services/*"
 
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
+  sharp: true
 
-# Allow these dependencies to run install/build scripts (pnpm blocks them by default).
+# Dependencies allowed to run install/build scripts (pnpm blocks them by default).
 onlyBuiltDependencies:
   - esbuild
+  - sharp

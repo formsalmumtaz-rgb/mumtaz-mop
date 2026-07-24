@@ -33,3 +33,6 @@ Thumbs.db
 /branches.csv
 /contacts.csv
 /contracts.csv
+
+# Next.js generated
+next-env.d.ts

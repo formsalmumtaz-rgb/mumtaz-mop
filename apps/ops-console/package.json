@@ -2,5 +2,27 @@
   "name": "@mop/ops-console",
   "version": "0.0.0",
   "private": true,
-  "description": "Office-facing admin console (Next.js 15 App Router). Scaffolded in K1."
+  "description": "Office-facing admin console for MOP master-data maintenance (Next.js 15).",
+  "scripts": {
+    "dev": "next dev -p 3100",
+    "build": "next build",
+    "start": "next start -p 3100",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mop/domain": "workspace:*",
+    "next": "^15.0.3",
+    "pg": "^8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3"
+  }
 }

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ops-console",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@mop/ops-console", "dev"],
+      "port": 3100
+    }
+  ]
+}
