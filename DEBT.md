@@ -153,3 +153,28 @@ depends on.
 **Resolution.** Renumbered to a strict `001`–`010` sequence and proved the set by
 applying it to a completely empty database with an identical-schema check
 (see the reproducibility rebuild).
+
+---
+
+## D6 — Admin console has no authentication
+
+**Logged:** 24 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — **must fix before any non-localhost exposure**
+
+**The shortcut.** `apps/ops-console` runs in a single fixed admin context — it
+resolves the seeded Mumtaz tenant directly and has **no login, no user identity,
+no access control** at the application layer. Anyone who can reach the app can
+read and write all master data. `created_by`/`actor_id` on writes are currently
+null because there is no authenticated user.
+
+**Why we accept it (for now).** Sprint Zero explicitly excludes auth beyond a
+simple login; the console's Sprint-Zero job is master-data maintenance for the
+demo, run only on `localhost`. Building Supabase Auth now would delay the demo
+critical path.
+
+**Repayment trigger.** **Before the console is reachable from any network beyond
+localhost.** It must never be deployed publicly in this state.
+
+**Repayment.** Wire Supabase Auth (email for office staff), set the tenant and
+actor from the authenticated session, switch DB access to the `authenticated`
+role so RLS is actively enforced (not merely present), and populate
+`created_by`/`actor_id`/`confirmed_by` from the real user.
