@@ -93,7 +93,37 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
   return { jobs: data.jobs.length };
 }
 
-// Append an event to the outbox. Pure local write — the sync-up happens in K4.
+// Drain the outbox to the server on reconnect. Marks synced ONLY the client_uuids
+// the server confirms it holds — so an interrupted upload or a lost ack just leaves
+// items pending and they re-post next time (server dedups by client_uuid).
+export async function syncUp(baseUrl: string): Promise<{ uploaded: number; remaining: number }> {
+  const pending = await db.outbox.where("synced").equals(0).toArray();
+  if (pending.length === 0) return { uploaded: 0, remaining: 0 };
+  const res = await fetch(`${baseUrl}/api/field/upload`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      events: pending.map((p) => ({
+        client_uuid: p.client_uuid, event_type: p.event_type, job_id: p.job_id, payload: p.payload, device_time: p.device_time,
+      })),
+    }),
+  });
+  if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+  const { accepted } = (await res.json()) as { accepted: string[] };
+  const acc = new Set(accepted);
+  let uploaded = 0;
+  await db.transaction("rw", db.outbox, async () => {
+    for (const p of pending) {
+      if (acc.has(p.client_uuid)) {
+        await db.outbox.update(p.client_uuid, { synced: 1 });
+        uploaded++;
+      }
+    }
+  });
+  return { uploaded, remaining: await pendingCount() };
+}
+
+// Append an event to the outbox. Pure local write — never blocks on the network.
 export async function enqueue(event_type: string, job_id: string, payload: unknown): Promise<string> {
   const item: OutboxItem = {
     client_uuid: uuid(),

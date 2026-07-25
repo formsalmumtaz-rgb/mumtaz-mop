@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
-import { db, enqueue, pendingCount, syncPull, uuid, type LocalJob } from "./db";
+import { db, enqueue, pendingCount, syncPull, syncUp, uuid, type LocalJob } from "./db";
 import { calcDose } from "./dose";
 
 const SYNC_BASE = (import.meta.env.VITE_SYNC_BASE as string) || "http://localhost:3100";
@@ -24,6 +24,17 @@ export function App() {
   const jobs = useLiveQuery(() => db.jobs.orderBy("scheduled_date").toArray(), [], []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState("");
+  const [syncErr, setSyncErr] = useState("");
+
+  // Drain the outbox to the server whenever we're online (and when new items are
+  // queued). Interrupted uploads just leave items pending and retry — the server
+  // dedups by client UUID. Failures are surfaced, never silent.
+  useEffect(() => {
+    if (!online) return;
+    syncUp(SYNC_BASE)
+      .then((r) => { if (r.uploaded > 0) setSyncMsg(`Uploaded ${r.uploaded}`); setSyncErr(""); })
+      .catch((e) => setSyncErr(`Sync failed — will retry when connection is stable. (${e.message})`));
+  }, [online, pending]);
 
   const doSync = async () => {
     setSyncMsg("Syncing…");
@@ -47,6 +58,12 @@ export function App() {
         </span>
         <span className="pending">{pending} to sync</span>
       </div>
+
+      {syncErr && (
+        <div style={{ background: "#fef2f2", color: "#991b1b", padding: ".5rem .9rem", fontSize: ".85rem" }}>
+          {syncErr}
+        </div>
+      )}
 
       <div className="content">
         {!selected && (
