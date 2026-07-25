@@ -50,6 +50,7 @@ async function resolveRecipeVersion(c: PoolClient, contractId: string): Promise<
 const scheduleGenerator: Consumer = {
   name: "schedule-generator",
   handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
 
     // idempotency guard (belt & braces with the event-level claim)
@@ -104,6 +105,7 @@ const scheduleGenerator: Consumer = {
 const jobGenerator: Consumer = {
   name: "job-generator",
   handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
 
     const { rows: ctRows } = await c.query(
@@ -146,6 +148,7 @@ const jobGenerator: Consumer = {
 const renewalReminder: Consumer = {
   name: "renewal-reminder",
   handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
     const { rows } = await c.query(
       `select tenant_id, service_line_id, end_date::text as end_date, contract_number from contracts where id = $1`,

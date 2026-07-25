@@ -91,7 +91,8 @@ test("exactly-once delivery to two independent handlers; replay is a no-op", asy
 });
 
 test("event is atomic with its business write: rollback leaves no event", async () => {
-  const before = (await pool.query(`select count(*)::int n from outbox_events`)).rows[0].n;
+  // scoped to this tenant — other test files insert events concurrently
+  const before = (await pool.query(`select count(*)::int n from outbox_events where tenant_id=$1`, [tenantId])).rows[0].n;
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -104,7 +105,7 @@ test("event is atomic with its business write: rollback leaves no event", async 
   } finally {
     client.release();
   }
-  const after = (await pool.query(`select count(*)::int n from outbox_events`)).rows[0].n;
+  const after = (await pool.query(`select count(*)::int n from outbox_events where tenant_id=$1`, [tenantId])).rows[0].n;
   assert.equal(after, before, "a rolled-back event leaves no trace in the outbox");
 });
 
