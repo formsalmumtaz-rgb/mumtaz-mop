@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
-import { db, enqueue, pendingCount, syncPull, syncUp, uuid, type LocalJob } from "./db";
+import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, uuid, type LocalJob } from "./db";
 import { calcDose } from "./dose";
 
 const SYNC_BASE = (import.meta.env.VITE_SYNC_BASE as string) || "http://localhost:3100";
@@ -31,9 +31,16 @@ export function App() {
   // dedups by client UUID. Failures are surfaced, never silent.
   useEffect(() => {
     if (!online) return;
-    syncUp(SYNC_BASE)
-      .then((r) => { if (r.uploaded > 0) setSyncMsg(`Uploaded ${r.uploaded}`); setSyncErr(""); })
-      .catch((e) => setSyncErr(`Sync failed — will retry when connection is stable. (${e.message})`));
+    (async () => {
+      try {
+        const ev = await syncUp(SYNC_BASE);
+        const md = await syncMedia(SYNC_BASE);
+        if (ev.uploaded + md.uploaded > 0) setSyncMsg(`Uploaded ${ev.uploaded} events, ${md.uploaded} media`);
+        setSyncErr("");
+      } catch (e) {
+        setSyncErr(`Sync failed — will retry when connection is stable. (${(e as Error).message})`);
+      }
+    })();
   }, [online, pending]);
 
   const doSync = async () => {
@@ -116,12 +123,12 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
 
   const addPhoto = async (file: File) => {
     const compressed = await imageCompression(file, { maxWidthOrHeight: 1600, maxSizeMB: 0.15, fileType: "image/webp" });
-    await db.media.add({ id: uuid(), job_id: job.id, kind: "photo", blob: compressed, created_at: new Date().toISOString() });
+    await db.media.add({ id: uuid(), job_id: job.id, kind: "photo", blob: compressed, created_at: new Date().toISOString(), synced: 0 });
   };
 
   const saveSignature = async () => {
     const blob = await sigRef.current?.toBlob();
-    if (blob) await db.media.add({ id: uuid(), job_id: job.id, kind: "signature", blob, created_at: new Date().toISOString() });
+    if (blob) await db.media.add({ id: uuid(), job_id: job.id, kind: "signature", blob, created_at: new Date().toISOString(), synced: 0 });
   };
 
   const complete = async () => {

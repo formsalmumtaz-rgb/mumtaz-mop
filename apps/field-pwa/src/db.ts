@@ -46,6 +46,7 @@ export interface MediaItem {
   kind: "photo" | "signature";
   blob: Blob;
   created_at: string;
+  synced: 0 | 1;
 }
 
 export interface MetaItem {
@@ -66,6 +67,13 @@ class FieldDB extends Dexie {
       media: "id, job_id",
       meta: "key",
     });
+    this.version(2)
+      .stores({ media: "id, job_id, synced" })
+      .upgrade(async (tx) => {
+        await tx.table("media").toCollection().modify((m: MediaItem) => {
+          if (m.synced === undefined) m.synced = 0;
+        });
+      });
   }
 }
 
@@ -121,6 +129,46 @@ export async function syncUp(baseUrl: string): Promise<{ uploaded: number; remai
     }
   });
   return { uploaded, remaining: await pendingCount() };
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onloadend = () => res((r.result as string).split(",")[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Upload pending photos/signatures to R2 (via the server). Idempotent by media id
+// (server dedups); marks synced only what the server confirms. Same interrupted-
+// sync safety as the event outbox.
+export async function syncMedia(baseUrl: string): Promise<{ uploaded: number }> {
+  const pending = await db.media.where("synced").equals(0).toArray();
+  if (pending.length === 0) return { uploaded: 0 };
+  const media = await Promise.all(
+    pending.map(async (m) => ({
+      id: m.id, job_id: m.job_id, kind: m.kind,
+      content_type: m.blob.type || "image/webp",
+      data_base64: await blobToBase64(m.blob),
+    })),
+  );
+  const res = await fetch(`${baseUrl}/api/field/media`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ media }),
+  });
+  if (!res.ok) throw new Error(`media upload failed: ${res.status}`);
+  const { accepted } = (await res.json()) as { accepted: string[] };
+  const acc = new Set(accepted);
+  let uploaded = 0;
+  await db.transaction("rw", db.media, async () => {
+    for (const m of pending) {
+      if (acc.has(m.id)) {
+        await db.media.update(m.id, { synced: 1 });
+        uploaded++;
+      }
+    }
+  });
+  return { uploaded };
 }
 
 // Append an event to the outbox. Pure local write — never blocks on the network.
