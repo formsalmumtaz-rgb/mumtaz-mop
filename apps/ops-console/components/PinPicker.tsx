@@ -20,6 +20,7 @@ export function PinPicker({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  const resizeObs = useRef<ResizeObserver | null>(null);
 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
@@ -40,29 +41,49 @@ export function PinPicker({
   };
 
   useEffect(() => {
-    if (!BROWSER_KEY || !containerRef.current) return;
+    if (!BROWSER_KEY) return;
     let cancelled = false;
-    // display only — no "geocoding"/"places" library loaded in the browser
-    const loader = new Loader({ apiKey: BROWSER_KEY, version: "weekly", libraries: ["maps", "marker"] });
-    loader
-      .load()
-      .then(() => {
-        if (cancelled || !containerRef.current) return;
-        const map = new google.maps.Map(containerRef.current, {
-          center: { lat: initialLat, lng: initialLng },
-          zoom: 11,
-          streetViewControl: false,
-          mapTypeControl: false,
-          fullscreenControl: false,
-        });
-        mapRef.current = map;
-        map.addListener("click", (e: google.maps.MapMouseEvent) => {
-          if (e.latLng) place(e.latLng.lat(), e.latLng.lng());
-        });
-      })
-      .catch(() => setMsg("Could not load Google Maps (check the browser key's domain restriction)."));
+
+    // Only create the map once the container is actually visible (non-zero size).
+    // Google Maps painted inside a collapsed <details> stays blank forever, so we
+    // wait for size (e.g. the panel opening) before initialising.
+    const initMap = async () => {
+      const el = containerRef.current;
+      if (cancelled || mapRef.current || !el) return;
+      const loader = new Loader({ apiKey: BROWSER_KEY, version: "weekly", libraries: ["maps", "marker"] });
+      await loader.load();
+      if (cancelled || mapRef.current || !containerRef.current) return;
+      const map = new google.maps.Map(containerRef.current, {
+        center: { lat: initialLat, lng: initialLng },
+        zoom: 11,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        // Raster tiles render without WebGL — robust on low-end devices and
+        // GPU-less environments (vector needs a real GPU).
+        renderingType: google.maps.RenderingType.RASTER,
+      });
+      mapRef.current = map;
+      map.addListener("click", (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) place(e.latLng.lat(), e.latLng.lng());
+      });
+    };
+
+    const el = containerRef.current;
+    if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+      initMap().catch(() => setMsg("Could not load Google Maps (check the browser key's domain restriction)."));
+    } else if (el) {
+      resizeObs.current = new ResizeObserver(() => {
+        if (el.offsetWidth > 0 && el.offsetHeight > 0 && !mapRef.current) {
+          initMap().catch(() => setMsg("Could not load Google Maps (check the browser key's domain restriction)."));
+        }
+      });
+      resizeObs.current.observe(el);
+    }
+
     return () => {
       cancelled = true;
+      resizeObs.current?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialLat, initialLng]);
