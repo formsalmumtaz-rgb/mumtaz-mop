@@ -141,6 +141,17 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
     onBack();
   };
 
+  const makeReport = async () => {
+    const { generateServiceReport } = await import("./pdf"); // code-split jsPDF
+    const blob = await generateServiceReport(job, media);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `service-report-${job.id.slice(0, 8)}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  };
+
   const photoCount = media.filter((m) => m.kind === "photo").length;
   const hasSignature = media.some((m) => m.kind === "signature");
   const dose = calcDose(job.recipe, Number(area));
@@ -209,7 +220,12 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
         </>
       )}
 
-      {job.local_status === "completed" && <div className="card"><span className="pill done">Completed ✓</span> — queued to sync.</div>}
+      {job.local_status === "completed" && (
+        <div className="card">
+          <div style={{ marginBottom: ".6rem" }}><span className="pill done">Completed ✓</span> — queued to sync.</div>
+          <button className="secondary" onClick={makeReport}>Generate report (PDF)</button>
+        </div>
+      )}
     </div>
   );
 }

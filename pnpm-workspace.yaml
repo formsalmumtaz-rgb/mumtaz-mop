@@ -4,6 +4,7 @@ packages:
   - "services/*"
 
 allowBuilds:
+  core-js: set this to true or false
   esbuild: true
   sharp: true
 
@@ -11,3 +12,7 @@ allowBuilds:
 onlyBuiltDependencies:
   - esbuild
   - sharp
+
+# core-js only prints a donation notice on install; ignore it (never build).
+ignoredBuiltDependencies:
+  - core-js
