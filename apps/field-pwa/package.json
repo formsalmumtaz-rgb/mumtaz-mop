@@ -2,5 +2,28 @@
   "name": "@mop/field-pwa",
   "version": "0.0.0",
   "private": true,
-  "description": "Offline-first technician PWA (Dexie.js + outbox queue). Scaffolded in K3."
+  "type": "module",
+  "description": "Offline-first technician PWA (Vite + React + Dexie + service worker).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@mop/domain": "workspace:*",
+    "browser-image-compression": "^2.0.2",
+    "dexie": "^4.0.10",
+    "dexie-react-hooks": "^1.1.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "workbox-window": "^7.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
 }

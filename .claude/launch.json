@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@mop/ops-console", "dev"],
       "port": 3100
+    },
+    {
+      "name": "field-pwa",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@mop/field-pwa", "preview"],
+      "port": 3200
     }
   ]
 }
