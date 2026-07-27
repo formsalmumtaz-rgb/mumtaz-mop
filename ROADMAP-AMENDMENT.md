@@ -1,0 +1,525 @@
+# ROADMAP-AMENDMENT.md
+
+**Status:** Backlog filing — recorded 25 Jul 2026, after K4 (Golden Thread) completed.
+**This is a filing only.** No migration, schema change, or code was written for this
+document. Nothing here is scheduled or authorised for build beyond what a later
+`EXECUTION.md` sprint explicitly picks up.
+
+Coverage is assessed against the schema actually built (migrations `001`–`013`) and
+the governing documents (`CONSTITUTION.md`, `CONTEXT.md`, `DECISIONS.md`).
+
+Each item is marked:
+- **(a) ALREADY COVERED** — by existing schema or roadmap (named).
+- **(b) GENUINELY NEW** — candidate for the tier assigned.
+- **(c) NEEDS DEDICATED DESIGN** — Tier 3.
+
+---
+
+## 1. Tiering & coverage assessment
+
+### TIER 1 — Foundational (changes schema; build first)
+
+| Item | Mark | Where covered / note |
+|---|---|---|
+| Chemical batch traceability | **(a) partial** | `item_batches` exists (batch_no, expiry_date, msds_ref, per-emirate `emirate_approvals`, mig 006). Traceability *skeleton* present; supplier + per-movement batch link + remaining-qty rollup still to add. |
+| Chemical **unit costing** | **(b) new** | `items` has no cost/purchase fields. Add purchase logging (qty, unit size, cost → cost-per-ml), recurring-purchase flag, active ingredient. **Phase 5 exit criterion — profit-per-contract depends on it.** |
+| Customer health / risk scoring | **(b) new** | No score fields. Tier 1 adds the stored score; the engine that computes it is Tier 2. |
+| The reliability principle | **(b) new — propose for Constitution** | Not yet a stated principle. See §3 Principles. "Cheap today, expensive later" — adopt before more modules exist to violate it. |
+| Emirate segregation | **(a) covered** | `customers.emirate` + `customer_branches.emirate` (mig 004). Filtering only, no new schema — dashboards/reports filter by it. |
+| Customer / **group** workspace structure | **(b) new** (workspace UI is Tier 2) | No `customer_groups`. Add group schema: a `customer_groups` table + `customers.group_id`, **retroactively assignable with history following**. The *workspace* (aggregated UI) is Tier 2. |
+| Legal / trade / **alias** name separation | **(a) partial** | `customers.legal_name` + `trade_name` exist (mig 004). **`alias_name` is new** (small Tier 1 add). |
+| `location_source` on branches | **(b) new** | `customer_branches.location` exists (PostGIS, mig 004) but no provenance. Add `location_source` (whatsapp_link / address_search / technician_captured / office_estimate) + unverified-pin flag surfaced in the field app. |
+
+### TIER 2 — Real modules (depend on Tier 1 schema)
+
+| Item | Mark | Where covered / substrate |
+|---|---|---|
+| Compliance & municipality report generator | **(b) new** | Substrate: `document_templates` + `generated_documents` (mig 003/005), `customer_branches.municipality_licence`. |
+| Pest trend analytics | **(b) new** | Substrate: `pest_types` (mig 002), `service_reports.snapshot`. Deterministic (Layer 2). |
+| Structural & hygiene registers | **(b) new** | Separate from pest treatment; append-only, status-tracked. |
+| Recommendation register | **(b) new** | Separate from service reports; status lifecycle. |
+| Customer timeline | **(b) new** | Substrate: `audit_log` (mig 001) + `outbox_events`. A projection, not new source data. |
+| KPI engine | **(b) new** | Must be nightly, deterministic (Layer 2). |
+| Drill-down dashboard | **(b) new** | Extends the thin K4 `/dashboard`. Enforces the traceability principle (§3). |
+| Service report & post-inspection redesign | **(a) partial + (b)** | Builds on `service_reports`, `job_checklists`, `checklist_templates`, `document_templates`, and the K4 on-device PDF. The redesign (trends, post-inspection form, registers link) is new. |
+| Email / notification architecture | **(b) new** | Substrate: `reminders` (mig 012). Add delivery logging (sent/delivered/bounced), templates, channels. |
+| Document expiry engine | **(a) partial + (b)** | `reminders` (types incl. compliance/vehicle/visa, `due_date`, mig 012) is the substrate. Engine + configurable intervals + a `documents` table with expiry are new. |
+| Estimation engine & category code engine | **(b) new** | Category code becomes the scheduling input (replaces hardcoded assumptions). |
+| Sales representative app | **(b) new** | Reference implementation: the K3 offline field-PWA pattern (Dexie + outbox + R2 sync). |
+| Customer registration wizard | **(b) new** | Guided multi-step; writes through the existing domain layer. |
+| Import/export engine | **(a) roadmap + (b)** | Bulk-import doctrine (`CONSTITUTION` Art. VII §5: staging → dry-run → approve) + planned **K5**. The engine/module + template spreadsheet are new. |
+
+### TIER 3 — Needs dedicated design session (flag only, do NOT sequence)
+
+| Item | Mark | Note |
+|---|---|---|
+| Permissions engine | **(c)** | RLS is the in-DB backstop (mig 009); app-layer RBAC (owner/ops/finance/HR/sales/warehouse/technician/auditor) needs its own design. |
+| Approval engine | **(c)** | Maker-checker is named in `CONSTITUTION` Art. VIII; the raise→review→temporary-permission→audit flow needs design. |
+| Business rules engine | **(c)** | Partial substrate: `settings` + `ASSUMED` + `field_definitions`. A general rules engine is a design problem. |
+| Workflow engine | **(c)** | Substrate: `checklist_templates` + job states. **Changes the technician-app spine, currently proven offline (Art. III P1) — any change re-proves offline behaviour.** |
+| Diagnostic agent | **(c)** | See also Explicitly Deferred (the production-log-access variant). |
+
+### EXPLICITLY DEFERRED — not scheduled
+
+| Item | Mark | Note |
+|---|---|---|
+| Diagnostic agent w/ production log access | **(c) deferred** | A security-design problem in its own right, separate from this platform. Do not fold into MOP. |
+| Public booking site w/ instant pricing | **deferred** | Aligns with `CONSTITUTION` Art. XI (no customer self-service booking in v1). |
+| Promo / discount pricing engine | **deferred** | Not scheduled. |
+| WPS payroll | **(a) already out of scope** | `CONSTITUTION` Art. XI: no full payroll/WPS — "we store, we export." |
+| Customer login portal | **(a) aligns with Constitution** | Art. VI: external parties (customers, auditors, inspectors) get scoped, expiring links — never logins. |
+
+### AI-related items — already governed
+The three-layer intelligence architecture, two report generators, and reliability
+modes (Doc 5) are consistent with `CONSTITUTION` Art. IV (AI last) and Art. XVII
+(RouteProvider seam). They are **(a) governed in principle**; the concrete Layer-2
+analytics + Layer-3 adapter are new build (Tier 2 / later phases).
+
+---
+
+## 2. Principles proposed for constitutional ratification
+
+The owner ratifies constitutional amendments (Art. XII); these are **proposed**, not in force.
+
+1. **Reliability — NEW.** *"No single module failure shall prevent core business
+   operations."* If email is down, technicians still work; if AI is down, schedules
+   still generate; if reports fail, services continue; if notifications fail, jobs
+   remain accessible; if analytics fails, invoicing and inventory continue. Every
+   module fails in isolation and recovers.
+2. **AI boundary — restates Art. IV, formalise wording.** *"AI shall never run the
+   business. AI shall only explain the business."*
+3. **Traceability — NEW.** *"Every dashboard metric must be traceable to raw
+   operational data, including the exact formula used."*
+
+---
+
+## 3. Open decisions (resolve before the relevant tier builds)
+
+- **Group invoicing/consolidation:** one invoice covering all sites, separate
+  invoices per site, or a statement summarising many? Same question for **schedule
+  notices** and **service reports** for a multi-site group. (Docs 3 & 5)
+- **12-hour reminder email:** does it earn its place? ~3,500 visits/yr × 2 emails =
+  ~7,000 emails/yr. (Doc 3)
+- **Team-leader contact number:** a company number routed to the current team leader
+  vs. a personal mobile — continuity + privacy. (Doc 3)
+- **Night-shift day assignment:** how a job crossing midnight maps to a schedule day,
+  attendance, route windows, and the "today's jobs" query. Schema-level. (Docs 1 & 2)
+
+---
+
+## 4. Filed requirement documents (source detail, verbatim)
+
+### DOCUMENT 1 — Operational Workflow Requirements
+
+**Sales representative app (offline-first).** Create customer, capture GPS
+automatically, reverse geocode address, record customer information, legal company
+name, trade licence number, TRN, contact person, mobile, email, business category,
+service category, notes, photos, estimated area, service frequency, attach documents,
+obtain digital signature. Sync automatically on reconnect. GPS stored permanently,
+never re-geocoded unless edited.
+
+**Customer registration wizard.** Guided workflow: Customer Information → Site
+Information → Documents → Agreement → Service Details → Scheduling → Review → Submit.
+
+**Document management.** Configurable required documents at registration: trade
+licence, municipality licence, VAT/TRN certificate, floor plan, site layout, previous
+reports, other attachments. Each document carries: type, issue date, expiry date,
+notes, uploaded by, version. Documents with expiry dates auto-register with the expiry
+engine.
+
+**Document expiry engine.** Reusable engine monitoring customer documents, employee
+documents, vehicle documents, insurance, certificates, municipality licences, trade
+licences, service agreements. Configurable reminder intervals (90/60/30/14/7 days,
+expiry day, after expiry). Actions: email customer, notify operations, notify sales,
+dashboard alert, future task generation. Configurable email templates.
+
+**Estimation engine.** Configurable questionnaire per business category (restaurant,
+warehouse, office, school, factory, villa, retail). Outputs: estimated area, estimated
+duration, technician count, chemical requirement, recommended frequency, estimated
+contract value, operational complexity, estimated service time.
+
+**Category code engine.** Every service receives an internal operational category code
+storing estimated duration, technician count, vehicle type, chemical profile,
+operational complexity, scheduling weight, priority. Future scheduling relies on this
+code rather than hardcoded assumptions.
+
+**Quotation workflow.** After estimation: generate quotation request, email draft,
+WhatsApp summary, route to quotation department. Architecture stays open for future
+automation.
+
+**Scheduling engine.** Contract approval auto-creates recurring schedules; admin may
+override. Scheduler considers technician availability, working hours, service duration,
+traffic, travel time, operational buffer, customer priority, vehicle, skills, frequency.
+
+**Depot configuration.** Admin configures home depot GPS, working hours, shift times,
+default start, default finish. Every optimised route begins and ends at depot.
+
+**Shifts — day and night.** The platform must support two shifts. Night shift work
+crosses midnight, which affects schedule day assignment, attendance, route optimisation
+windows, and the "today's jobs" query. This is schema-level, not cosmetic.
+
+**Technician assignment UI.** Assign technician, vehicle, team leader, assistants.
+Manual override, automatic assignment, drag and drop, reassignment. UI must be simple
+enough to require no training.
+
+**Technician daily workflow (pre-flight).** Before jobs become available: attendance,
+vehicle selection, equipment checklist, chemical checklist, PPE, fuel, odometer,
+vehicle condition, ready confirmation.
+
+**Team attendance.** Team leader selects today's employees. Unassigned employees
+auto-marked absent. Architecture open for future payroll integration.
+
+**Technician service workflow.** Receive jobs → navigate → arrival → pre-inspection →
+treatment → before photos → after photos → checklist → customer signature → payment
+collection → expense entry → completion → automatic sync.
+
+**Inventory engine.** Warehouse → vehicle issue → today's allocation → consumption →
+return → warehouse. Every movement logged.
+
+**Chemical usage engine.** Every service template stores expected chemical consumption.
+System calculates expected issue. Technician records actual usage. Variance reported.
+Inventory updated automatically.
+
+**Payment collection.** Cash, cheque, card, bank transfer. Receipt auto-generated
+containing company details, TRN, receipt number, invoice reference, customer,
+technician, payment method, amount. PDF downloadable, shareable via WhatsApp or email.
+
+**Expense engine.** Sources: company credit, petty cash, cash collection, personal
+reimbursement. Each expense requires category, amount, purpose, receipt, photo, GPS,
+time, vehicle. Accounting ledger updates automatically.
+
+**Fleet tracking.** Real-time technician GPS during working hours. Dashboard shows
+vehicle, current location, current job, ETA, delay, completed jobs, remaining jobs.
+
+**Time engine.** Every service template stores estimated duration. Scheduler considers
+travel, traffic, parking, service duration, buffer, return to depot. Schedules must
+avoid unrealistic workloads.
+
+**Cleaning and manpower deployment.** Recurring cleaning contracts: daily, weekly,
+monthly, deep cleaning, general cleaning. Deployment scheduling. Future support for
+technician pickup/drop-off optimisation between nearby teams.
+
+**Service templates.** No hardcoded workflows. Every service is template-driven.
+Template defines checklist, photos, chemicals, equipment, technicians, duration,
+reports, customer fields, documents. Supports future divisions without code duplication.
+
+**Master data management.** Every master dataset has an admin UI: customers, employees,
+vehicles, chemicals, equipment, business categories, service categories, questionnaires,
+pricing rules, expense types, payment methods, service templates. No manual database
+editing.
+
+**Import and export engine.** CSV/Excel import for customers, contracts, employees,
+inventory, vehicles, chemical stock, pricing. Export for reporting. Provide a template
+spreadsheet with exact sheet names, column headers, one example row per sheet, and a
+notes column explaining each field.
+
+**Notifications.** Configurable notification engine: contract signed, job assigned, job
+completed, payment received, low stock, document expiring, employee absent, vehicle due
+for maintenance. Channels: dashboard, email, future SMS/WhatsApp.
+
+**Storage provider abstraction.** Storage must be provider-independent. Initial provider
+Cloudflare R2. Future: Google Drive, S3, Azure Blob, local. No module depends directly
+on one provider. *(Note: K4 shipped a concrete R2 adapter in `apps/ops-console/lib/
+storage/r2.ts`; the formal provider interface is still to be introduced.)*
+
+**Documentation.** Each module includes business documentation, technical documentation,
+API documentation, database documentation, workflow documentation, deployment
+documentation, administrator guide, user guide, ADR, test cases, changelog.
+Documentation is part of Definition of Done.
+
+### DOCUMENT 2 — Schedule Conflict & Cancellation Handling
+
+**Mode 1 — future days (day-before planning). Recalculation is safe.**
+- Requesting a conflicting slot flags the conflict and shows what it would displace.
+- Office can force-insert; the day re-sequences.
+- Jobs with hard time windows are pinned and never moved.
+- Show before/after so the office can see what changed.
+
+**Mode 2 — today (live). NEVER silently recalculate.**
+- A technician is mid-route with a cached offline schedule.
+- Conflicts and cancellations raise a flag to the office console, not an automatic
+  reshuffle.
+- Office decides and pushes the change; if the technician is online their app refreshes,
+  if offline the office informs them directly.
+- Define exactly what a technician sees when their day changes mid-route.
+
+**Cancellation (the common case, not an edge case).**
+- Customer absent, site inaccessible, gate locked.
+- Technician marks job failed with reason; slot frees up.
+- If online, offer to pull the next job forward.
+- If offline, notify office to decide.
+- Cancelled job returns to the scheduling pool for rebooking.
+
+**Intelligent job insertion (Phase 4 — depends on scheduling engine, route optimisation,
+category codes).**
+- Recommend available slots based on team capacity, job duration, travel time from
+  adjacent jobs, working hours, depot return.
+- Allow custom date/time override with recalculation.
+- Design must handle: pinned time windows, jobs already started or en route, days that
+  genuinely cannot absorb the job, and reconciliation with technicians holding cached
+  offline routes.
+
+**Governing principle (design rule):** The system flags, a human decides, the correction
+is one action in the admin console, and the system returns to normal operation
+automatically. Every exception must have an in-system fix. No workaround should require a
+spreadsheet, a phone call as the only record, or leave the system in a permanently manual
+state.
+
+### DOCUMENT 3 — Customer Communication & Email Architecture
+
+**Schedule notifications.**
+- Automatic email 24 hours before scheduled service.
+- Automatic email 12 hours before scheduled service (evaluate whether this earns its
+  place — 3,500 visits/year at two emails each is 7,000 emails).
+- Approaching/ETA notification, fired when the technician completes the previous job —
+  depends on technician being online.
+- Night shift services require appropriately worded timing notices.
+- Templates configurable with placeholders: customer name, on-site contact/manager name,
+  service details, team details.
+
+**Notification only — no self-service.**
+- No reschedule links, no cancellation links, no booking links in notifications.
+- To change or cancel, the customer calls the assigned team leader.
+- Team leader contact number surfaces from the employee record for the team assigned to
+  that job.
+- Consider a company number routed to the current team leader rather than a personal
+  mobile — continuity when staff change, and it keeps personal numbers private.
+
+**Annual schedule document.**
+- On contract confirmation, generate a per-customer schedule document listing all visits
+  for the year.
+- Include a clause: auto-generated from our system, subject to change, approximately 80%
+  on-time adherence, changes will be communicated.
+- Any subsequent schedule change must auto-trigger a notification email to the customer
+  AND an internal notification instructing staff to call and inform them.
+
+**Access requirements in notices.** Include site-specific preparation instructions
+("ensure kitchen is accessible and food surfaces cleared") to reduce failed visits.
+
+**Post-service.**
+- Service report auto-emailed on sync, PDF attached.
+- Certificate generated on renewal for client audit purposes.
+
+**Delivery integrity.**
+- Log every email: sent, delivered, bounced.
+- Bounce raises a data-quality flag on the customer record — never fail silently.
+- Office must be able to manually re-send any notification.
+- Escalation rule: three no-access visits at the same site raises a commercial flag, not
+  just an operational one.
+
+**Consolidation question (needs decision).** For a customer group with many sites: does
+each site receive its own notice, or does the group contact receive one consolidated
+schedule? Same question for service reports and invoices — one per site, one consolidated,
+or a statement summarising many.
+
+### DOCUMENT 4 — Service Report & Post-Inspection Design
+
+**Report structure.**
+- Half 1: customer identity — legal name, trade name, alias, address, contract reference,
+  visit N of 24.
+- Half 2: today's service — chemicals used, areas treated, findings.
+- Trends: bar graph over last 3 services — infestation level, hygiene score, structural
+  score. Pure arithmetic, no AI.
+- Most frequently flagged issue across recent visits.
+- Recommendations: template sentences assembled from structured input.
+- Keep it short but comprehensive-looking. Not confusing.
+
+**Post-inspection form (technician, offline, button-driven).**
+1. Select area from a configurable list per business category (restaurant: kitchen,
+   pantry, dining, storage, sink, cooking area, exhaust hood, chimney).
+2. Select issue type: hygiene / structural / other (other requires free text).
+3. Photo optional per issue.
+4. Scores: hygiene 1-5, structural 1-5, infestation none/low/moderate/high — buttons,
+   not sliders.
+
+Area lists and issue types are reference data, editable in admin. A tenth-grade student
+must be able to complete the form.
+
+**Sentence generation.** Templates, not AI. "A hygiene issue was identified in the
+{area}." Assembled deterministically. 3,000 reports per year must cost zero inference.
+
+### DOCUMENT 5 — Operational Intelligence & Enterprise Features
+
+**Municipality and compliance module.** First-class module generating: municipality
+inspection report, monthly chemical utilisation report, customer service history, pest
+trend analysis, non-conformance report, corrective action report (CAPA), preventive
+action report, complaint register, chemical inventory report, technician activity report,
+compliance summary. All reports: branded per division, engineer signature, authorised
+signatory, company stamp, PDF export, version history.
+
+**Municipality inspection pack.** One click on a customer produces a single PDF
+containing contract, trade licence, municipality licence, service reports, chemical usage,
+technician history, recommendations, photos, complaint history, trend charts.
+
+**Customer health and risk engine.** Continuously updated score per customer (e.g.
+92/100, low risk) derived from pest activity, complaint frequency, missed visits, hygiene
+observations, structural issues, open recommendations, document compliance, contract
+compliance. Dashboard highlights customers requiring attention.
+
+**Pest trend analytics.** Track cockroach, rodent, fly, mosquito, bed bug, ant, termite,
+other species over time. Graphs and historical trends per customer, group, emirate, and
+company. Demonstrates service effectiveness.
+
+**Chemical traceability.** Every chemical tracks supplier, batch number, expiry, vehicle,
+technician, customer, service, date, remaining quantity. Full batch traceability — answer
+"where was batch XYZ used" in seconds.
+
+**Chemical unit costing (critical for profitability).** Purchase logged with quantity,
+unit size, and cost — e.g. 10L bottle for AED 100 yields cost per ml. Record intended
+service types, a recurring-purchase flag, and active ingredient for compliance. Without
+this, profit-per-contract is unknowable, and that is the Phase 5 exit criterion.
+
+**Structural and hygiene registers.** Separate from pest treatment. Structural: pipe
+gaps, broken traps, drain damage, door gaps, ceiling holes, wall cracks, grease build-up,
+standing water, food storage. Hygiene: food uncovered, overflowing bins, standing water,
+poor sanitation, drain blockage, bird nesting. Each entry: photos, status
+(open/closed/ignored/customer declined), responsible party, follow-up history, timestamped.
+
+**Recommendation register.** Maintained separately from service reports. Tracks
+recommendation, date, technician, status (open → completed → ignored → customer declined),
+completion date, customer acknowledgement. Proves "we informed the customer."
+
+**Customer timeline.** Chronological record per customer, forever: registration, survey,
+contract, visits, complaints, payments, recommendations, reports, renewals, municipality
+inspections, documents, photos, invoices, receipts.
+
+**Emirate segregation.** Customers belong to an emirate: Sharjah, Dubai, Ajman, Abu
+Dhabi, Ras Al Khaimah, Fujairah, Umm Al Quwain. Dashboards, reports, KPIs and analytics
+filter by emirate. No duplicated systems — filtering only.
+
+**Customer workspace.** Replace simple customer records with a full workspace: overview,
+contracts, quotations, schedules, service reports, photos, documents, payments,
+receivables, invoices, receipts, municipality reports, chemical usage, complaints,
+recommendations, timeline, analytics.
+
+**Group workspace.** Customer groups are organisational, not legal entities. Customers
+remain independent entities; the group sits above them and must be retroactively
+assignable to existing customers with history following. Supports group statements, group
+receivables, group municipality reports, group analytics, group service reports, group
+KPIs, a group-level contact, and group-level negotiated pricing. Open decision: one
+invoice covering all sites, separate invoices per site, or a statement summarising many.
+
+**Operations intelligence dashboards.**
+- Owner: today's revenue, collections, operational profit, receivables, payables, staff
+  attendance, jobs completed, fleet status, inventory consumption, customer health,
+  contracts due, municipality alerts, KPIs, pending approvals.
+- Operations Manager: scheduling, technician assignment, fleet, inventory, attendance,
+  complaints, payments, reports, route monitoring, expense approvals.
+- Technician App: attendance, pre-flight checklist, assigned jobs, navigation, service
+  execution, photos, signatures, payment collection, expense entry, fuel entry, sync
+  status.
+
+**Drill-down requirement.** Every dashboard metric must be clickable down to raw
+operational data. Today's collections → receipts → customer → technician → payment method
+→ invoice → timeline. No magic numbers: tapping a figure must reveal the exact formula and
+inputs behind it.
+
+**Daily operations briefing.** Prepared every morning from deterministic calculations:
+jobs scheduled today, routes needing extra travel time, documents expiring, stock below
+reorder level, team performance variance, customers with repeat complaints, contracts due
+for renewal. If AI is enabled it only rewrites this into natural language; if unavailable,
+the same facts display as bullet points.
+
+**Operations command center.** A layer above all modules answering: which jobs are at
+risk today, which technicians are overloaded, which customers require attention, which
+documents expire this week, which vehicles need maintenance, which chemicals are running
+low, which contracts are due for renewal, which customers are becoming unprofitable, what
+were yesterday's operational exceptions.
+
+**Inventory intelligence.** Current stock, vehicle allocation, today's issue, today's
+return, forecast consumption, low stock alerts, purchase recommendations, upcoming
+schedule requirements.
+
+**Finance workspace.** Receivables, payables, invoices, receipts, ledger, bank
+transactions, credit purchases, petty cash, expense claims, profitability reports, cash
+flow reports.
+
+**KPI engine.** Nightly deterministic calculation of: jobs completed, jobs delayed,
+on-time completion rate, average service duration, revenue collected, outstanding
+receivables, gross margin by customer and by service type, chemical consumption, inventory
+variance, low stock, fuel cost per kilometre, cost per service visit, vehicle utilisation,
+conversion rate, average contract value, renewals due, lost quotations, technician
+utilisation, complaint rate, renewal rate.
+
+**Approval engine (Tier 3).** Sensitive operations never edit records directly. Flow:
+raise request → owner/admin review → approve/reject → temporary permission → audit log.
+Applies to invoice edits, receipt edits, customer changes, contract changes, inventory
+corrections, financial adjustments.
+
+**Permission engine (Tier 3).** Configurable role-based permissions: owner, operations
+manager, finance, HR, sales, warehouse, technician, read-only auditor. No hardcoded
+permissions.
+
+**Business rules engine (Tier 3).** Configurable from the admin console without code
+changes: expense approval limits, mandatory customer documents, invoice generation rules,
+payment terms, contract renewal timing, low stock thresholds, chemical issue formulas,
+scheduling rules, customer category rules, technician assignment rules, municipality-
+specific compliance rules.
+
+**Workflow engine (Tier 3).** All operational workflows template-driven across pest
+control, cleaning, facilities management and future divisions. Workflows define steps,
+checklists, required photos, required documents, required signatures, reports, chemical
+calculations, completion criteria. **Note: this changes how jobs move through states — the
+technician app's spine, currently proven working offline. Any change requires re-proving
+offline behaviour.**
+
+**Audit trail.** Every important action immutable: who changed what, old value, new value,
+user, time, IP, reason. *(Substrate: `audit_log`, mig 001.)*
+
+**Three-layer intelligence architecture.**
+- Layer 1 — Operational Engine: 100% deterministic. Which jobs are due, who is assigned,
+  chemical issue quantities, actual usage, cash collected, operational profit, unpaid
+  invoices. Same inputs always produce same outputs.
+- Layer 2 — Analytics Engine: mathematical formulas only. Revenue, collections, fuel,
+  expenses, profit, technician productivity, vehicle utilisation, inventory consumption,
+  renewal rate, complaint rate, customer profitability.
+- Layer 3 — Intelligence Layer: optional AI. Receives a structured object only — never
+  queries the database directly. Explains KPIs, summarises reports, produces municipality
+  narratives and management summaries, highlights trends, suggests improvements. If
+  unavailable, the system operates normally.
+
+**Two report generators.** Generator 1 (default): pure code, always deterministic, 100%
+reliable. Generator 2 (on request): AI makes the same facts read better. Prompt constraint
+— do not invent facts, use only supplied data. AI makes it prettier, never different.
+
+**Reliability modes.** Critical (must fail safely): scheduling, customer database,
+technician sync, inventory, payments. Important (can retry): reports, analytics,
+notifications. Optional (can be unavailable): AI insights, trend summaries, forecasts.
+
+**Reliability principle (adopt now):** "No single module failure shall prevent core
+business operations." If email is down, technicians still work. If AI is down, schedules
+still generate. If report generation fails, services continue. If notifications fail, jobs
+remain accessible. If analytics fails, invoicing and inventory continue. Every module must
+fail in isolation and recover.
+
+**Constitutional principle (propose for ratification):** "AI shall never run the business.
+AI shall only explain the business."
+
+**Traceability principle (propose for ratification):** "Every dashboard metric must be
+traceable to raw operational data, including the exact formula used."
+
+### DOCUMENT 6 — Customer Data Model Additions
+
+**Name fields.** `customers` requires `legal_name`, `trade_name` and `alias_name` as
+separate fields. Example: trade name "McDonald's Branch 134", legal name "Emirates
+Hospitality Company Branch 134". Both are needed — trade name for recognition, legal name
+for tax invoices. *(legal_name + trade_name already exist, mig 004; alias_name is new.)*
+
+**Location source.** `branches` requires `location_source`: whatsapp_link / address_search
+/ technician_captured / office_estimate. Rationale: a pin from a customer's shared WhatsApp
+location is reliable; a pin from an address search is a guess; a pin captured at the door
+is truth. If all three look identical in the database, a technician will eventually drive
+to a geocoding error. Unverified pins must be flagged in the technician app so they confirm
+on arrival. Support pasting a Google Maps link to extract coordinates — this matches how
+customers already share locations. *(The K3 ad-hoc job screen already parses pasted Google
+Maps links.)*
+
+**Access notes.** Permanent per-branch access knowledge: gate codes, which lift, security
+desk, parking, who to ask for. Distinct from per-job communication between office and
+technician, which is a separate feature. *(Substrate: `customer_branches.access_notes`,
+mig 004.)*
+
+---
+
+*End of filing. Nothing above is authorised for build until a sprint in `EXECUTION.md`
+picks it up.*
