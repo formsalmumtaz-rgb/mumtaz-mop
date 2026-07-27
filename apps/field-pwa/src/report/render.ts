@@ -509,10 +509,14 @@ class ReportDoc {
 
   private assumedFlag(text: string) {
     const d = this.doc;
+    // small gold dot marker (drawn, not a glyph — jsPDF's core fonts can't render
+    // symbols like the info glyph)
+    d.setFillColor(GOLD);
+    d.circle(M + 2, this.y - 2, 1.6, "F");
     d.setFont("helvetica", "italic");
     d.setFontSize(6.5);
     d.setTextColor(GOLD);
-    d.text(`ⓘ ${text}`, M, this.y);
+    d.text(`ASSUMED — ${text}`, M + 7, this.y);
     this.y += 12;
   }
 
@@ -577,11 +581,21 @@ class ReportDoc {
       sy += 26;
     }
     this.y = Math.max(this.y + chartH, sy) + 8;
-    // legend
+    // legend — colored swatches drawn as filled dots (no glyphs), then labels
     d.setFont("helvetica", "normal");
     d.setFontSize(6.5);
     d.setTextColor(LABEL);
-    d.text("● Infestation   ● Hygiene   ● Structural", M, this.y);
+    let lx = M;
+    ([
+      ["Infestation", "#A31E22"],
+      ["Hygiene", "#2E7D32"],
+      ["Structural", GOLD],
+    ] as const).forEach(([label, color]) => {
+      d.setFillColor(color);
+      d.circle(lx + 2, this.y - 2, 2, "F");
+      d.text(label, lx + 7, this.y);
+      lx += 7 + d.getTextWidth(label) + 14;
+    });
     this.y += 12;
   }
 
