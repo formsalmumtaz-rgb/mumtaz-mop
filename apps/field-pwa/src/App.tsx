@@ -4,7 +4,10 @@ import imageCompression from "browser-image-compression";
 import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, uuid, type LocalJob } from "./db";
 import { calcDose } from "./dose";
 
-const SYNC_BASE = (import.meta.env.VITE_SYNC_BASE as string) || "http://localhost:3100";
+// Default to same-origin ("") so API calls go to /api/... on whatever host is serving
+// the app (localhost, or a tunnel) and the dev/preview proxy forwards them to the local
+// ops-console. Set VITE_SYNC_BASE only to point at an explicit absolute API host.
+const SYNC_BASE = (import.meta.env.VITE_SYNC_BASE as string | undefined) ?? "";
 const CHECKLIST = ["Site accessible", "Treatment applied", "Bait stations checked", "Area cleaned", "Customer briefed"];
 
 function useOnline() {

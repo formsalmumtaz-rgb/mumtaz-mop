@@ -30,6 +30,18 @@ export default defineConfig({
       devOptions: { enabled: true },
     }),
   ],
-  server: { port: 3200 },
-  preview: { port: 3200 },
+  // Same-origin API: the app calls /api/... on its own origin, and the dev/preview
+  // server proxies that to the LOCAL ops-console (never exposed to the internet).
+  // When tunnelling the field app, the admin console stays on localhost only.
+  server: {
+    port: 3200,
+    proxy: { "/api": { target: "http://localhost:3100", changeOrigin: true } },
+    // allow the ephemeral cloudflared/ngrok hostname to reach the dev server
+    allowedHosts: true,
+  },
+  preview: {
+    port: 3200,
+    proxy: { "/api": { target: "http://localhost:3100", changeOrigin: true } },
+    allowedHosts: true,
+  },
 });
