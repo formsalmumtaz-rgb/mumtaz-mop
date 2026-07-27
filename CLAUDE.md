@@ -62,6 +62,16 @@ Any claim that a task is complete must include, in the same message:
 - [ ] Arabic/RTL correct where customer-facing
 - [ ] Error states designed, not just the happy path
 - [ ] Proof-of-Work supplied
+- [ ] Architecture Baseline still holds (see below)
+
+## Architecture Baseline — standing rule (Baseline v1, frozen 25 Jul 2026)
+
+`ARCHITECTURE-BASELINE.md` is the frozen reference point after K1–K4. Every feature, **Tier 1 onward**, obeys this:
+
+1. **Before writing code:** state which modules are affected and why, and give a **regression test plan** — which baseline evidence (worker tests, `rls_isolation.sql`, `invariants.sql`, `fingerprint.sql` diff, `dry-run.ts`) and which invariants the change touches, and how each is re-proven.
+2. **Never weaken or bypass:** offline sync, scheduling integrity, inventory accuracy, payment recording, audit logging — or any structural invariant: exactly-once event processing · `debits=credits` by constraint · append-only on `stock_movements`/`journal_lines`/`service_reports`/`audit_log`/`generated_documents` · RLS tenant isolation tested with a non-privileged role · version immutability on reference data · frozen snapshots on transaction records · byte-identical migration rebuild from empty.
+3. **Relaxing an invariant is a constitutional amendment** (Art. XII) needing the owner's explicit approval — never a silent implementation decision. Stop and ask.
+4. Some things can only be verified on a **real device** (airplane-mode completion, PDF rendering, map tiles, photo capture+upload) — see the manual verification checklist in `ARCHITECTURE-BASELINE.md`; a release is not accepted until the owner ticks those.
 
 ## Working style
 
