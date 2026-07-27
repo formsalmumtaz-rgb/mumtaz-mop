@@ -36,3 +36,7 @@ Thumbs.db
 
 # Next.js generated
 next-env.d.ts
+
+# PWA dev service-worker output
+dev-dist/
+**/dev-dist/
