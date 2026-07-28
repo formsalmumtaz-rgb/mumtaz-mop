@@ -4,7 +4,7 @@
     {
       "name": "ops-console",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@mop/ops-console", "dev"],
+      "runtimeArgs": ["--config.verify-deps-before-run=false", "--filter", "@mop/ops-console", "dev"],
       "port": 3100
     },
     {

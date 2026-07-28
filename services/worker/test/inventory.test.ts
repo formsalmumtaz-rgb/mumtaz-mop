@@ -53,7 +53,7 @@ async function emitCompleted(jobId: string): Promise<void> {
     await c.query("commit");
   } finally { c.release(); }
 }
-async function receive(itemId: string, vanId: string, packSize: number, totalCost: number, expiryDays: number): Promise<string> {
+async function receive(itemId: string, vanId: string, packSize: number, totalCost: number, expiryDays: number) {
   const c = await pool.connect();
   try {
     await c.query("begin");
@@ -64,7 +64,7 @@ async function receive(itemId: string, vanId: string, packSize: number, totalCos
       batchNo: "B-" + randomUUID().slice(0, 6),
     });
     await c.query("commit");
-    return r.batchId;
+    return r;
   } catch (e) { await c.query("rollback"); throw e; }
   finally { c.release(); }
 }
@@ -120,16 +120,14 @@ after(async () => {
 test("recordPurchase posts a balanced receipt entry and freezes batch unit cost", async () => {
   const itemId = await freshItem();
   const { vanId } = await freshTechAndVan();
-  const batchId = await receive(itemId, vanId, 10, 100, 180); // 10 L @ AED 100 -> 0.01/ml
+  const r = await receive(itemId, vanId, 10, 100, 180); // 10 L @ AED 100 -> 0.01/ml
 
-  const b = (await pool.query(`select unit_cost::float8 uc from item_batches where id=$1`, [batchId])).rows[0];
+  const b = (await pool.query(`select unit_cost::float8 uc from item_batches where id=$1`, [r.batchId])).rows[0];
   assert.equal(b.uc, 0.01, "unit cost frozen at AED 0.01 per ml (100 / 10000 ml)");
 
   const je = (await pool.query(
-    `select je.id, sum(jl.debit)::float8 dr, sum(jl.credit)::float8 cr, count(*)::int lines
-       from journal_entries je join journal_lines jl on jl.journal_entry_id=je.id
-      where je.tenant_id=$1 and je.source_type='purchase'
-      group by je.id order by je.id desc limit 1`, [tenantId],
+    `select sum(jl.debit)::float8 dr, sum(jl.credit)::float8 cr, count(*)::int lines
+       from journal_lines jl where jl.journal_entry_id = $1`, [r.journalEntryId],
   )).rows[0];
   assert.equal(je.lines, 2, "receipt is one entry of two lines");
   assert.equal(je.dr, 100, "Dr Inventory 100");
@@ -139,8 +137,8 @@ test("recordPurchase posts a balanced receipt entry and freezes batch unit cost"
 test("job.completed consumes from the van under FEFO and posts ONE valued entry; replay is a no-op", async () => {
   const itemId = await freshItem();
   const { techId, vanId } = await freshTechAndVan();
-  await receive(itemId, vanId, 10, 100, 180);          // B1: 0.01/ml, expiry +180
-  const b2 = await receive(itemId, vanId, 10, 200, 30); // B2: 0.02/ml, expiry +30 (nearer -> FEFO)
+  await receive(itemId, vanId, 10, 100, 180);                    // B1: 0.01/ml, expiry +180
+  const b2 = (await receive(itemId, vanId, 10, 200, 30)).batchId; // B2: 0.02/ml, expiry +30 (nearer -> FEFO)
 
   const jobId = await makeJob(itemId, techId);
   await emitCompleted(jobId);
