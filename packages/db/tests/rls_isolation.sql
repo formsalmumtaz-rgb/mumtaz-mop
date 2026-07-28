@@ -7,7 +7,7 @@
 
 do $$
 declare
-  t_a uuid; t_b uuid; c_a uuid; c_b uuid;
+  t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -41,8 +41,25 @@ begin
   perform 1 from customers where id = c_a;
   if found then raise exception 'RLS FAIL: tenant B can see tenant A row'; end if;
 
+  -- (5) customer_groups (mig 014) is tenant-isolated too. Prove with the same
+  -- non-privileged role: a group created under A is invisible under B, and a
+  -- cross-tenant group insert is blocked by WITH CHECK.
+  reset role;
+  insert into customer_groups(tenant_id, name) values (t_a, 'A-Group') returning id into g_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from customer_groups where id = g_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A group'; end if;
+  blocked := false;
+  begin
+    insert into customer_groups(tenant_id, name) values (t_a, 'cross-tenant group');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant group insert allowed'; end if;
+
   reset role;                                      -- back to privileged for cleanup
+  delete from customer_groups where id = g_a;
   delete from customers where id in (c_a, c_b);
   delete from tenants where id in (t_a, t_b);
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 4 checks)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 5 checks incl. customer_groups)' as result;
