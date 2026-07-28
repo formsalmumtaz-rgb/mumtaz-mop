@@ -8,6 +8,7 @@
 do $$
 declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
+  s_a uuid; it_a uuid; ib_a uuid; ip_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -57,9 +58,35 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant group insert allowed'; end if;
 
+  -- (6) mig 016 new tenant-scoped tables (suppliers, item_purchases) are isolated
+  -- too. Prove with the same non-privileged role: A's rows are invisible under B,
+  -- and a cross-tenant supplier insert is blocked by WITH CHECK.
+  reset role;
+  insert into suppliers(tenant_id, name) values (t_a, 'A-Supplier') returning id into s_a;
+  insert into items(tenant_id, name, item_type) values (t_a, 'A-Chem', 'chemical') returning id into it_a;
+  insert into item_batches(tenant_id, item_id, batch_no, unit_cost) values (t_a, it_a, 'A-BATCH', 0.01) returning id into ib_a;
+  insert into item_purchases(tenant_id, item_id, batch_id, pack_quantity, pack_size, total_base_quantity, total_cost)
+    values (t_a, it_a, ib_a, 1, 10, 10000, 100) returning id into ip_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from suppliers where id = s_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A supplier'; end if;
+  perform 1 from item_purchases where id = ip_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A purchase'; end if;
+  blocked := false;
+  begin
+    insert into suppliers(tenant_id, name) values (t_a, 'cross-tenant supplier');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant supplier insert allowed'; end if;
+
   reset role;                                      -- back to privileged for cleanup
+  delete from item_purchases where id = ip_a;
+  delete from item_batches where id = ib_a;
+  delete from items where id = it_a;
+  delete from suppliers where id = s_a;
   delete from customer_groups where id = g_a;
   delete from customers where id in (c_a, c_b);
   delete from tenants where id in (t_a, t_b);
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 5 checks incl. customer_groups)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 6 checks incl. customer_groups + mig-016 inventory)' as result;

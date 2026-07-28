@@ -11,6 +11,7 @@ declare
   v_audit bigint; v_item uuid; v_sm uuid;
   v_acc_dr uuid; v_acc_cr uuid; v_entry uuid;
   v_recipe uuid; v_rv uuid;
+  v_batch uuid; v_purchase uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -59,6 +60,21 @@ begin
     update treatment_recipe_versions set effective_to = current_date where id = v_rv;   -- closing is allowed
   exception when others then raise exception 'FAIL: could not close a recipe version: %', sqlerrm;
   end;
+
+  -- (5) append-only: item_purchases rejects UPDATE and DELETE (mig 016)
+  insert into item_batches(tenant_id, item_id, batch_no, unit_cost)
+    values (v_tenant, v_item, 'INV-TEST', 0.01) returning id into v_batch;
+  insert into item_purchases(tenant_id, service_line_id, item_id, batch_id,
+      pack_quantity, pack_size, total_base_quantity, total_cost)
+    values (v_tenant, v_sl, v_item, v_batch, 1, 10, 10000, 100) returning id into v_purchase;
+  ok := false; begin update item_purchases set total_cost = 999 where id = v_purchase; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: item_purchases was UPDATE-able'; end if;
+  ok := false; begin delete from item_purchases where id = v_purchase; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: item_purchases was DELETE-able'; end if;
+
+  -- (6) frozen valuation basis: item_batches.unit_cost is immutable once set (mig 016)
+  ok := false; begin update item_batches set unit_cost = 0.02 where id = v_batch; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: item_batches.unit_cost was mutable after being set'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;

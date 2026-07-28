@@ -18,6 +18,7 @@ export const EVENT_TYPES = [
   "job.failed",
   "stock.consumed",
   "stock.transferred",
+  "purchase.recorded",
   "expense.recorded",
   "cash.collected",
   "cash.deposited",
@@ -78,6 +79,12 @@ export const payloadSchemas = {
     item_id: z.string().uuid(),
     quantity: z.number(),
     unit_id: z.string().uuid().nullish(),
+  }),
+  "purchase.recorded": z.object({
+    purchase_id: z.string().uuid(),
+    item_id: z.string().uuid(),
+    total_cost: z.number().nullish(),
+    currency: z.string().nullish(),
   }),
   "invoice.issued": z.object({
     invoice_id: z.string().uuid(),
