@@ -12,6 +12,7 @@ declare
   v_acc_dr uuid; v_acc_cr uuid; v_entry uuid;
   v_recipe uuid; v_rv uuid;
   v_batch uuid; v_purchase uuid;
+  v_tech uuid; v_cost uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -75,6 +76,20 @@ begin
   -- (6) frozen valuation basis: item_batches.unit_cost is immutable once set (mig 016)
   ok := false; begin update item_batches set unit_cost = 0.02 where id = v_batch; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: item_batches.unit_cost was mutable after being set'; end if;
+
+  -- (7) version immutability: employee_cost_components value columns cannot change;
+  -- delete is blocked; only effective_to may close (mig 019)
+  select id into v_tech from technicians where tenant_id = v_tenant limit 1;
+  insert into employee_cost_components(tenant_id, service_line_id, technician_id, version_no, basic_salary)
+    values (v_tenant, v_sl, v_tech, 1, 1600) returning id into v_cost;
+  ok := false; begin update employee_cost_components set basic_salary = 9999 where id = v_cost; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: employee_cost_components value column was mutable'; end if;
+  ok := false; begin delete from employee_cost_components where id = v_cost; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: employee_cost_components was DELETE-able'; end if;
+  begin
+    update employee_cost_components set effective_to = current_date where id = v_cost;   -- closing allowed
+  exception when others then raise exception 'FAIL: could not close an employee_cost_components version: %', sqlerrm;
+  end;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;
