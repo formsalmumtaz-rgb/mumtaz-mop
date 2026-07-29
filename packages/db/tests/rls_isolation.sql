@@ -11,6 +11,7 @@ do $$
 declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
+  cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -96,8 +97,27 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant cost-component insert allowed'; end if;
 
+  -- (8) cost capture tables (mig 021): job_labour_entries + job_distance isolated
+  reset role;
+  insert into customers(tenant_id, service_line_id, trade_name) values (t_a, sl_a, 'A-Cust2') returning id into cust_a;
+  insert into jobs(tenant_id, service_line_id, customer_id, status) values (t_a, sl_a, cust_a, 'completed') returning id into job_a;
+  insert into job_labour_entries(tenant_id, service_line_id, job_id, technician_id, minutes) values (t_a, sl_a, job_a, tech_a, 60) returning id into jle_a;
+  insert into job_distance(tenant_id, service_line_id, job_id, distance_km, source) values (t_a, sl_a, job_a, 12.5, 'manual') returning id into jd_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from job_labour_entries where id = jle_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A labour entry'; end if;
+  perform 1 from job_distance where id = jd_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A distance'; end if;
+  blocked := false;
+  begin
+    insert into job_distance(tenant_id, service_line_id, job_id, distance_km, source) values (t_a, sl_a, job_a, 1, 'manual');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant distance insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 7 checks — customers, groups, inventory, employee cost)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 8 checks — customers, groups, inventory, employee cost, cost capture)' as result;
 rollback;
