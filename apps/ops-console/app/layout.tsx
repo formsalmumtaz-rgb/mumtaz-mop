@@ -12,6 +12,7 @@ const nav = [
   { href: "/customers", label: "Customers" },
   { href: "/chemicals", label: "Chemicals" },
   { href: "/purchases", label: "Purchases" },
+  { href: "/cost-config", label: "Cost setup" },
   { href: "/jobs/new", label: "New job" },
   { href: "/technicians", label: "Technicians" },
   { href: "/teams", label: "Teams" },
