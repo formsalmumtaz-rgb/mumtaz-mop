@@ -13,6 +13,7 @@ const nav = [
   { href: "/chemicals", label: "Chemicals" },
   { href: "/purchases", label: "Purchases" },
   { href: "/cost-config", label: "Cost setup" },
+  { href: "/profitability", label: "Profitability" },
   { href: "/jobs/new", label: "New job" },
   { href: "/technicians", label: "Technicians" },
   { href: "/teams", label: "Teams" },
