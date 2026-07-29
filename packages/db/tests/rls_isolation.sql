@@ -11,7 +11,7 @@ do $$
 declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
-  cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid;
+  cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -134,8 +134,22 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant vehicle insert allowed'; end if;
 
+  -- (10) job_costs (mig 023) isolated
+  reset role;
+  insert into job_costs(tenant_id, service_line_id, job_id, cost_confidence) values (t_a, sl_a, job_a, 'estimated') returning id into jc_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from job_costs where id = jc_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A job_cost'; end if;
+  blocked := false;
+  begin
+    insert into job_costs(tenant_id, service_line_id, job_id, cost_confidence) values (t_a, sl_a, job_a, 'actual');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant job_cost insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 9 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 10 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs)' as result;
 rollback;

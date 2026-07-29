@@ -14,6 +14,7 @@ declare
   v_batch uuid; v_purchase uuid;
   v_tech uuid; v_cost uuid;
   v_veh uuid; v_fuel uuid;
+  v_cust uuid; v_job uuid; v_jc uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -100,6 +101,15 @@ begin
   if not ok then raise exception 'FAIL: vehicle_fuel_purchases was UPDATE-able'; end if;
   ok := false; begin delete from vehicle_fuel_purchases where id = v_fuel; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: vehicle_fuel_purchases was DELETE-able'; end if;
+
+  -- (9) append-only: job_costs rejects UPDATE and DELETE (mig 023 — frozen cost snapshot)
+  select id into v_cust from customers where tenant_id = v_tenant limit 1;
+  insert into jobs(tenant_id, service_line_id, customer_id, status) values (v_tenant, v_sl, v_cust, 'completed') returning id into v_job;
+  insert into job_costs(tenant_id, service_line_id, job_id, labour_cost, cost_confidence) values (v_tenant, v_sl, v_job, 50, 'estimated') returning id into v_jc;
+  ok := false; begin update job_costs set labour_cost = 999 where id = v_jc; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: job_costs was UPDATE-able'; end if;
+  ok := false; begin delete from job_costs where id = v_jc; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: job_costs was DELETE-able'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;
