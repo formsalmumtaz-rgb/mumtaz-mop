@@ -13,6 +13,7 @@ declare
   v_recipe uuid; v_rv uuid;
   v_batch uuid; v_purchase uuid;
   v_tech uuid; v_cost uuid;
+  v_veh uuid; v_fuel uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -90,6 +91,15 @@ begin
     update employee_cost_components set effective_to = current_date where id = v_cost;   -- closing allowed
   exception when others then raise exception 'FAIL: could not close an employee_cost_components version: %', sqlerrm;
   end;
+
+  -- (8) append-only: vehicle_fuel_purchases rejects UPDATE and DELETE (mig 022)
+  insert into vehicles(tenant_id, service_line_id, code, name) values (v_tenant, v_sl, 'INV-VAN', 'Inv Van') returning id into v_veh;
+  insert into vehicle_fuel_purchases(tenant_id, service_line_id, vehicle_id, litres, amount, odometer_km)
+    values (v_tenant, v_sl, v_veh, 40, 200, 10000) returning id into v_fuel;
+  ok := false; begin update vehicle_fuel_purchases set amount = 999 where id = v_fuel; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: vehicle_fuel_purchases was UPDATE-able'; end if;
+  ok := false; begin delete from vehicle_fuel_purchases where id = v_fuel; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: vehicle_fuel_purchases was DELETE-able'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;

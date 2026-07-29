@@ -11,7 +11,7 @@ do $$
 declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
-  cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid;
+  cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -116,8 +116,26 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant distance insert allowed'; end if;
 
+  -- (9) vehicles + vehicle_fuel_purchases (mig 022) isolated
+  reset role;
+  insert into vehicles(tenant_id, service_line_id, code, name) values (t_a, sl_a, 'VAN-A', 'A Van') returning id into veh_a;
+  insert into vehicle_fuel_purchases(tenant_id, service_line_id, vehicle_id, litres, amount, odometer_km)
+    values (t_a, sl_a, veh_a, 40, 200, 10000) returning id into vf_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from vehicles where id = veh_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A vehicle'; end if;
+  perform 1 from vehicle_fuel_purchases where id = vf_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A fuel purchase'; end if;
+  blocked := false;
+  begin
+    insert into vehicles(tenant_id, service_line_id, code, name) values (t_a, sl_a, 'VAN-X', 'X');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant vehicle insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 8 checks — customers, groups, inventory, employee cost, cost capture)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 9 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel)' as result;
 rollback;
