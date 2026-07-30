@@ -2,6 +2,7 @@ import { getTenantId } from "@/lib/tenant";
 import {
   getProfitSummary, listProfitRows, listProfitFilterOptions, type ProfitFilters,
 } from "@/lib/domain/profitability";
+import { getReadiness } from "@/lib/domain/costconfig";
 
 export const dynamic = "force-dynamic";
 
@@ -28,10 +29,11 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
     from: sp.from, to: sp.to, customerId: sp.customer, branchId: sp.branch,
     technicianId: sp.technician, serviceLineId: sp.division, confidence: sp.confidence ?? "all",
   };
-  const [summary, rows, opts] = await Promise.all([
+  const [summary, rows, opts, readiness] = await Promise.all([
     getProfitSummary(tenantId, f),
     listProfitRows(tenantId, f),
     listProfitFilterOptions(tenantId),
+    getReadiness(tenantId),
   ]);
 
   const sel = (name: string, value: string | undefined, options: { id: string; name: string | null }[], label: string) => (
@@ -48,8 +50,14 @@ export default async function ProfitabilityPage({ searchParams }: { searchParams
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Profitability</h1>
-        <p className="mt-1 text-sm text-neutral-600">Per-job revenue, cost and margin. Estimated figures use inferred inputs and are flagged.</p>
+        <p className="mt-1 text-sm text-neutral-600">Per-job revenue, cost and margin. Estimated figures use inferred inputs and are flagged. Operating Profit shown — excludes vehicle depreciation/lease (management reporting only).</p>
       </div>
+
+      {readiness.config_assumed && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚠ <span className="font-medium">Cost configuration is ASSUMED.</span> These figures use temporary assumed rates and will change once confirmed in <a href="/cost-config" className="underline">Cost setup</a>.
+        </div>
+      )}
 
       {/* Filters */}
       <form className="rounded-lg border border-neutral-200 bg-white p-4" method="get">

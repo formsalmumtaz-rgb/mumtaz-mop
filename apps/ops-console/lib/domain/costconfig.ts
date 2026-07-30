@@ -27,6 +27,7 @@ export interface CostAccount {
 
 export interface ReadinessStatus {
   ready: boolean;
+  config_assumed: boolean; // computing on ASSUMED values (temporary) — every figure must be flagged
   unconfirmed: number;
   items: string[];
   uncosted_jobs: number; // completed jobs with no current cost — what backfill will cost
@@ -98,14 +99,14 @@ export async function getReadiness(tenantId: string): Promise<ReadinessStatus> {
     `select fn_cost_config_status($1, (select id from service_lines where tenant_id=$1 and code='pest_control')) as s`,
     [tenantId],
   );
-  const s = rows[0].s as { ready: boolean; unconfirmed: number; items: string[] };
+  const s = rows[0].s as { ready: boolean; config_assumed: boolean; unconfirmed: number; items: string[] };
   const { rows: jc } = await pool.query(
     `select count(*)::int n from jobs j
       where j.tenant_id=$1 and j.status='completed'
         and not exists (select 1 from job_cost_current c where c.job_id=j.id)`,
     [tenantId],
   );
-  return { ready: s.ready, unconfirmed: s.unconfirmed, items: s.items ?? [], uncosted_jobs: jc[0].n };
+  return { ready: s.ready, config_assumed: s.config_assumed ?? false, unconfirmed: s.unconfirmed, items: s.items ?? [], uncosted_jobs: jc[0].n };
 }
 
 const num = (v?: string) => {

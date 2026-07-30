@@ -26,7 +26,22 @@ export default async function CostConfigPage() {
       </div>
 
       {/* Readiness */}
-      {readiness.ready ? (
+      {readiness.ready && readiness.config_assumed ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <p className="font-medium text-amber-900">⚠ Costing live on ASSUMED values — figures are temporary and flagged Estimated until confirmed.</p>
+          <ul className="mt-2 list-inside list-disc text-sm text-amber-800">
+            {readiness.items.length > 0 ? readiness.items.map((i) => <li key={i}>{i}</li>) : <li>using seeded assumptions</li>}
+          </ul>
+          <p className="mt-2 text-sm text-amber-800">Confirm each value below to remove the ASSUMED flag. Development can proceed meanwhile.</p>
+          {readiness.uncosted_jobs > 0 && (
+            <form action={runBacklogAction} className="mt-3">
+              <button className="rounded bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800">
+                Cost {readiness.uncosted_jobs} completed job(s) now
+              </button>
+            </form>
+          )}
+        </div>
+      ) : readiness.ready ? (
         <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">
           <p className="font-medium text-emerald-900">✓ Costing configured — profitability is live.</p>
           {readiness.uncosted_jobs > 0 ? (
