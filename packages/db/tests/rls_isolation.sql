@@ -12,6 +12,7 @@ declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
+  st2_a uuid; pm2_a uuid; spm_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -148,8 +149,24 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant job_cost insert allowed'; end if;
 
+  -- (11) service_pricing_models (mig 028) isolated
+  reset role;
+  insert into service_types(tenant_id, service_line_id, code, name) values (t_a, sl_a, 'st2', 'ST2') returning id into st2_a;
+  insert into pricing_models(tenant_id, service_line_id, code, name, model_type) values (t_a, sl_a, 'pm2', 'PM2', 'per_room') returning id into pm2_a;
+  insert into service_pricing_models(tenant_id, service_line_id, service_type_id, pricing_model_id) values (t_a, sl_a, st2_a, pm2_a) returning id into spm_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from service_pricing_models where id = spm_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A service_pricing_models'; end if;
+  blocked := false;
+  begin
+    insert into service_pricing_models(tenant_id, service_line_id, service_type_id, pricing_model_id) values (t_a, sl_a, st2_a, pm2_a);
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant service_pricing_models insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 10 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 11 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models)' as result;
 rollback;

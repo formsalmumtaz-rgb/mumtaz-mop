@@ -16,6 +16,7 @@ const nav = [
   { href: "/vehicles", label: "Vehicles" },
   { href: "/profitability", label: "Profitability" },
   { href: "/management", label: "Management" },
+  { href: "/pricing", label: "Pricing models" },
   { href: "/jobs/new", label: "New job" },
   { href: "/technicians", label: "Technicians" },
   { href: "/teams", label: "Teams" },
