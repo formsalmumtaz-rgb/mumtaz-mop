@@ -1,8 +1,8 @@
 # CONSTITUTION.md
 # MUMTAZ OPERATIONS PLATFORM (MOP)
 
-**Status:** v1.1 — GOVERNING DOCUMENT
-**Ratified:** 23 July 2026
+**Status:** v1.3 — GOVERNING DOCUMENT
+**Ratified:** 23 July 2026 (v1.0) · last amended 29 July 2026 (v1.3)
 **Owner:** Zaza — Mumtaz Integrated Services Group
 **Build authorisation:** 🟢 **GRANTED for Sprint Zero scope only** (Art. XV §1). Nothing beyond that scope is authorised.
 
@@ -515,6 +515,23 @@ Mapping and routing sit behind an internal **`RouteProvider`** interface. Switch
 
 ---
 
+## ARTICLE XVIII — SERVICE-DRIVEN ARCHITECTURE *(new in v1.3)*
+
+**Ratified 29 July 2026.** Elevates to a binding principle what Art. V §2 already required informally ("job types, checklist templates, treatment recipes, pricing rules, report templates and compliance rules are **data, not code**").
+
+**The platform shall be service-driven, not hardcoded.** Every business service is defined through configurable **service definitions**, each carrying its own categories, survey, estimation, pricing, workflow, inventory, scheduling, reporting, and compliance rules. **New services must be addable without changing the core application** — adding a division, service, or vertical is configuration, not a deployment.
+
+### §1 Binding scope
+This binds every vertical (pest control, cleaning, FM, manpower, HVAC, and future lines). A per-service capability hardcoded into the core application — a bespoke module, a service-specific branch in shared logic, a rule that only a deploy can change — is a **defect** of the same class as an unflagged invented rule (Art. X §4).
+
+### §2 Extend, do not fork
+New service capability **extends the shared configurable substrate** — service line / division, `field_definitions` + `attributes` surveys, treatment/operational recipes, `pricing_models` / price-list versions — rather than replacing it or forking a parallel structure. Replacing that substrate instead of extending it is a Baseline-grade change (Art. X): it requires the affected-modules statement, the regression plan, an **offline re-proof**, owner approval, and — if it relaxes a structural invariant — a further amendment under Art. XII.
+
+### §3 Does not weaken existing doctrine
+Service definitions are **data**; the engine that reads them is **ten-year-grade** (Two-Speed Rule, Art. V §1). This principle does not relax determinism (Art. IV — AI last), append-only records, RLS isolation, or any structural invariant. Configurability is of business rules, never of correctness guarantees.
+
+---
+
 ## CHANGELOG
 
 | Version | Date | Change |
@@ -522,3 +539,4 @@ Mapping and routing sit behind an internal **`RouteProvider`** interface. Switch
 | 1.0 | 23 Jul 2026 | Ratified. Merged draft Project Constitution with CONTEXT.md v0.1. Seven rulings under Art. V. |
 | **1.1** | **23 Jul 2026** | Operating scale confirmed (Art. II §3) — settles Art. V §6 in favour of hand-rolled sync. Art. X §4 amendment ratified (`ASSUMED` defaults + admin console). Bulk import doctrine added (Art. VII §5). Photo compression made binding (Art. IX). Owner-is-not-a-developer duty added (Art. I §6). Four new articles: XIII Infrastructure, XIV Module Boundaries (invoicing/agreements ruling), XV Roadmap (revised to ~4 months), XVI Operating Model. Build authorised for Sprint Zero. Article numbers I–XII frozen as stable identifiers. |
 | **1.2** | **24 Jul 2026** | Article XVII — Maps & Routing Architecture added: hybrid Google Maps (mapping intelligence only; platform owns all business logic), binding deterministic-fallback clause, capture-GPS-once, restricted keys, `RouteProvider` interchangeability. Supersedes the routing/matrix rejection in Art. XIII §2. |
+| **1.3** | **29 Jul 2026** | Article XVIII — Service-Driven Architecture ratified (owner): the platform shall be service-driven, not hardcoded; new services addable by configuration, not deployment. Elevates Art. V §2 ("data, not code") to a binding principle; extend-not-fork the shared substrate; does not relax determinism or any structural invariant. |

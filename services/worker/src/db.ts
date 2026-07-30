@@ -19,3 +19,14 @@ export const pool = new Pool({
   ssl: { rejectUnauthorized: false }, // Supabase pooler TLS
   max: 4,
 });
+
+// Environment binding for the costing gate (mig 026). The gate treats an unset
+// app.environment as 'production' and refuses assumed-costing there, so production
+// is fail-safe with zero config. Non-production sets MOP_ENV to opt in. Session
+// pooler => a session-level set_config on connect persists for the connection.
+const MOP_ENV = process.env.MOP_ENV || "production";
+pool.on("connect", (c) => {
+  c.query("select set_config('app.environment', $1, false)", [MOP_ENV]).catch((e) =>
+    console.error("[db] failed to set app.environment:", (e as Error).message),
+  );
+});

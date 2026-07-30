@@ -22,4 +22,16 @@ export const pool =
     max: 5,
   });
 
-if (!globalForPool._mopPool) globalForPool._mopPool = pool;
+if (!globalForPool._mopPool) {
+  // Environment binding for the costing gate (mig 026): unset app.environment =>
+  // 'production' => assumed costing denied, so production is fail-safe with zero
+  // config. Non-production opts in via MOP_ENV. Session pooler => persists per
+  // connection. Attached once (pool is reused across HMR).
+  const MOP_ENV = process.env.MOP_ENV || "production";
+  pool.on("connect", (c) => {
+    c.query("select set_config('app.environment', $1, false)", [MOP_ENV]).catch((e) =>
+      console.error("[db] failed to set app.environment:", (e as Error).message),
+    );
+  });
+  globalForPool._mopPool = pool;
+}

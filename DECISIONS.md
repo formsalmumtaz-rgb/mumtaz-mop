@@ -245,6 +245,22 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 
 ---
 
+## 7. Costing engine — assumptions and guards *(29 Jul 2026, owner-directed)*
+
+**7.1 — Seeded labour rate is a PLACEHOLDER, not a soft-launch value.**
+`cost.standard_labour_rate_hourly` is seeded at **AED 1,700 ÷ 176 productive hours = 9.6591/hr** (mig 025). **AED 1,700 is BASIC salary, not employment cost.** The real fully-loaded figure — including gratuity accrual, accommodation, transport, medical insurance, and visa/Emirates-ID amortisation — will be **materially higher** (UAE norm is 30–50% above basic; see `employee_cost_components`, mig 019). This is a development placeholder to unblock the engine, flagged `ASSUMED`, editable in Cost setup. Do not treat any margin computed from it as real. Overhead (1.4489/hr ≈ 15% of labour) and the vehicle operational rate (0.50/km) are ASSUMED placeholders likewise.
+
+**7.2 — Assumed-costing is strict-block by default; dev opt-in only; environment-bound.**
+The engine refuses to compute profitability on ASSUMED config **by default** (`cost.allow_assumed_costing` defaults false, mig 026). Computing on ASSUMED values is an explicit dev opt-in **and cannot take effect in production regardless of the setting**: `fn_cost_config_status` reads the GUC `app.environment` (unset ⇒ `'production'` ⇒ denied), so production is fail-safe with zero config. Non-production sets **`MOP_ENV`** (→ `app.environment` via a pooled-connection `set_config`, session pooler) to opt in. Every figure produced under ASSUMED config is flagged (Art. X §4). **Rule: production must never set `app.environment`/`MOP_ENV` to a non-production value.**
+
+**7.3 — Vehicle depreciation/lease is management-accounting only.**
+Depreciation (company-owned) / lease (leased-rented) is **never** in operational, job, technician, or customer profitability. It is not in `job_costs`; it lives only in `fn_management_profit` (Operating Profit = default operational view; Net Profit = after depreciation/lease, management reporting only). Dev default depreciation AED 1,750/month, ASSUMED, per-vehicle configurable (mig 025).
+
+**7.4 — Chart of accounts remains ASSUMED and editable.**
+All GL account codes (labour/vehicle/overhead/clearing/accrual + inventory) are seeded ASSUMED and editable from Cost setup, replaceable with the accountant's final CoA without schema change.
+
+---
+
 ## Changelog
 
 | Version | Date | Change |
@@ -253,3 +269,4 @@ There is no mechanism by which Cowork hands a task to Claude Code, or by which e
 | 1.1 | 23 Jul 2026 | §2.A — Docker dropped; Supabase staging becomes the dev database (owner-directed). Diverges from Constitution Art. XIII §1 pending ratification. Risks recorded. |
 | 1.2 | 24 Jul 2026 | §2.B — Google Maps adopted for display, geocoding, and navigation deep-links (owner-directed). Routing/matrix stays off Google (VROOM/ORS); Art. XIII §2 reaffirmed. Supersedes the MapLibre/Protomaps/Nominatim choices in CONTEXT §9. |
 | 1.3 | 24 Jul 2026 | Ratified hybrid Google (CONSTITUTION Art. XVII): §2.B rewritten — Google routing adopted for Phase 4 behind `RouteProvider`, VROOM/ORS as fallback; two keys, server-side geocoding, SKU finding. §2.C — MOP runtime is Vercel + Supabase, DigitalOcean dropped for MOP. §2.D — no messaging intake bot. |
+| 1.4 | 29 Jul 2026 | §7 — Costing engine: labour rate is a placeholder (1700 basic ÷ 176, not employment cost); assumed-costing strict-block by default + dev-only, environment-bound (production fail-safe); vehicle depreciation/lease is management-accounting only (not in operational profit); chart of accounts stays ASSUMED and editable. |

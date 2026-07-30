@@ -9,9 +9,34 @@ Coverage is assessed against the schema actually built (migrations `001`–`013`
 the governing documents (`CONSTITUTION.md`, `CONTEXT.md`, `DECISIONS.md`).
 
 Each item is marked:
-- **(a) ALREADY COVERED** — by existing schema or roadmap (named).
+- **(a) ALREADY COVERED** — by existing schema or roadmap (named). **"Covered" here means the substrate exists or the item is FILED — it does NOT mean built.** See the build-status correction below.
 - **(b) GENUINELY NEW** — candidate for the tier assigned.
 - **(c) NEEDS DEDICATED DESIGN** — Tier 3.
+
+---
+
+## 0. Build status — CORRECTION (29 Jul 2026)
+
+> A "90–95% already covered" reading of this document is **wrong**. Almost everything
+> here is **FILED, not built**. "Covered by roadmap" ≠ delivered. A future session must
+> not read this backlog as "nearly done" and must apply full Architecture Baseline
+> discipline (affected modules + regression/offline re-proof) to every item below.
+
+**Built and working today (migrations `001`–`023`):**
+- **K1–K4** — schema, event outbox, offline technician PWA, sync, on-device PDF reports.
+- **Customer groups + import provenance** (mig `014`–`015`).
+- **Chemical batch traceability, unit costing & perpetual inventory** (mig `016`–`018`):
+  suppliers, purchase logging, frozen batch cost, FEFO allocation, valued consumption.
+- **Cost engine** (mig `019`–`023`): employee cost basis (fully-loaded hourly), capture
+  (per-tech labour, per-job distance), vehicles + fuel cost/km, and the `job_costs`
+  engine with **confidence flags** and the **ASSUMED configuration gate** (refuses to
+  compute on placeholder rates/codes). GL absorption/variance *posting* not yet built.
+- **Admin console:** technicians, customers, branches, contracts, chemical master, purchases.
+
+**Not built — roadmap only:** everything else in this file (all Tier 2/3 modules), and
+everything in the Service-Driven Platform amendment (§5 below) — Division Engine, Service
+Definition Engine, Estimation Engine, Pricing Model Engine, analytics/KPI, manpower
+deployment, etc.
 
 ---
 
@@ -518,6 +543,183 @@ Maps links.)*
 desk, parking, who to ask for. Distinct from per-job communication between office and
 technician, which is a separate feature. *(Substrate: `customer_branches.access_notes`,
 mig 004.)*
+
+---
+
+## 5. Amendment — Service-Driven Platform / Multi-Division (filed 29 Jul 2026)
+
+**Filing only. No code, migration, or schema change was written for this amendment.**
+Nothing here is authorised for build. The constitutional principle in §5.5 is a
+**candidate for owner ratification** (Art. XII), not in force.
+
+### 5.1 Extension vs replacement — the decision that gates everything (answers the owner's question)
+
+K1 already ships `service_line_id`, `treatment_recipes`/`_versions`, `field_definitions`
++ `validate_entity_attributes`, and JSONB `attributes` on core entities. The
+Service-Driven Platform (Division Engine, Service Definition Engine, Estimation/Survey
+engine, Pricing Model Engine) must **EXTEND these, not replace them.** Replacement is
+explicitly *not* recommended and would be a constitutional-grade change (see cost below).
+
+| K1 structure | Verdict | How it extends |
+|---|---|---|
+| `service_line_id` (on ~every table) | **EXTEND** | It is the seed of "division." The Division Engine adds a richer configuration layer keyed to service lines (or promotes `service_lines` into `divisions` additively). The FK stays; no table loses it. |
+| `field_definitions` + `attributes` JSONB + `validate_entity_attributes()` | **EXTEND** | This *is* the runtime-extensible-field spine K1 built for exactly this. A **survey template** is a versioned, ordered collection of `field_definitions` scoped to a division/service; answers land in existing `attributes` JSONB and are validated by the existing trigger. Build on it. |
+| `treatment_recipes` / `treatment_recipe_versions` | **EXTEND** | Generalise into a "service operational / inventory formula"; **recipes remain the pest-control instantiation.** Frozen recipe snapshots on append-only `service_reports` are immutable and must not be rewritten. |
+| `pricing_models` + `price_lists` / `_versions` | **EXTEND** | `pricing_models` is already a catalogue; the Pricing Model Engine adds the model-type *strategies* (per_sqm, per_duct, formula, …) as configuration over the existing versioned/frozen pricing tables. |
+
+**If a future design proposes REPLACEMENT instead**, it is a migration touching working
+K1–K4 code, frozen/append-only records (`service_reports`, `journal_lines`,
+`generated_documents`), and the technician-app job-state flow proven offline. Per the
+Architecture Baseline that requires, before any code: the affected-modules statement, a
+regression plan, an **offline re-proof**, and owner approval — and if it relaxes a
+structural invariant, an Art. XII amendment. The owner has asked to see that cost before
+agreeing; the default answer is **extend**.
+
+### 5.2 Tiering of the amendment's items (corrections #2 and #4 applied)
+
+**TIER 3 — needs a dedicated design session; changes the job-state spine → re-prove offline (Baseline).**
+- **Service Definition Engine** — subsumes the workflow, pricing and category engines into one configurable unit and **changes how jobs move through states** (the technician app's spine, currently proven offline). *(Corrects the source doc, which framed it as a refinement.)*
+- **Division Engine / Universal Division Builder** — create any division from the UI (config, not code).
+- Division-specific **category / estimation / workflow** builders.
+- **One Estimation Engine** that loads per-service logic (survey + estimation change per selected service) — part of the same state-flow change.
+- **AI profitability recommendations** for manpower/allocation — Analytics Layer only, **recommendation-only**, never auto-acts (Art. IV).
+- **Retail quotation mode** (hide internal margin on the customer-facing document) — filed Tier 3 per owner; *note: relatively contained (a document-rendering variant) and a candidate to pull into Tier 2 at design time.*
+
+**TIER 2 — real modules on existing substrate; less entangled.**
+- **Pricing Model Engine** *(correction #4 — its own Tier 2 item)* — one reusable engine supporting: fixed, per hour, per day, per person, per month, per visit, per m², per apartment, per room, per floor, per duct, per linear metre, quantity × unit price, formula-based, custom. **Each service selects which model(s) it supports.** Extends `pricing_models` + `price_list_versions`.
+- **Manpower supply estimation + deployment costing** — see §5.4 (needs its own contract/period costing path).
+- **Fixed-price vs hourly quotations** — a subset of the Pricing Model Engine.
+- **Cleaning category-engine improvements.**
+- **Survey → quotation** direct conversion; **quotation → contract → scheduling** refinement.
+- **Automatic slot suggestion** after contract approval; **live ETA notification** when a technician completes the previous job; **manual schedule → auto-recurring** transition; **GPS capture on first visit**.
+- **Personal (non-contract) customer workflow.**
+- **Per-division inventory auto-issue toggle** — see §5.4.
+
+### 5.3 Candidate constitutional principle (correction #5 — Art. XII, owner ratifies)
+
+Recorded **verbatim as a candidate**, not adopted. Per Art. XII an agent may propose but
+"may never act as though an unratified amendment is in force."
+
+> *"The platform shall be service-driven, not hardcoded. Every business service is defined
+> through configurable service definitions, each with its own categories, survey,
+> estimation, pricing, workflow, inventory, scheduling, reporting, and compliance rules.
+> New services must be addable without changing the core application."*
+
+Related principles already filed for ratification in §2 (reliability, AI boundary,
+traceability) remain candidates likewise.
+
+### 5.4 Confirmations requested (correction #6)
+
+**(a) Does the costing engine (019–023) extend to manpower supply?** *Partly — inputs yes,
+model no.*
+- **Covered:** `employee_cost_components` (mig 019) already captures the full manpower cost
+  basis — basic, accommodation, transport, medical, visa/EID (amortised), air ticket,
+  gratuity → `monthly_employment_cost`. Reuse it directly.
+- **Not covered:** the `job_costs` engine (023) is **job-centric** (per job, on
+  `job.completed`, labour-by-time-on-job, vehicle-by-distance, material valuation).
+  Manpower supply has **no jobs, no distance, no materials** — profitability is *monthly
+  contract revenue − deployed staff monthly cost (salary + accommodation + transport)*.
+- **Verdict:** the deployment/manpower engine needs its **own contract/period costing
+  path** (sum assigned employees' relevant monthly components against the recurring
+  contract revenue). It **reuses** `employee_cost_components` but does **not** ride the
+  job-absorption model. Filed Tier 2 (§5.2).
+
+**(b) Can inventory be configured per division to track purchases WITHOUT auto-issue?**
+*Yes — and cleaning must not auto-calculate consumption.*
+- Today, auto-issue fires **only** from a job's frozen recipe/dose
+  (`generation_snapshot.dose`). A division with no dosing recipe already records purchases
+  (`recordPurchase`) with **no** automatic consumption — so cleaning, having no dose
+  recipes, would not auto-issue.
+- **Recommendation:** make this **explicit** rather than an accident of missing recipes —
+  a per-division/service-line setting (e.g. `inventory.auto_issue_enabled`, default **off**
+  for non-dosing divisions). Small Tier 2 refinement (§5.2). Cleaning stays purchase-only.
+
+### 5.5 Source document (filed verbatim)
+
+#### DOCUMENT 7 — Service-Driven Platform / Multi-Division (verbatim)
+
+**One estimation engine, not separate modules.** Do not build separate estimation modules;
+build one Estimation Engine that loads different logic depending on the selected service.
+Example: Division → Facilities Management; Service → Manpower Supply; Pricing Model → Fixed
+Contract / Per Person Per Month / Per Hour / Per Day / Custom. The survey then changes
+automatically. For Manpower Supply the survey could ask: number of personnel; job role
+(cleaner, helper, technician, …); working hours; monthly or hourly; accommodation provided?;
+transport provided?; uniform provided?; visa required?; contract duration; customer
+location. The engine then calculates: revenue; salary cost; accommodation cost; transport
+cost; visa / amortised onboarding cost; management overhead; gross profit; gross margin %.
+Then the standard flow follows: Estimate → Quotation → Approval → Agreement → Recurring
+Invoice Schedule → Payment Tracking → Accounting — exactly the same workflow as every other
+service.
+
+**AI must not decide pricing.** Profitability analysis belongs in the Analytics Layer. After
+three months the owner dashboard might say: "Manpower Contract ABC has a gross margin of 8%
+against a company target of 20%. The assigned staff are underutilised, and the same labour
+capacity could generate higher returns in pest control." That is a recommendation only. It
+must never automatically change prices, move staff, or alter contracts.
+
+**Reusable Pricing Model Engine.** Instead of every service having its own isolated pricing
+engine, build one reusable Pricing Model Engine supporting: fixed price, per hour, per day,
+per person, per month, per visit, per square metre, per apartment, per room, per floor, per
+duct, per linear metre, quantity × unit price, formula-based, custom. Each service chooses
+which pricing model(s) it supports. Adding a new division like rope access or HVAC
+maintenance becomes configuration rather than code.
+
+**The long-term pipeline.** Division → Service → Survey → Category → Estimation → Pricing →
+Quotation → Approval → Agreement → Scheduling/Deployment → Execution → Inventory/Labour/
+Expenses → Accounting → KPI & Analytics. Every new business line plugs into the same
+pipeline while changing only its survey, category definitions, pricing rules and workflow;
+the core engine remains unchanged.
+
+**Division Engine.** Do not build separate hardcoded modules for pest control, cleaning, AC
+duct cleaning, kitchen duct cleaning, water tank cleaning and so on. Build a Division Engine.
+The system starts with no assumptions. Admin creates a division; each division owns its own
+configuration: category engine, survey template, estimation engine, pricing rules, service
+templates, checklist templates, required photos, required documents, required equipment,
+required chemicals/materials, required PPE, technician requirements, report template,
+certificate template, completion workflow, KPI definitions, municipality/compliance rules.
+
+**Worked examples.** *Pest Control* — categories: apartment, villa, restaurant, hotel,
+warehouse; survey: pest type, floors, kitchens, garbage rooms, drain count; chemicals:
+cypermethrin, gel, bait, glue board; reports: pest report, municipality report, chemical
+utilisation. *Cleaning* — categories: office, villa, school, warehouse; survey: floor area,
+washrooms, windows, marble, carpet, staff required; materials: detergent, degreaser, mop,
+vacuum; reports: cleaning checklist, completion report. *AC Duct Cleaning* — categories:
+villa, apartment, commercial, hospital; survey: ducts, duct length, AHU units, diffusers,
+ceiling height; equipment: vacuum, brush machine, camera; reports: before/after photos, air
+quality report, completion certificate.
+
+**What this means.** Clicking "Add Division" creates a configuration, not code. That division
+automatically gets its own survey, category engine, pricing engine, scheduling rules,
+reports, dashboards and KPIs.
+
+**Service Definition Engine.** Rather than only a Category Engine, create a Service Definition
+Engine. A service definition contains: division, service, categories, survey template,
+pricing formula, operational formula, scheduling formula, inventory formula, report template,
+workflow, notification templates. Everything related to that service lives inside one
+definition. Five years from now, adding solar panel cleaning, bird control, swimming pool
+maintenance, landscaping or HVAC maintenance requires no new software — only a new service
+definition with its survey, pricing, workflow and reports configured.
+
+**Proposed constitutional principle (candidate — requires owner ratification):** "The
+platform shall be service-driven, not hardcoded. Every business service is defined through
+configurable service definitions, each with its own categories, survey, estimation, pricing,
+workflow, inventory, scheduling, reporting, and compliance rules. New services must be
+addable without changing the core application." *(Filed as candidate in §5.3.)*
+
+**Refinements noted (tiered in §5.2):** Universal Division → Category Engine; fully
+customisable service divisions; cleaning category engine improvements; manpower supply
+estimation; fixed-price vs hourly quotations; AI profitability analysis for manpower
+allocation (analytics layer, recommendation only); retail quotation mode (hides internal
+margin from the customer-facing document); survey converts directly to quotation; quotation →
+contract → scheduling flow refinement; automatic slot suggestion after contract approval;
+live ETA notification when a technician completes the previous job; existing customers can
+start from a manual schedule then move to auto-recurring; capture GPS during first visit;
+personal (non-contract) customer workflow.
+
+**Stated as missing (Tier 3, pending the design session):** Universal Division Builder
+(create any division from the UI); division-specific category engine builder;
+division-specific estimation engine builder; division-specific workflow builder; retail
+quotation mode; manpower profitability recommendations.
 
 ---
 

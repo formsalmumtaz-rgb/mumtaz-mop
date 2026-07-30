@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import type { Consumer, ParsedEvent } from "./outbox";
+import { resolveStrategy, postConsumptionValuation } from "./inventory";
 
 // K4 — on job.completed: queue an invoice (pricing-model correct) and deduct stock
 // (append-only) from the frozen snapshot. Both idempotent; both guard on event type.
@@ -70,8 +71,13 @@ const invoiceQueuer: Consumer = {
   },
 };
 
-// Deduct stock from the frozen dose snapshot (append-only). No-op when the job has
-// no recipe/dose (e.g. recipes not yet seeded). Deduped by the event's client_uuid.
+// Deduct stock from the frozen dose snapshot (append-only) and value it at the
+// consumed batch's cost. No-op when the job has no recipe/dose. Deduped by the
+// event's client_uuid. Vehicle inventory is the operational source: the batch is
+// picked from the technician's van under the tenant's allocation strategy
+// (FEFO/FIFO/manual). Valuation posts ONE balanced entry per consumption — and
+// only when a costed batch was allocated and inventory accounts are configured,
+// so tenants without inventory set up behave exactly as before.
 const stockDeducter: Consumer = {
   name: "stock-deducter",
   handle: async (c: PoolClient, ev: ParsedEvent) => {
@@ -90,14 +96,44 @@ const stockDeducter: Consumer = {
 
     // who performed it lives in job_assignments (nullable for now)
     const tech = (await c.query(`select technician_id from job_assignments where job_id = $1 limit 1`, [jobId])).rows[0];
+    const techId = tech?.technician_id ?? null;
+
+    // vehicle inventory is the operational source of consumption: the technician's van
+    let vanId: string | null = null;
+    if (techId) {
+      const van = (await c.query(
+        `select id from stock_locations
+          where tenant_id = $1 and location_type = 'van' and technician_id = $2 and is_active
+          order by created_at limit 1`,
+        [j.tenant_id, techId],
+      )).rows[0];
+      vanId = van?.id ?? null;
+    }
+
+    // deterministic batch pick from that van's on-hand (FEFO/FIFO; null under 'manual'
+    // or when the van holds no on-hand lot for the item)
+    let batchId: string | null = null;
+    if (vanId) {
+      const strategy = await resolveStrategy(c, j.tenant_id, j.service_line_id);
+      const picked = (await c.query(`select fn_alloc_batch($1,$2,$3,$4) as b`, [j.tenant_id, dose.item_id, vanId, strategy])).rows[0];
+      batchId = picked?.b ?? null;
+    }
+
     const clientUuid = (ev.payload as { client_uuid?: string }).client_uuid ?? ev.envelope.event_id;
-    await c.query(
+    const ins = await c.query(
       `insert into stock_movements
-         (tenant_id, service_line_id, item_id, movement_type, quantity, unit_id, job_id, technician_id, client_uuid, snapshot)
-       values ($1,$2,$3,'consumption',$4,$5,$6,$7,$8,$9)
-       on conflict (tenant_id, client_uuid) do nothing`,
-      [j.tenant_id, j.service_line_id, dose.item_id, dose.quantity, dose.unit_id ?? null, jobId, tech?.technician_id ?? null, clientUuid, JSON.stringify(dose)],
+         (tenant_id, service_line_id, item_id, batch_id, from_location_id, movement_type, quantity, unit_id, job_id, technician_id, client_uuid, snapshot)
+       values ($1,$2,$3,$4,$5,'consumption',$6,$7,$8,$9,$10,$11)
+       on conflict (tenant_id, client_uuid) do nothing
+       returning id`,
+      [j.tenant_id, j.service_line_id, dose.item_id, batchId, vanId, dose.quantity, dose.unit_id ?? null, jobId, techId, clientUuid, JSON.stringify(dose)],
     );
+
+    // Value the consumption only when we actually inserted the movement (rowCount 1)
+    // and a costed batch was allocated — one balanced entry, idempotent on replay.
+    if (ins.rowCount === 1 && batchId) {
+      await postConsumptionValuation(c, { tenantId: j.tenant_id, serviceLineId: j.service_line_id, movementId: ins.rows[0].id });
+    }
   },
 };
 
