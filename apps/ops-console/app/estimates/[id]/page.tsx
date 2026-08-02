@@ -48,6 +48,9 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
           </p>
         </div>
         <div className="flex gap-2">
+          {(header.status === "quoted" || header.status === "accepted") && (
+            <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
+          )}
           {(nextStatuses[header.status] ?? []).map((a) => (
             <form key={a.s} action={setStatusAction}>
               <input type="hidden" name="estimate_id" value={header.id} /><input type="hidden" name="status" value={a.s} />

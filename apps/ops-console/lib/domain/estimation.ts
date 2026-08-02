@@ -146,6 +146,46 @@ export async function deleteEstimateLine(tenantId: string, lineId: string): Prom
   });
 }
 
+export interface Quotation {
+  quotation_number: string | null;
+  status: string;
+  quoted_at: string | null;
+  valid_until: string | null;
+  customer: string | null;
+  customer_trn: string | null;
+  lines: { description: string; amount: number }[];
+  subtotal: number;
+  vat_rate: number;
+  vat: number;
+  total: number;
+}
+
+// Customer-facing quotation view — REVENUE ONLY. Never returns cost/margin (retail
+// mode by construction). Lines are frozen once the estimate is quoted.
+export async function getQuotation(tenantId: string, id: string): Promise<Quotation | null> {
+  const { rows: h } = await pool.query(
+    `select e.quotation_number, e.status, e.snapshot->>'quoted_at' as quoted_at, e.valid_until::text,
+            cu.trade_name as customer, cu.trn as customer_trn
+       from estimates e left join customers cu on cu.id=e.customer_id
+      where e.tenant_id=$1 and e.id=$2`, [tenantId, id]);
+  if (!h[0]) return null;
+  const { rows: lines } = await pool.query(
+    `select coalesce(nullif(l.description,''), st.name, 'Service') as description, l.line_total::float8 as amount
+       from estimate_lines l left join service_types st on st.id=l.service_type_id
+      where l.tenant_id=$1 and l.estimate_id=$2 order by l.seq nulls last, l.created_at`, [tenantId, id]);
+  const { rows: vr } = await pool.query(
+    `select coalesce((value #>> '{}')::numeric, 5) as v from settings where tenant_id=$1 and key='vat_rate_percent' limit 1`, [tenantId]);
+  const vat_rate = Number(vr[0]?.v ?? 5);
+  const subtotal = lines.reduce((s: number, l: { amount: number }) => s + Number(l.amount), 0);
+  const vat = Math.round(subtotal * vat_rate) / 100;
+  return {
+    quotation_number: h[0].quotation_number, status: h[0].status, quoted_at: h[0].quoted_at,
+    valid_until: h[0].valid_until, customer: h[0].customer, customer_trn: h[0].customer_trn,
+    lines: lines as { description: string; amount: number }[],
+    subtotal, vat_rate, vat, total: subtotal + vat,
+  };
+}
+
 const STATUSES: Record<string, string[]> = {
   draft: ["quoted"], quoted: ["accepted", "rejected", "expired", "draft"], accepted: [], rejected: ["draft"], expired: ["draft"],
 };
@@ -155,17 +195,21 @@ export async function setEstimateStatus(tenantId: string, id: string, status: st
     const cur = (await c.query(`select status from estimates where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
     if (!cur) throw new Error("Estimate not found");
     if (!(STATUSES[cur.status] ?? []).includes(status)) throw new Error(`Cannot move from ${cur.status} to ${status}`);
-    // Freeze a snapshot of the quoted lines (immutable record of what was quoted).
-    let snap = "{}";
     if (status === "quoted") {
+      // Freeze a snapshot of the quoted lines (immutable record of what was quoted)
+      // and assign a stable customer-facing quotation number (kept on re-quote).
       const s = await c.query(
         `select coalesce(jsonb_agg(to_jsonb(l) order by l.created_at),'[]'::jsonb) as lines,
                 (select to_jsonb(p) from estimate_profitability p where p.estimate_id=$1) as totals
            from estimate_lines l where l.estimate_id=$1`, [id]);
-      snap = JSON.stringify({ quoted_at: new Date().toISOString(), lines: s.rows[0].lines, totals: s.rows[0].totals });
+      const snap = JSON.stringify({ quoted_at: new Date().toISOString(), lines: s.rows[0].lines, totals: s.rows[0].totals });
+      await c.query(
+        `update estimates set status='quoted', snapshot=$2::jsonb,
+                quotation_number = coalesce(quotation_number, 'Q-'||to_char(now(),'YYYYMM')||'-'||upper(left(id::text,4)))
+          where id=$1`, [id, snap]);
+    } else {
+      await c.query(`update estimates set status=$1 where id=$2`, [status, id]);
     }
-    await c.query(`update estimates set status=$1 ${status === "quoted" ? ", snapshot=$3::jsonb" : ""} where id=$2`,
-      status === "quoted" ? [status, id, snap] : [status, id]);
     await audit(c, tenantId, { table: "estimates", rowId: id, action: "update", oldValue: { status: cur.status }, newValue: { status }, note: "estimate status changed" });
   });
 }
