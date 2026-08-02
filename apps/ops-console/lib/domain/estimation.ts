@@ -1,0 +1,171 @@
+import "server-only";
+import { pool } from "../db";
+import { withTenantTx } from "./tx";
+import { audit } from "./audit";
+
+// Estimation Engine (mig 029). Revenue via fn_price (028); cost via fn_estimate_cost
+// (standard rates, operating basis — no depreciation). Deterministic profit preview.
+
+export interface EstimateHeader {
+  id: string;
+  estimate_number: string | null;
+  customer_id: string | null;
+  customer: string | null;
+  status: string;
+  property_type: string | null;
+  engagement_type: string | null;
+  valid_until: string | null;
+  revenue: number;
+  est_cost: number;
+  gross_profit: number;
+  line_count: number;
+}
+
+export async function listEstimates(tenantId: string): Promise<EstimateHeader[]> {
+  const { rows } = await pool.query(
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+            e.property_type, e.engagement_type, e.valid_until::text,
+            p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
+       from estimates e
+       left join customers cu on cu.id = e.customer_id
+       left join estimate_profitability p on p.estimate_id = e.id
+      where e.tenant_id = $1
+      order by e.created_at desc`,
+    [tenantId],
+  );
+  return rows as EstimateHeader[];
+}
+
+export interface EstimateLine {
+  id: string;
+  service_type_id: string | null;
+  service_name: string | null;
+  pricing_model_id: string | null;
+  model_name: string | null;
+  model_type: string | null;
+  description: string | null;
+  unit_price: number;
+  measure: number;
+  measures: Record<string, number>;
+  line_total: number;
+  est_labour_hours: number;
+  est_distance_km: number;
+  est_material_cost: number;
+  est_cost: number;
+}
+
+export async function getEstimate(tenantId: string, id: string): Promise<{ header: EstimateHeader; lines: EstimateLine[] } | null> {
+  const { rows: hdr } = await pool.query(
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+            e.property_type, e.engagement_type, e.valid_until::text,
+            p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
+       from estimates e left join customers cu on cu.id=e.customer_id
+       left join estimate_profitability p on p.estimate_id=e.id
+      where e.tenant_id=$1 and e.id=$2`,
+    [tenantId, id],
+  );
+  if (!hdr[0]) return null;
+  const { rows: lines } = await pool.query(
+    `select l.id, l.service_type_id, st.name as service_name, l.pricing_model_id, pm.name as model_name, pm.model_type,
+            l.description, l.unit_price::float8, l.measure::float8, l.measures,
+            l.line_total::float8, l.est_labour_hours::float8, l.est_distance_km::float8, l.est_material_cost::float8, l.est_cost::float8
+       from estimate_lines l
+       left join service_types st on st.id=l.service_type_id
+       left join pricing_models pm on pm.id=l.pricing_model_id
+      where l.tenant_id=$1 and l.estimate_id=$2 order by l.seq nulls last, l.created_at`,
+    [tenantId, id],
+  );
+  return { header: hdr[0] as EstimateHeader, lines: lines as EstimateLine[] };
+}
+
+export async function createEstimate(
+  tenantId: string, serviceLineId: string,
+  d: { customer_id?: string; branch_id?: string; property_type?: string; engagement_type?: string; valid_until?: string; notes?: string },
+): Promise<string> {
+  const clean = (v?: string) => { const t = (v ?? "").trim(); return t === "" ? null : t; };
+  return withTenantTx(tenantId, async (c) => {
+    const { rows } = await c.query(
+      `insert into estimates (tenant_id, service_line_id, customer_id, branch_id, property_type, engagement_type, valid_until, notes, status)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,'draft') returning id`,
+      [tenantId, serviceLineId, clean(d.customer_id), clean(d.branch_id), clean(d.property_type), clean(d.engagement_type), clean(d.valid_until), clean(d.notes)],
+    );
+    await audit(c, tenantId, { table: "estimates", rowId: rows[0].id, action: "insert", newValue: d, note: "estimate created" });
+    return rows[0].id as string;
+  });
+}
+
+const num = (v: string | undefined, label: string): number => {
+  const t = (v ?? "").trim();
+  if (t === "") return 0;
+  const n = Number(t);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${label} must be ≥ 0`);
+  return n;
+};
+
+export interface LineInput {
+  service_type_id?: string; pricing_model_id?: string; description?: string;
+  unit_price?: string; measure?: string; measures?: Record<string, number>;
+  est_labour_hours?: string; est_distance_km?: string; est_material_cost?: string;
+}
+
+// Add a line: revenue and cost computed in-DB by fn_price / fn_estimate_cost so
+// they are identical to every other price/cost calculation.
+export async function addEstimateLine(tenantId: string, serviceLineId: string, estimateId: string, d: LineInput): Promise<void> {
+  if (!d.pricing_model_id) throw new Error("Pricing model is required");
+  await withTenantTx(tenantId, async (c) => {
+    const owns = await c.query(`select status from estimates where id=$1 and tenant_id=$2`, [estimateId, tenantId]);
+    if (!owns.rowCount) throw new Error("Estimate not found");
+    if (owns.rows[0].status !== "draft") throw new Error("Only draft estimates can be edited");
+    const hours = num(d.est_labour_hours, "Labour hours"), km = num(d.est_distance_km, "Distance"), mat = num(d.est_material_cost, "Material");
+    const up = num(d.unit_price, "Unit price"), meas = num(d.measure, "Measure");
+    const { rows } = await c.query(
+      `insert into estimate_lines
+         (tenant_id, estimate_id, service_type_id, pricing_model_id, description, unit_price, measure, measures,
+          line_total, est_labour_hours, est_distance_km, est_material_cost, est_cost)
+       select $1,$2,$3,$4,$5,$6,$7,$8::jsonb,
+              fn_price(pm.model_type, $6, $7, pm.formula_spec, $8::jsonb),
+              $9,$10,$11, fn_estimate_cost($1,$12,$9,$10,$11)
+         from pricing_models pm where pm.id=$4 and pm.tenant_id=$1
+       returning id, line_total::float8, est_cost::float8`,
+      [tenantId, estimateId, d.service_type_id?.trim() || null, d.pricing_model_id, d.description?.trim() || null, up, meas,
+       JSON.stringify(d.measures ?? {}), hours, km, mat, serviceLineId],
+    );
+    if (!rows[0]) throw new Error("Pricing model not found");
+    await audit(c, tenantId, { table: "estimate_lines", rowId: rows[0].id, action: "insert", newValue: { ...d, line_total: rows[0].line_total, est_cost: rows[0].est_cost }, note: "estimate line added" });
+  });
+}
+
+export async function deleteEstimateLine(tenantId: string, lineId: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(
+      `delete from estimate_lines l using estimates e
+        where l.id=$1 and l.tenant_id=$2 and e.id=l.estimate_id and e.status='draft' returning l.id`,
+      [lineId, tenantId],
+    );
+    if (r.rowCount) await audit(c, tenantId, { table: "estimate_lines", rowId: lineId, action: "soft_delete", note: "estimate line removed" });
+  });
+}
+
+const STATUSES: Record<string, string[]> = {
+  draft: ["quoted"], quoted: ["accepted", "rejected", "expired", "draft"], accepted: [], rejected: ["draft"], expired: ["draft"],
+};
+
+export async function setEstimateStatus(tenantId: string, id: string, status: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const cur = (await c.query(`select status from estimates where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!cur) throw new Error("Estimate not found");
+    if (!(STATUSES[cur.status] ?? []).includes(status)) throw new Error(`Cannot move from ${cur.status} to ${status}`);
+    // Freeze a snapshot of the quoted lines (immutable record of what was quoted).
+    let snap = "{}";
+    if (status === "quoted") {
+      const s = await c.query(
+        `select coalesce(jsonb_agg(to_jsonb(l) order by l.created_at),'[]'::jsonb) as lines,
+                (select to_jsonb(p) from estimate_profitability p where p.estimate_id=$1) as totals
+           from estimate_lines l where l.estimate_id=$1`, [id]);
+      snap = JSON.stringify({ quoted_at: new Date().toISOString(), lines: s.rows[0].lines, totals: s.rows[0].totals });
+    }
+    await c.query(`update estimates set status=$1 ${status === "quoted" ? ", snapshot=$3::jsonb" : ""} where id=$2`,
+      status === "quoted" ? [status, id, snap] : [status, id]);
+    await audit(c, tenantId, { table: "estimates", rowId: id, action: "update", oldValue: { status: cur.status }, newValue: { status }, note: "estimate status changed" });
+  });
+}
