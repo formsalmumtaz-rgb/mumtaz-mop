@@ -6,7 +6,7 @@ import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
 import { getEstimate } from "@/lib/domain/estimation";
 import { EstimateLineForm } from "../EstimateLineForm";
-import { addLineAction, deleteLineAction, setStatusAction } from "../actions";
+import { addLineAction, deleteLineAction, setStatusAction, convertToContractAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -50,6 +50,16 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
         <div className="flex gap-2">
           {(header.status === "quoted" || header.status === "accepted") && (
             <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
+          )}
+          {header.status === "accepted" && !header.contract_id && (
+            <form action={convertToContractAction}>
+              <input type="hidden" name="estimate_id" value={header.id} />
+              <input type="hidden" name="customer_id" value={header.customer_id ?? ""} />
+              <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Convert to contract →</button>
+            </form>
+          )}
+          {header.contract_id && (
+            <Link href={`/customers/${header.customer_id}`} className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Contract created ✓</Link>
           )}
           {(nextStatuses[header.status] ?? []).map((a) => (
             <form key={a.s} action={setStatusAction}>

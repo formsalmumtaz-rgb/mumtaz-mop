@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createEstimate, addEstimateLine, deleteEstimateLine, setEstimateStatus } from "@/lib/domain/estimation";
+import { createEstimate, addEstimateLine, deleteEstimateLine, setEstimateStatus, convertEstimateToContract } from "@/lib/domain/estimation";
 
 export async function createEstimateAction(fd: FormData): Promise<void> {
   const tenantId = await getTenantId();
@@ -57,4 +57,15 @@ export async function setStatusAction(fd: FormData): Promise<void> {
   const tenantId = await getTenantId();
   await setEstimateStatus(tenantId, id, status);
   revalidatePath(`/estimates/${id}`);
+}
+
+export async function convertToContractAction(fd: FormData): Promise<void> {
+  const id = String(fd.get("estimate_id") ?? "");
+  const customerId = String(fd.get("customer_id") ?? "");
+  if (!id) return;
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  await convertEstimateToContract(tenantId, sl, id);
+  // Contracts (and their Activate → schedule/jobs fan-out) live on the customer page.
+  redirect(customerId ? `/customers/${customerId}` : `/estimates/${id}`);
 }

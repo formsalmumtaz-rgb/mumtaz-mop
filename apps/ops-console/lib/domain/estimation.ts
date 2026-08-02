@@ -19,6 +19,7 @@ export interface EstimateHeader {
   est_cost: number;
   gross_profit: number;
   line_count: number;
+  contract_id?: string | null;
 }
 
 export async function listEstimates(tenantId: string): Promise<EstimateHeader[]> {
@@ -57,7 +58,7 @@ export interface EstimateLine {
 export async function getEstimate(tenantId: string, id: string): Promise<{ header: EstimateHeader; lines: EstimateLine[] } | null> {
   const { rows: hdr } = await pool.query(
     `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
-            e.property_type, e.engagement_type, e.valid_until::text,
+            e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
        from estimates e left join customers cu on cu.id=e.customer_id
        left join estimate_profitability p on p.estimate_id=e.id
@@ -143,6 +144,36 @@ export async function deleteEstimateLine(tenantId: string, lineId: string): Prom
       [lineId, tenantId],
     );
     if (r.rowCount) await audit(c, tenantId, { table: "estimate_lines", rowId: lineId, action: "soft_delete", note: "estimate line removed" });
+  });
+}
+
+// Convert an accepted estimate into a draft contract + contract_services (reusing
+// the existing contract machinery; the user then activates it → K2 fans out
+// schedule + jobs). Idempotent: refuses if already converted.
+export async function convertEstimateToContract(tenantId: string, serviceLineId: string, estimateId: string): Promise<string> {
+  return withTenantTx(tenantId, async (c) => {
+    const e = (await c.query(
+      `select customer_id, branch_id, status, contract_id, service_line_id from estimates where id=$1 and tenant_id=$2 for update`,
+      [estimateId, tenantId])).rows[0];
+    if (!e) throw new Error("Estimate not found");
+    if (e.status !== "accepted") throw new Error("Only accepted estimates can be converted to a contract");
+    if (e.contract_id) throw new Error("This estimate is already converted to a contract");
+    if (!e.customer_id) throw new Error("Estimate needs a customer before it can become a contract");
+    const sl = e.service_line_id ?? serviceLineId;
+    const rev = (await c.query(`select coalesce(revenue,0) as r from estimate_profitability where estimate_id=$1`, [estimateId])).rows[0]?.r ?? 0;
+    const contract = (await c.query(
+      `insert into contracts(tenant_id, service_line_id, customer_id, contract_value, currency, lifecycle_status, start_date)
+       values ($1,$2,$3,$4,'AED','draft', current_date) returning id`,
+      [tenantId, sl, e.customer_id, rev])).rows[0];
+    await c.query(
+      `insert into contract_services(tenant_id, service_line_id, contract_id, branch_id, service_type_id, pricing_model_id, unit_price, quantity, notes)
+       select $1, $2, $3, $4, l.service_type_id, l.pricing_model_id, l.unit_price, greatest(l.measure,1), nullif(l.description,'')
+         from estimate_lines l where l.estimate_id=$5 and l.tenant_id=$1`,
+      [tenantId, sl, contract.id, e.branch_id, estimateId]);
+    await c.query(`update estimates set contract_id=$1 where id=$2`, [contract.id, estimateId]);
+    await audit(c, tenantId, { table: "estimates", rowId: estimateId, action: "update", newValue: { contract_id: contract.id }, note: "estimate converted to contract" });
+    await audit(c, tenantId, { table: "contracts", rowId: contract.id, action: "insert", newValue: { from_estimate: estimateId, contract_value: rev }, note: "contract created from accepted estimate" });
+    return contract.id as string;
   });
 }
 
