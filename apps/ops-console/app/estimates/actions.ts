@@ -61,11 +61,9 @@ export async function setStatusAction(fd: FormData): Promise<void> {
 
 export async function convertToContractAction(fd: FormData): Promise<void> {
   const id = String(fd.get("estimate_id") ?? "");
-  const customerId = String(fd.get("customer_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  await convertEstimateToContract(tenantId, sl, id);
-  // Contracts (and their Activate → schedule/jobs fan-out) live on the customer page.
-  redirect(customerId ? `/customers/${customerId}` : `/estimates/${id}`);
+  const contractId = await convertEstimateToContract(tenantId, sl, id);
+  redirect(`/contracts/${contractId}`);
 }

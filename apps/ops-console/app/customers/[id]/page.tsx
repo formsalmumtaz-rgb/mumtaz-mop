@@ -144,7 +144,7 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             <div key={ct.id} className="rounded border border-neutral-200 px-3 py-2 text-sm">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="font-medium">{ct.contract_number ?? "(no number)"}</span>
+                  <Link href={`/contracts/${ct.id}`} className="font-medium text-brand underline">{ct.contract_number ?? "(no number)"}</Link>
                   <span className="ml-2 text-neutral-500">
                     {ct.frequency_name ?? "no frequency"} · {ct.contract_value ? `${ct.contract_value} ${ct.currency}` : "no value"} · {ct.start_date ?? "?"}→{ct.end_date ?? "?"}
                   </span>

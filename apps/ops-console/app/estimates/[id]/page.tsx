@@ -59,7 +59,7 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
             </form>
           )}
           {header.contract_id && (
-            <Link href={`/customers/${header.customer_id}`} className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Contract created ✓</Link>
+            <Link href={`/contracts/${header.contract_id}`} className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Contract created ✓</Link>
           )}
           {(nextStatuses[header.status] ?? []).map((a) => (
             <form key={a.s} action={setStatusAction}>
