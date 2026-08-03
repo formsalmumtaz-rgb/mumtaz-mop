@@ -16,7 +16,7 @@ declare
   v_veh uuid; v_fuel uuid;
   v_cust uuid; v_job uuid; v_jc uuid;
   v_sr uuid; v_srr uuid; v_sra uuid;
-  v_rcp uuid; v_rca uuid; v_inv uuid;
+  v_rcp uuid; v_rca uuid; v_inv uuid; v_rfd uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -140,6 +140,14 @@ begin
   if not ok then raise exception 'FAIL: receipt_allocations was UPDATE-able'; end if;
   ok := false; begin delete from receipt_allocations where id=v_rca; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: receipt_allocations was DELETE-able'; end if;
+
+  -- (12) append-only: refunds (mig 036)
+  insert into refunds(tenant_id, customer_id, refund_number, method, amount)
+    values (v_tenant, v_cust, fn_next_document_number(v_tenant,'RFD'), 'cash', 25) returning id into v_rfd;
+  ok := false; begin update refunds set amount=999 where id=v_rfd; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: refunds was UPDATE-able'; end if;
+  ok := false; begin delete from refunds where id=v_rfd; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: refunds was DELETE-able'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;
