@@ -12,7 +12,7 @@ declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
-  st2_a uuid; pm2_a uuid; spm_a uuid;
+  st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -165,8 +165,25 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant service_pricing_models insert allowed'; end if;
 
+  -- (12) estimates + estimate_lines (mig 029) isolated
+  reset role;
+  insert into estimates(tenant_id, service_line_id, status) values (t_a, sl_a, 'draft') returning id into est_a;
+  insert into estimate_lines(tenant_id, estimate_id, pricing_model_id, unit_price, measure, line_total) values (t_a, est_a, pm2_a, 40, 5, 200) returning id into el_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from estimates where id = est_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A estimate'; end if;
+  perform 1 from estimate_lines where id = el_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A estimate_line'; end if;
+  blocked := false;
+  begin
+    insert into estimates(tenant_id, service_line_id, status) values (t_a, sl_a, 'draft');
+  exception when others then blocked := true;
+  end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant estimate insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 11 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 12 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates)' as result;
 rollback;

@@ -48,6 +48,51 @@ export async function listContracts(tenantId: string, customerId: string): Promi
   return rows as Contract[];
 }
 
+export interface ContractLine {
+  id: string;
+  service_type_name: string | null;
+  pricing_model_name: string | null;
+  unit_price: string | null;
+  quantity: string;
+  notes: string | null;
+}
+
+export interface ContractDetail extends Contract {
+  customer_id: string;
+  customer_name: string | null;
+  service_line_id: string;
+  source_estimate_id: string | null;
+  lines: ContractLine[];
+}
+
+export async function getContract(tenantId: string, id: string): Promise<ContractDetail | null> {
+  const { rows } = await pool.query(
+    `select ct.id, ct.contract_number, ct.lifecycle_status, ct.contract_value::text as contract_value,
+            ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
+            ct.frequency_id, f.name as frequency_name, ct.pricing_model_id, p.name as pricing_model_name,
+            ct.customer_id, cu.trade_name as customer_name, ct.service_line_id,
+            (select e.id from estimates e where e.contract_id = ct.id limit 1) as source_estimate_id
+       from contracts ct
+       left join frequencies f on f.id = ct.frequency_id
+       left join pricing_models p on p.id = ct.pricing_model_id
+       left join customers cu on cu.id = ct.customer_id
+      where ct.tenant_id = $1 and ct.id = $2`,
+    [tenantId, id],
+  );
+  if (!rows[0]) return null;
+  const { rows: lines } = await pool.query(
+    `select cs.id, st.name as service_type_name, pm.name as pricing_model_name,
+            cs.unit_price::text as unit_price, cs.quantity::text as quantity, cs.notes
+       from contract_services cs
+       left join service_types st on st.id = cs.service_type_id
+       left join pricing_models pm on pm.id = cs.pricing_model_id
+      where cs.tenant_id = $1 and cs.contract_id = $2 and cs.is_active
+      order by cs.created_at`,
+    [tenantId, id],
+  );
+  return { ...(rows[0] as ContractDetail), lines: lines as ContractLine[] };
+}
+
 export async function createContract(
   tenantId: string,
   serviceLineId: string,
