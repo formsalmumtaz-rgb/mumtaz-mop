@@ -99,7 +99,7 @@ Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
 - Customer credit limit / payment terms are warnings only; never block quotation
   or contract creation.
 
-## 5. Unified GL posting engine **[planned — after all documents exist]**
+## 5. Unified GL posting engine **[built — mig 037]**
 Per DECISIONS §9.1, one deterministic engine posts every event. Balanced entries
 (`debits=credits` by constraint), append-only `journal_lines`, idempotent on
 `(source_type, source_id)`, reversals are new entries (never edits). New
