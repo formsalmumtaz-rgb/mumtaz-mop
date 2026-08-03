@@ -138,3 +138,27 @@ const stockDeducter: Consumer = {
 };
 
 export const billingConsumers: Consumer[] = [invoiceQueuer, stockDeducter];
+
+// ── Recurring contract billing (scheduled) ────────────────────────────────
+// Deterministic, idempotent date-driven generation. Delegates to the in-DB
+// engine (fn_run_contract_billing) so all billing logic lives in one place.
+// Safe to run repeatedly.
+export async function runContractBilling(
+  db: { query: (q: string, p?: unknown[]) => Promise<{ rows: { n: number }[] }> },
+  tenantId: string,
+  asOf?: string,
+): Promise<number> {
+  const { rows } = await db.query(`select fn_run_contract_billing($1, coalesce($2::date, current_date)) as n`, [tenantId, asOf ?? null]);
+  return rows[0].n;
+}
+
+// Run recurring billing for every tenant (the scheduled sweep entry point).
+export async function runAllContractBilling(
+  db: { query: (q: string, p?: unknown[]) => Promise<{ rows: Array<{ id?: string; n?: number }> }> },
+  asOf?: string,
+): Promise<number> {
+  const { rows } = await db.query(`select id from tenants`);
+  let total = 0;
+  for (const t of rows) total += await runContractBilling(db as never, t.id as string, asOf);
+  return total;
+}

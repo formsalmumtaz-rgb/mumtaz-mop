@@ -284,6 +284,16 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 
 **9.3 — Service Report is immutable; approval and attachments are separate append-only records (mig 033).** `service_reports` stays append-only (Constitution). Approval (`service_report_reviews`) and photos/signature/files (`service_report_attachments`) are their own append-only tables — the report is never mutated. An invoice is gated on a service report existing and not rejected (and approved, when approval is required) via `fn_job_service_report_ok`.
 
+## 10 — Recurring Contract Billing (mig 038)
+
+**10.1 — Deterministic, idempotent recurring invoicing driven by the contract's own terms.** Contracts carry `billing_frequency` (per_visit/weekly/monthly/quarterly/half_yearly/yearly/custom), `billing_interval_days` (custom), `billing_day`, `next_invoice_date`, `last_invoice_date`, `auto_generate_invoice`. `fn_run_contract_billing(tenant, as_of)` generates due invoices (catching up missed periods), advances the schedule, audits each, and records failures without aborting the run — safe to run repeatedly. Generation reuses the existing pipeline (`fn_issue_invoice` → AMTX number → `fn_post_invoice_gl`); **no billing logic is duplicated**. Runs daily via Vercel Cron `/api/billing/run`.
+
+**10.2 — Idempotency is enforced in the database.** A partial unique index on `invoices(tenant_id, contract_id, billing_period)` guarantees at most one tax invoice per contract per period, ever (a cancelled auto-invoice keeps its period; re-billing is manual). Per-visit contracts are excluded from date-driven billing — they stay on the Service-Report-gated `job.completed` path. Expired (past `end_date`), cancelled, suspended and draft contracts never bill.
+
+**10.3 — Per-cycle amount basis (ASSUMED).** The per-invoice amount is the sum of the contract's active `contract_services` line totals (unit_price × quantity), or `contract_value` if there are no service lines — i.e. each cycle bills the configured line amounts as-is (no proration invented). VAT per the contract's `vat_treatment`. Editable via contract services.
+
+*(Known gap: tenants provisioned after mig 033/037 need their document counters + GL accounts/settings seeded; there is effectively one tenant today. Tracked for the tenant-provisioning milestone.)*
+
 ---
 
 ## Changelog
@@ -299,3 +309,4 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 | 1.6 | 3 Aug 2026 | §9 — Back Office Revenue Loop: owner decision that the revenue loop posts to the double-entry GL (Dr AR/Cr Revenue/Cr VAT-Output on issue; Dr Bank/Cr AR on receipt; reversing entries for credits/cancellations; new ASSUMED accounts). Document numbering (mig 033: SR/QTN/AMTX/AMTX-OW). Service Report immutable; approval + attachments separate append-only records. |
 | 1.7 | 3 Aug 2026 | §9.4 — Roadmap adjustment (owner): build the full revenue subledger first (invoice→receipt→credit note→AR→aging→cash flow) with NO GL posting, then one unified GL posting engine. Invoice subledger shipped (mig 034): AMTX/AMTX-OW numbering on issue, service-report gate, cancel keeps number reserved. |
 | 1.8 | 3 Aug 2026 | §9.5 — Unified GL posting engine shipped (mig 037): deterministic, append-only, idempotent, balanced, settings-configurable postings for invoice/cancel/receipt/credit-note/refund; new ASSUMED accounts (1000/1100/2200/4000). Subledger complete (receipts mig 035, credit notes/refunds mig 036, AR & cash-flow reports). |
+| 1.9 | 3 Aug 2026 | §10 — Recurring Contract Billing (mig 038): deterministic, idempotent date-driven invoice generation from contract terms; DB-enforced one-invoice-per-contract-per-period; daily Vercel Cron `/api/billing/run`; per-visit stays SR-gated; expired/cancelled never bill; per-cycle amount = contract services (ASSUMED). |

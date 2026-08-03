@@ -14,7 +14,7 @@ declare
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
   dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid; rcp_a uuid; rca_a uuid;
-  cn_a uuid; cnl_a uuid; rfd_a uuid; acct_a uuid; je_a uuid; jl_a uuid;
+  cn_a uuid; cnl_a uuid; rfd_a uuid; acct_a uuid; je_a uuid; jl_a uuid; bf_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -262,8 +262,18 @@ begin
   perform 1 from journal_entries where id = je_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A journal entry'; end if;
   perform 1 from journal_lines where id = jl_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A journal line'; end if;
 
+  -- (19) billing_failures (mig 038) isolated
+  reset role;
+  insert into billing_failures(tenant_id, contract_id, period, error_text) values (t_a, null, current_date, 'x') returning id into bf_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from billing_failures where id = bf_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A billing failure'; end if;
+  blocked := false;
+  begin insert into billing_failures(tenant_id, contract_id, period, error_text) values (t_a, null, current_date, 'x'); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant billing_failure insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 18 checks — …, invoices, receipts, credit notes + refunds, GL journal)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 19 checks — …, GL journal, billing failures)' as result;
 rollback;

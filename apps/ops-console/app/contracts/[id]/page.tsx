@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getContract, getScheduleSummary } from "@/lib/domain/contracts";
-import { activateContractAction } from "./actions";
+import { activateContractAction, setContractBillingAction } from "./actions";
+
+const FREQS = ["per_visit", "weekly", "monthly", "quarterly", "half_yearly", "yearly", "custom"];
 
 export const dynamic = "force-dynamic";
 const aed = (n: string | null, ccy = "AED") => (n == null ? "—" : `${ccy} ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
@@ -79,6 +81,33 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
           {!isActive && " — K2 fans out the schedule + jobs."}
         </p>
       )}
+
+      {/* Recurring billing */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-1 font-medium">Recurring billing</h2>
+        <p className="mb-4 text-sm text-neutral-600">
+          {ct.auto_generate_invoice && ct.billing_frequency && ct.billing_frequency !== "per_visit"
+            ? <>Auto-billing <b>{ct.billing_frequency}</b> · next {ct.next_invoice_date ?? "—"}{ct.last_invoice_date && <> · last {ct.last_invoice_date}</>}. Managed on the <Link href="/billing" className="text-brand underline">billing page</Link>.</>
+            : <>Not on recurring billing. Per-visit contracts bill from service reports; set a frequency below to auto-generate invoices.</>}
+        </p>
+        <form action={setContractBillingAction} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <input type="hidden" name="contract_id" value={ct.id} />
+          <label className="text-sm"><span className="text-neutral-600">Billing frequency</span>
+            <select name="billing_frequency" defaultValue={ct.billing_frequency ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+              <option value="">—</option>{FREQS.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select></label>
+          <label className="text-sm"><span className="text-neutral-600">Billing day (month-based)</span>
+            <input name="billing_day" type="number" min="1" max="31" defaultValue={ct.billing_day ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
+          <label className="text-sm"><span className="text-neutral-600">Custom interval (days)</span>
+            <input name="billing_interval_days" type="number" min="1" defaultValue={ct.billing_interval_days ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
+          <label className="text-sm"><span className="text-neutral-600">Next invoice date</span>
+            <input name="next_invoice_date" type="date" defaultValue={ct.next_invoice_date ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
+          <label className="flex items-center gap-2 text-sm sm:col-span-2">
+            <input type="checkbox" name="auto_generate_invoice" defaultChecked={ct.auto_generate_invoice} className="h-4 w-4" />
+            <span>Auto-generate invoices on schedule</span></label>
+          <div className="sm:col-span-2 lg:col-span-4"><button className="rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark">Save billing settings</button></div>
+        </form>
+      </section>
     </div>
   );
 }
