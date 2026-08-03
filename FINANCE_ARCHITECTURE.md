@@ -42,7 +42,7 @@ Status legend: **[built]** shipped · **[next]** in progress · **[planned]** no
 | Service Report | `SR` | `SR/YY/NNNNN` | on filing |
 | Contract invoice | `AMTX` | `AMTX/YY/NNNNN` | on issue |
 | Ad-hoc invoice | `AMTX_OW` | `AMTX/OW/YY/NNNNN` | on issue |
-| Receipt | `RCP` | `RCP/YY/NNNNN` | on confirm **[next]** |
+| Receipt | `RCP` | `RCP/YY/NNNNN` | on record **[built]** |
 | Credit note | `CRN` | `CRN/YY/NNNNN` | on issue **[planned]** |
 | Refund | `RFD` | `RFD/YY/NNNNN` | on confirm **[planned]** |
 
@@ -62,7 +62,7 @@ Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
   reverse_charge); per-line `vat_rate`/`vat_amount` frozen. Per-invoice override
   and discounts (approval-gated) **[planned]**.
 
-### 3.2 Receipt / Payment **[next]**
+### 3.2 Receipt / Payment **[built — mig 035]**
 - Tables: `receipts` (header: number, date, method, amount, reference,
   `others_note`) + `receipt_allocations` (receipt → invoice, amount).
   Both **append-only** once confirmed.
@@ -87,7 +87,10 @@ Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
 - Outflow against a credit note or an over-paid receipt; own `RFD` series;
   method as per receipts. Append-only.
 
-## 4. Accounts Receivable & ageing **[planned]**
+## 4. Accounts Receivable & ageing **[view built — mig 035; dashboards planned]**
+- `invoice_ar` view (mig 035) is the authoritative source: per-invoice balance,
+  payment_status (unpaid/partial/paid), days_overdue and ageing bucket. AR
+  dashboards / customer statements / reminders build on it.
 - Derived views over invoices + allocations + credit notes:
   outstanding balance per invoice/customer, receipt & invoice history.
 - **Overdue after 30 days**; ageing buckets **current / 1–30 / 31–60 / 61–90 /
