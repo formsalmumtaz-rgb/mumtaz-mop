@@ -14,6 +14,7 @@ declare
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
   dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid; rcp_a uuid; rca_a uuid;
+  cn_a uuid; cnl_a uuid; rfd_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -236,8 +237,22 @@ begin
   begin insert into receipts(tenant_id, service_line_id, customer_id, receipt_number, method, amount) values (t_a, sl_a, cust_a, 'RCP/26/00002', 'cash', 50); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant receipt insert allowed'; end if;
 
+  -- (17) credit_notes + credit_note_lines + refunds (mig 036) isolated
+  reset role;
+  insert into credit_notes(tenant_id, service_line_id, customer_id, invoice_id, total, status) values (t_a, sl_a, cust_a, inv_a, 50, 'issued') returning id into cn_a;
+  insert into credit_note_lines(tenant_id, credit_note_id, line_no, description, quantity, unit_price, line_total) values (t_a, cn_a, 1, 'x', 1, 50, 50) returning id into cnl_a;
+  insert into refunds(tenant_id, service_line_id, customer_id, credit_note_id, refund_number, method, amount) values (t_a, sl_a, cust_a, cn_a, 'RFD/26/00001', 'cash', 50) returning id into rfd_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from credit_notes where id = cn_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A credit note'; end if;
+  perform 1 from credit_note_lines where id = cnl_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A credit note line'; end if;
+  perform 1 from refunds where id = rfd_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A refund'; end if;
+  blocked := false;
+  begin insert into refunds(tenant_id, service_line_id, customer_id, refund_number, method, amount) values (t_a, sl_a, cust_a, 'RFD/26/00002', 'cash', 10); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant refund insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 16 checks — …, invoices, receipts)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 17 checks — …, invoices, receipts, credit notes + refunds)' as result;
 rollback;

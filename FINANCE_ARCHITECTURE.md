@@ -43,8 +43,8 @@ Status legend: **[built]** shipped · **[next]** in progress · **[planned]** no
 | Contract invoice | `AMTX` | `AMTX/YY/NNNNN` | on issue |
 | Ad-hoc invoice | `AMTX_OW` | `AMTX/OW/YY/NNNNN` | on issue |
 | Receipt | `RCP` | `RCP/YY/NNNNN` | on record **[built]** |
-| Credit note | `CRN` | `CRN/YY/NNNNN` | on issue **[planned]** |
-| Refund | `RFD` | `RFD/YY/NNNNN` | on confirm **[planned]** |
+| Credit note | `CRN` | `CRN/YY/NNNNN` | on issue **[built]** |
+| Refund | `RFD` | `RFD/YY/NNNNN` | on record **[built]** |
 
 Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
 
@@ -77,13 +77,13 @@ Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
 - Operational workflow prompts "payment received?" — expected immediately for
   ad-hoc, may be delayed for contract work.
 
-### 3.3 Credit note **[planned]**
+### 3.3 Credit note **[built — mig 036]**
 - Represented in `invoices` with `document_type='credit_note'` (or a dedicated
   `credit_notes` table if cleaner) linked to the original invoice; own `CRN`
   series; supports full and **partial** credit. Append-only; reduces the
   customer's outstanding balance.
 
-### 3.4 Refund **[planned]**
+### 3.4 Refund **[built — mig 036]**
 - Outflow against a credit note or an over-paid receipt; own `RFD` series;
   method as per receipts. Append-only.
 
