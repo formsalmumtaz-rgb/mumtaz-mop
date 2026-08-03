@@ -77,7 +77,8 @@ export async function recordReceipt(
       [tenantId, d.customer_id, (d.receipt_date ?? "").trim() || null, d.method, amount,
        (d.reference ?? "").trim() || null, (d.others_note ?? "").trim() || null, JSON.stringify(allocations)],
     );
-    await audit(c, tenantId, { table: "receipts", rowId: rows[0].id, action: "insert", newValue: { amount, method: d.method, allocations }, note: "receipt recorded" });
+    await c.query(`select fn_post_receipt_gl($1)`, [rows[0].id]); // unified GL posting, same tx
+    await audit(c, tenantId, { table: "receipts", rowId: rows[0].id, action: "insert", newValue: { amount, method: d.method, allocations }, note: "receipt recorded + posted to GL" });
     return rows[0].id as string;
   });
 }

@@ -124,7 +124,8 @@ export async function issueCreditNote(tenantId: string, id: string): Promise<str
     if (!cn) throw new Error("Credit note not found");
     if (Number(cn.total) <= 0) throw new Error("Add at least one line before issuing");
     const { rows } = await c.query(`select fn_issue_credit_note($1) as num`, [id]);
-    await audit(c, tenantId, { table: "credit_notes", rowId: id, action: "update", newValue: { status: "issued", credit_note_number: rows[0].num }, note: "credit note issued" });
+    await c.query(`select fn_post_credit_note_gl($1)`, [id]); // unified GL posting, same tx
+    await audit(c, tenantId, { table: "credit_notes", rowId: id, action: "update", newValue: { status: "issued", credit_note_number: rows[0].num }, note: "credit note issued + posted to GL" });
     return rows[0].num as string;
   });
 }
@@ -146,6 +147,7 @@ export async function recordRefund(tenantId: string, d: { credit_note_id: string
       `insert into refunds (tenant_id, service_line_id, customer_id, credit_note_id, refund_number, method, amount, reference, others_note)
        values ($1,$2,$3,$4, fn_next_document_number($1,'RFD'), $5,$6,$7,$8) returning id, refund_number`,
       [tenantId, cn.service_line_id, cn.customer_id, d.credit_note_id, d.method, Math.round(amount * 100) / 100, clean(d.reference), clean(d.others_note)]);
-    await audit(c, tenantId, { table: "refunds", rowId: rows[0].id, action: "insert", newValue: { amount, method: d.method, refund_number: rows[0].refund_number }, note: "refund recorded" });
+    await c.query(`select fn_post_refund_gl($1)`, [rows[0].id]); // unified GL posting, same tx
+    await audit(c, tenantId, { table: "refunds", rowId: rows[0].id, action: "insert", newValue: { amount, method: d.method, refund_number: rows[0].refund_number }, note: "refund recorded + posted to GL" });
   });
 }

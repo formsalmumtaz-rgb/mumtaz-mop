@@ -14,7 +14,7 @@ declare
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
   dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid; rcp_a uuid; rca_a uuid;
-  cn_a uuid; cnl_a uuid; rfd_a uuid;
+  cn_a uuid; cnl_a uuid; rfd_a uuid; acct_a uuid; je_a uuid; jl_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -251,8 +251,19 @@ begin
   begin insert into refunds(tenant_id, service_line_id, customer_id, refund_number, method, amount) values (t_a, sl_a, cust_a, 'RFD/26/00002', 'cash', 10); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant refund insert allowed'; end if;
 
+  -- (18) journal_entries + journal_lines (mig 007; GL engine mig 037) isolated
+  reset role;
+  insert into accounts(tenant_id, code, name, account_type) values (t_a, 'TX', 'Test acct', 'asset') returning id into acct_a;
+  insert into journal_entries(tenant_id, service_line_id, memo) values (t_a, sl_a, 'rls test') returning id into je_a;
+  insert into journal_lines(tenant_id, journal_entry_id, account_id, debit, credit) values (t_a, je_a, acct_a, 100, 0) returning id into jl_a;
+  insert into journal_lines(tenant_id, journal_entry_id, account_id, debit, credit) values (t_a, je_a, acct_a, 0, 100);
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from journal_entries where id = je_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A journal entry'; end if;
+  perform 1 from journal_lines where id = jl_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A journal line'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 17 checks — …, invoices, receipts, credit notes + refunds)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 18 checks — …, invoices, receipts, credit notes + refunds, GL journal)' as result;
 rollback;

@@ -141,7 +141,8 @@ export async function deleteInvoiceLine(tenantId: string, lineId: string, invoic
 export async function issueInvoice(tenantId: string, id: string): Promise<string> {
   return withTenantTx(tenantId, async (c) => {
     const { rows } = await c.query(`select fn_issue_invoice($1) as num`, [id]);
-    await audit(c, tenantId, { table: "invoices", rowId: id, action: "update", newValue: { status: "issued", invoice_number: rows[0].num }, note: "invoice issued" });
+    await c.query(`select fn_post_invoice_gl($1)`, [id]); // unified GL posting, same tx
+    await audit(c, tenantId, { table: "invoices", rowId: id, action: "update", newValue: { status: "issued", invoice_number: rows[0].num }, note: "invoice issued + posted to GL" });
     return rows[0].num as string;
   });
 }
@@ -149,6 +150,7 @@ export async function issueInvoice(tenantId: string, id: string): Promise<string
 export async function cancelInvoice(tenantId: string, id: string, reason: string): Promise<void> {
   await withTenantTx(tenantId, async (c) => {
     await c.query(`select fn_cancel_invoice($1,$2,null)`, [id, reason]);
-    await audit(c, tenantId, { table: "invoices", rowId: id, action: "update", oldValue: { status: "issued" }, newValue: { status: "cancelled", reason }, note: "invoice cancelled" });
+    await c.query(`select fn_post_invoice_cancel_gl($1)`, [id]); // reversing GL entry (no-op if never posted)
+    await audit(c, tenantId, { table: "invoices", rowId: id, action: "update", oldValue: { status: "issued" }, newValue: { status: "cancelled", reason }, note: "invoice cancelled + GL reversed" });
   });
 }
