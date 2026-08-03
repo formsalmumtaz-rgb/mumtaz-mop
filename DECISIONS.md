@@ -259,6 +259,17 @@ Depreciation (company-owned) / lease (leased-rented) is **never** in operational
 **7.4 — Chart of accounts remains ASSUMED and editable.**
 All GL account codes (labour/vehicle/overhead/clearing/accrual + inventory) are seeded ASSUMED and editable from Cost setup, replaceable with the accountant's final CoA without schema change.
 
+## 8 — Pre-sales pipeline (Survey → Estimate → Quotation → Contract)
+
+**8.1 — One pricing engine across the whole funnel.**
+Survey lines, estimate lines, and the quotation all price through the same `fn_price` (mig 028) and cost through the same `fn_estimate_cost` (mig 029, operating basis — no depreciation). A survey's numbers are byte-identical to the estimate it seeds; the quotation is the estimate's frozen snapshot rendered revenue-only (retail mode — internal cost/margin never shown to the customer).
+
+**8.2 — Data entered once; each stage seeds the next and links back.**
+An accepted estimate seeds a draft contract + `contract_services` (`estimates.contract_id`, mig 031); a survey seeds a draft estimate copying every line (`surveys.estimate_id`, mig 032). Both conversions are idempotent — they refuse if already linked. The contract then follows the existing lifecycle (activate → `contract.activated` → K2 fans out schedule + jobs); no scheduling/exactly-once guarantee is touched.
+
+**8.3 — Surveys are service-driven, not hardcoded (Art. XVIII).**
+Survey header attributes are validated against `field_definitions` (`entity_type='survey'`), so per-service-line custom fields are configured, not coded. No survey fields are seeded/invented. Offline field capture (PWA) is a later technician-app concern; mig 032 is the ops-console capture path.
+
 ---
 
 ## Changelog
@@ -270,3 +281,4 @@ All GL account codes (labour/vehicle/overhead/clearing/accrual + inventory) are 
 | 1.2 | 24 Jul 2026 | §2.B — Google Maps adopted for display, geocoding, and navigation deep-links (owner-directed). Routing/matrix stays off Google (VROOM/ORS); Art. XIII §2 reaffirmed. Supersedes the MapLibre/Protomaps/Nominatim choices in CONTEXT §9. |
 | 1.3 | 24 Jul 2026 | Ratified hybrid Google (CONSTITUTION Art. XVII): §2.B rewritten — Google routing adopted for Phase 4 behind `RouteProvider`, VROOM/ORS as fallback; two keys, server-side geocoding, SKU finding. §2.C — MOP runtime is Vercel + Supabase, DigitalOcean dropped for MOP. §2.D — no messaging intake bot. |
 | 1.4 | 29 Jul 2026 | §7 — Costing engine: labour rate is a placeholder (1700 basic ÷ 176, not employment cost); assumed-costing strict-block by default + dev-only, environment-bound (production fail-safe); vehicle depreciation/lease is management-accounting only (not in operational profit); chart of accounts stays ASSUMED and editable. |
+| 1.5 | 3 Aug 2026 | §8 — Pre-sales pipeline: one pricing/cost engine across survey→estimate→quotation; each stage seeds the next and links back idempotently (estimate→contract mig 031, survey→estimate mig 032); surveys service-driven via `field_definitions(entity_type='survey')`. |

@@ -8,15 +8,17 @@ interface Rates { labour: number; vehicle: number; overheadOn: boolean; overhead
 const nn = (v: string) => { const x = Number((v ?? "").trim()); return Number.isFinite(x) ? x : 0; };
 
 // Mirrors fn_price (028) + fn_estimate_cost (029) for a live line preview.
+// Shared by estimate lines and survey lines so the preview is identical.
 function price(mt: string, unit: number, measure: number, spec: ModelOpt["formula_spec"], m: Record<string, number>): number {
   if (mt === "fixed" || mt === "custom") return unit;
   if (mt === "formula") return (spec?.base ?? 0) + (spec?.terms ?? []).reduce((s, t) => s + t.rate * (m[t.measure_key] ?? 0), 0);
   return unit * measure;
 }
 
-export function EstimateLineForm({ action, estimateId, services, models, rates }: {
+export function LineForm({ action, entityId, idFieldName = "estimate_id", services, models, rates, showObservedNotes = false, submitLabel = "Add line" }: {
   action: (fd: FormData) => Promise<void>;
-  estimateId: string; services: Opt[]; models: ModelOpt[]; rates: Rates;
+  entityId: string; idFieldName?: string; services: Opt[]; models: ModelOpt[]; rates: Rates;
+  showObservedNotes?: boolean; submitLabel?: string;
 }) {
   const [modelId, setModelId] = useState("");
   const [unit, setUnit] = useState("");
@@ -44,7 +46,7 @@ export function EstimateLineForm({ action, estimateId, services, models, rates }
 
   return (
     <form action={action} className="mt-3 space-y-3">
-      <input type="hidden" name="estimate_id" value={estimateId} />
+      <input type="hidden" name={idFieldName} value={entityId} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="text-sm"><span className="text-neutral-600">Service</span>
           <select name="service_type_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
@@ -86,12 +88,17 @@ export function EstimateLineForm({ action, estimateId, services, models, rates }
           <input name="est_material_cost" type="number" min="0" step="any" value={mat} onChange={(e) => setMat(e.target.value)} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
       </div>
 
+      {showObservedNotes && (
+        <label className="block text-sm"><span className="text-neutral-600">Observed on site</span>
+          <input name="observed_notes" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" placeholder="e.g. heavy activity near kitchen drains" /></label>
+      )}
+
       <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-4 py-3 text-sm flex flex-wrap gap-x-6">
         <span>Revenue <span className="font-semibold">AED {revenue.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></span>
         <span>Est. cost <span className="font-semibold">AED {cost.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></span>
         <span>Margin <span className="font-semibold">{margin == null ? "—" : margin.toFixed(1) + "%"}</span></span>
       </div>
-      <button className="w-full rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">Add line</button>
+      <button className="w-full rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">{submitLabel}</button>
     </form>
   );
 }

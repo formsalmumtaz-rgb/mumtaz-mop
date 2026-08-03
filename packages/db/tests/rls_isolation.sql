@@ -12,7 +12,7 @@ declare
   t_a uuid; t_b uuid; c_a uuid; c_b uuid; g_a uuid;
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
-  st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid;
+  st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -182,8 +182,22 @@ begin
   end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant estimate insert allowed'; end if;
 
+  -- (13) surveys + survey_lines (mig 032) isolated
+  reset role;
+  insert into surveys(tenant_id, service_line_id, customer_id, status) values (t_a, sl_a, cust_a, 'draft') returning id into sv_a;
+  insert into survey_lines(tenant_id, survey_id, pricing_model_id, unit_price, measure, line_total) values (t_a, sv_a, pm2_a, 40, 5, 200) returning id into svl_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from surveys where id = sv_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A survey'; end if;
+  perform 1 from survey_lines where id = svl_a;
+  if found then raise exception 'RLS FAIL: tenant B can see tenant A survey_line'; end if;
+  blocked := false;
+  begin insert into surveys(tenant_id, service_line_id, customer_id, status) values (t_a, sl_a, cust_a, 'draft'); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant survey insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 12 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 13 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates, surveys)' as result;
 rollback;
