@@ -87,7 +87,7 @@ Ad-hoc vs contract is decided by `contract_id` presence on the invoice.
 - Outflow against a credit note or an over-paid receipt; own `RFD` series;
   method as per receipts. Append-only.
 
-## 4. Accounts Receivable & ageing **[view built — mig 035; dashboards planned]**
+## 4. Accounts Receivable & ageing **[built — mig 035/036 + /ar dashboard]**
 - `invoice_ar` view (mig 035) is the authoritative source: per-invoice balance,
   payment_status (unpaid/partial/paid), days_overdue and ageing bucket. AR
   dashboards / customer statements / reminders build on it.
