@@ -60,6 +60,23 @@ export async function listSurveys(tenantId: string): Promise<SurveyHeader[]> {
   return rows as SurveyHeader[];
 }
 
+export async function listSurveysForCustomer(tenantId: string, customerId: string): Promise<SurveyHeader[]> {
+  const { rows } = await pool.query(
+    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
+            s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
+            s.property_type, s.estimate_id,
+            p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
+       from surveys s
+       left join customers cu on cu.id = s.customer_id
+       left join technicians t on t.id = s.surveyor_id
+       left join survey_profitability p on p.survey_id = s.id
+      where s.tenant_id = $1 and s.customer_id = $2
+      order by s.survey_date desc, s.created_at desc`,
+    [tenantId, customerId],
+  );
+  return rows as SurveyHeader[];
+}
+
 export async function getSurvey(tenantId: string, id: string): Promise<{ header: SurveyHeader; lines: SurveyLine[] } | null> {
   const { rows: hdr } = await pool.query(
     `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,

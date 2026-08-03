@@ -4,6 +4,8 @@ import { getTenantId } from "@/lib/tenant";
 import { getCustomer } from "@/lib/domain/customers";
 import { listBranches } from "@/lib/domain/branches";
 import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
+import { listSurveysForCustomer } from "@/lib/domain/survey";
+import { listEstimatesForCustomer } from "@/lib/domain/estimation";
 import { listFrequencies, listPricingModels, listFacilityTypes } from "@/lib/domain/reference";
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { PinPicker } from "@/components/PinPicker";
@@ -22,13 +24,16 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
   const customer = await getCustomer(tenantId, id);
   if (!customer) notFound();
 
-  const [branches, contracts, frequencies, pricingModels, facilityTypes] = await Promise.all([
+  const [branches, contracts, frequencies, pricingModels, facilityTypes, surveys, estimates] = await Promise.all([
     listBranches(tenantId, id),
     listContracts(tenantId, id),
     listFrequencies(tenantId),
     listPricingModels(tenantId),
     listFacilityTypes(tenantId),
+    listSurveysForCustomer(tenantId, id),
+    listEstimatesForCustomer(tenantId, id),
   ]);
+  const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
   const summaries = new Map(
     await Promise.all(contracts.map(async (ct) => [ct.id, await getScheduleSummary(tenantId, ct.id)] as const)),
   );
@@ -131,6 +136,51 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             <button className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">Add site</button>
           </form>
         </details>
+      </section>
+
+      {/* Surveys */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-medium">Surveys <span className="text-neutral-400">({surveys.length})</span></h2>
+          <Link href="/surveys" className="text-sm text-brand underline">+ New survey</Link>
+        </div>
+        <div className="space-y-2">
+          {surveys.length === 0 && <p className="text-sm text-neutral-500">No surveys yet.</p>}
+          {surveys.map((s) => (
+            <Link key={s.id} href={`/surveys/${s.id}`} className="flex items-center justify-between rounded border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50">
+              <span>{s.survey_date} · <span className="text-neutral-500">{s.surveyor ?? "—"}</span> · {s.line_count ?? 0} lines</span>
+              <span className="flex items-center gap-3">
+                <span className="text-neutral-600">{aed(s.revenue)}</span>
+                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs">{s.status}</span>
+                {s.estimate_id && <span className="text-xs text-emerald-700">→ estimate</span>}
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* Estimates */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-medium">Estimates <span className="text-neutral-400">({estimates.length})</span></h2>
+          <Link href="/estimates" className="text-sm text-brand underline">+ New estimate</Link>
+        </div>
+        <div className="space-y-2">
+          {estimates.length === 0 && <p className="text-sm text-neutral-500">No estimates yet.</p>}
+          {estimates.map((e) => {
+            const margin = e.revenue > 0 ? ((e.gross_profit / e.revenue) * 100).toFixed(0) + "%" : "—";
+            return (
+              <Link key={e.id} href={`/estimates/${e.id}`} className="flex items-center justify-between rounded border border-neutral-200 px-3 py-2 text-sm hover:bg-neutral-50">
+                <span>{e.line_count ?? 0} lines · margin {margin}</span>
+                <span className="flex items-center gap-3">
+                  <span className="text-neutral-600">{aed(e.revenue)}</span>
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs">{e.status}</span>
+                  {e.contract_id && <span className="text-xs text-emerald-700">→ contract</span>}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
       </section>
 
       {/* Contracts */}

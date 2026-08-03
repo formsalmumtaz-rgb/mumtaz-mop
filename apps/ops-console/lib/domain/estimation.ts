@@ -37,6 +37,21 @@ export async function listEstimates(tenantId: string): Promise<EstimateHeader[]>
   return rows as EstimateHeader[];
 }
 
+export async function listEstimatesForCustomer(tenantId: string, customerId: string): Promise<EstimateHeader[]> {
+  const { rows } = await pool.query(
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+            e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
+            p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
+       from estimates e
+       left join customers cu on cu.id = e.customer_id
+       left join estimate_profitability p on p.estimate_id = e.id
+      where e.tenant_id = $1 and e.customer_id = $2
+      order by e.created_at desc`,
+    [tenantId, customerId],
+  );
+  return rows as EstimateHeader[];
+}
+
 export interface EstimateLine {
   id: string;
   service_type_id: string | null;
