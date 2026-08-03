@@ -149,6 +149,16 @@ begin
   ok := false; begin delete from refunds where id=v_rfd; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: refunds was DELETE-able'; end if;
 
+  -- (13) append-only: billing_failures (mig 038)
+  declare v_bf uuid;
+  begin
+    insert into billing_failures(tenant_id, contract_id, period, error_text) values (v_tenant, null, current_date, 'test') returning id into v_bf;
+    ok := false; begin update billing_failures set error_text='x' where id = v_bf; exception when others then ok := true; end;
+    if not ok then raise exception 'FAIL: billing_failures was UPDATE-able'; end if;
+    ok := false; begin delete from billing_failures where id = v_bf; exception when others then ok := true; end;
+    if not ok then raise exception 'FAIL: billing_failures was DELETE-able'; end if;
+  end;
+
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;
 rollback;

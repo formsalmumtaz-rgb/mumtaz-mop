@@ -62,6 +62,12 @@ export interface ContractDetail extends Contract {
   customer_name: string | null;
   service_line_id: string;
   source_estimate_id: string | null;
+  billing_frequency: string | null;
+  billing_day: number | null;
+  billing_interval_days: number | null;
+  auto_generate_invoice: boolean;
+  next_invoice_date: string | null;
+  last_invoice_date: string | null;
   lines: ContractLine[];
 }
 
@@ -71,6 +77,8 @@ export async function getContract(tenantId: string, id: string): Promise<Contrac
             ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
             ct.frequency_id, f.name as frequency_name, ct.pricing_model_id, p.name as pricing_model_name,
             ct.customer_id, cu.trade_name as customer_name, ct.service_line_id,
+            ct.billing_frequency, ct.billing_day, ct.billing_interval_days, ct.auto_generate_invoice,
+            ct.next_invoice_date::text as next_invoice_date, ct.last_invoice_date::text as last_invoice_date,
             (select e.id from estimates e where e.contract_id = ct.id limit 1) as source_estimate_id
        from contracts ct
        left join frequencies f on f.id = ct.frequency_id
