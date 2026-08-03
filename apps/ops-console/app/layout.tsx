@@ -12,6 +12,7 @@ const nav = [
   { href: "/customers", label: "Customers" },
   { href: "/surveys", label: "Surveys" },
   { href: "/estimates", label: "Estimates" },
+  { href: "/pipeline", label: "Pipeline" },
   { href: "/chemicals", label: "Chemicals" },
   { href: "/purchases", label: "Purchases" },
   { href: "/cost-config", label: "Cost setup" },
