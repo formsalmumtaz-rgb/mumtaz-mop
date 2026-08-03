@@ -118,7 +118,7 @@ Output Payable, `4000` Service Revenue.
 VAT line is omitted when zero-rated/exempt. Posting reads the subledger; it does
 not recompute document amounts.
 
-## 6. Reporting & revenue recognition **[planned]**
+## 6. Reporting & revenue recognition **[cash flow + accrual/cash toggle built — /cash-flow; management KPIs planned]**
 - **Accrual** basis = revenue recognised when the invoice is *issued*.
   **Cash** basis = recognised when payment is *received* (receipt allocation).
   Every financial dashboard offers an accrual/cash toggle.
