@@ -15,6 +15,7 @@ declare
   v_tech uuid; v_cost uuid;
   v_veh uuid; v_fuel uuid;
   v_cust uuid; v_job uuid; v_jc uuid;
+  v_sr uuid; v_srr uuid; v_sra uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -110,6 +111,20 @@ begin
   if not ok then raise exception 'FAIL: job_costs was UPDATE-able'; end if;
   ok := false; begin delete from job_costs where id = v_jc; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: job_costs was DELETE-able'; end if;
+
+  -- (10) append-only: service_report_reviews + service_report_attachments (mig 033)
+  insert into service_reports(tenant_id, service_line_id, job_id, customer_id, report_number)
+    values (v_tenant, v_sl, v_job, v_cust, fn_next_document_number(v_tenant,'SR')) returning id into v_sr;
+  insert into service_report_reviews(tenant_id, service_report_id, action) values (v_tenant, v_sr, 'approved') returning id into v_srr;
+  ok := false; begin update service_report_reviews set action='rejected' where id = v_srr; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: service_report_reviews was UPDATE-able'; end if;
+  ok := false; begin delete from service_report_reviews where id = v_srr; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: service_report_reviews was DELETE-able'; end if;
+  insert into service_report_attachments(tenant_id, service_report_id, kind, storage_key) values (v_tenant, v_sr, 'photo', 'k/x.jpg') returning id into v_sra;
+  ok := false; begin update service_report_attachments set storage_key='y' where id = v_sra; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: service_report_attachments was UPDATE-able'; end if;
+  ok := false; begin delete from service_report_attachments where id = v_sra; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: service_report_attachments was DELETE-able'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;

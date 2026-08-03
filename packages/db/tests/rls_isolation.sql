@@ -13,6 +13,7 @@ declare
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
+  dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -196,8 +197,23 @@ begin
   begin insert into surveys(tenant_id, service_line_id, customer_id, status) values (t_a, sl_a, cust_a, 'draft'); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant survey insert allowed'; end if;
 
+  -- (14) document_counters + service report reviews/attachments (mig 033) isolated
+  reset role;
+  insert into document_counters(tenant_id, series_key, prefix, next_value) values (t_a, 'SR', 'SR', 1) returning id into dc_a;
+  insert into service_reports(tenant_id, service_line_id, job_id, customer_id, report_number) values (t_a, sl_a, job_a, cust_a, 'SR/26/00001') returning id into sr_a;
+  insert into service_report_reviews(tenant_id, service_report_id, action) values (t_a, sr_a, 'approved') returning id into srr_a;
+  insert into service_report_attachments(tenant_id, service_report_id, kind, storage_key) values (t_a, sr_a, 'photo', 'k/x.jpg') returning id into sra_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from document_counters where id = dc_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A document counter'; end if;
+  perform 1 from service_report_reviews where id = srr_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A SR review'; end if;
+  perform 1 from service_report_attachments where id = sra_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A SR attachment'; end if;
+  blocked := false;
+  begin insert into service_report_reviews(tenant_id, service_report_id, action) values (t_a, sr_a, 'approved'); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant SR review insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 13 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates, surveys)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 14 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates, surveys, numbering + service reports)' as result;
 rollback;

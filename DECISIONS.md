@@ -270,6 +270,15 @@ An accepted estimate seeds a draft contract + `contract_services` (`estimates.co
 **8.3 — Surveys are service-driven, not hardcoded (Art. XVIII).**
 Survey header attributes are validated against `field_definitions` (`entity_type='survey'`), so per-service-line custom fields are configured, not coded. No survey fields are seeded/invented. Offline field capture (PWA) is a later technician-app concern; mig 032 is the ops-console capture path.
 
+## 9 — Back Office Revenue Loop
+
+**9.1 — Accounting model: the revenue loop posts to the double-entry GL (owner decision, 3 Aug 2026).**
+In addition to the invoice/receipt/credit-note subledger, issuing an invoice will post **Dr Accounts Receivable / Cr Revenue / Cr VAT-Output**; recording a receipt posts **Dr Bank/Cash / Cr Accounts Receivable**; credit notes and cancellations post **reversing** entries (never edits). This requires introducing Revenue / Accounts Receivable / VAT-Output / Bank accounts — seeded **ASSUMED and editable** (per §7.4). The existing `debits=credits` constraint and append-only `journal_lines` are preserved; nothing in the cost/inventory posting is changed. *(Implemented from the Invoice milestone onward; the numbering + Service Report milestone is accounting-free.)*
+
+**9.2 — Document numbering (mig 033).** One global gap-free counter per series via `fn_next_document_number` — `SR/YY/NNNNN`, `QTN/YY/NNNNN`, `AMTX/YY/NNNNN` (contract invoices), `AMTX/OW/YY/NNNNN` (ad-hoc invoices). The number never resets, the year is stamped from the issue date, and a cancelled document keeps its number forever (never reused). AMTX / AMTX-OW starting values are **ASSUMED** (owner sets the real next number to continue the legacy sequence before issuing).
+
+**9.3 — Service Report is immutable; approval and attachments are separate append-only records (mig 033).** `service_reports` stays append-only (Constitution). Approval (`service_report_reviews`) and photos/signature/files (`service_report_attachments`) are their own append-only tables — the report is never mutated. An invoice is gated on a service report existing and not rejected (and approved, when approval is required) via `fn_job_service_report_ok`.
+
 ---
 
 ## Changelog
@@ -282,3 +291,4 @@ Survey header attributes are validated against `field_definitions` (`entity_type
 | 1.3 | 24 Jul 2026 | Ratified hybrid Google (CONSTITUTION Art. XVII): §2.B rewritten — Google routing adopted for Phase 4 behind `RouteProvider`, VROOM/ORS as fallback; two keys, server-side geocoding, SKU finding. §2.C — MOP runtime is Vercel + Supabase, DigitalOcean dropped for MOP. §2.D — no messaging intake bot. |
 | 1.4 | 29 Jul 2026 | §7 — Costing engine: labour rate is a placeholder (1700 basic ÷ 176, not employment cost); assumed-costing strict-block by default + dev-only, environment-bound (production fail-safe); vehicle depreciation/lease is management-accounting only (not in operational profit); chart of accounts stays ASSUMED and editable. |
 | 1.5 | 3 Aug 2026 | §8 — Pre-sales pipeline: one pricing/cost engine across survey→estimate→quotation; each stage seeds the next and links back idempotently (estimate→contract mig 031, survey→estimate mig 032); surveys service-driven via `field_definitions(entity_type='survey')`. |
+| 1.6 | 3 Aug 2026 | §9 — Back Office Revenue Loop: owner decision that the revenue loop posts to the double-entry GL (Dr AR/Cr Revenue/Cr VAT-Output on issue; Dr Bank/Cr AR on receipt; reversing entries for credits/cancellations; new ASSUMED accounts). Document numbering (mig 033: SR/QTN/AMTX/AMTX-OW). Service Report immutable; approval + attachments separate append-only records. |
