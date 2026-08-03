@@ -15,6 +15,7 @@ const nav = [
   { href: "/pipeline", label: "Pipeline" },
   { href: "/service-reports", label: "Service reports" },
   { href: "/invoices", label: "Invoices" },
+  { href: "/receipts", label: "Receipts" },
   { href: "/chemicals", label: "Chemicals" },
   { href: "/purchases", label: "Purchases" },
   { href: "/cost-config", label: "Cost setup" },

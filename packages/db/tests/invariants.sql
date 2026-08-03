@@ -16,6 +16,7 @@ declare
   v_veh uuid; v_fuel uuid;
   v_cust uuid; v_job uuid; v_jc uuid;
   v_sr uuid; v_srr uuid; v_sra uuid;
+  v_rcp uuid; v_rca uuid; v_inv uuid;
   ok boolean;
 begin
   select id into v_tenant from tenants where name = 'Mumtaz Integrated Services Group';
@@ -125,6 +126,20 @@ begin
   if not ok then raise exception 'FAIL: service_report_attachments was UPDATE-able'; end if;
   ok := false; begin delete from service_report_attachments where id = v_sra; exception when others then ok := true; end;
   if not ok then raise exception 'FAIL: service_report_attachments was DELETE-able'; end if;
+
+  -- (11) append-only: receipts + receipt_allocations (mig 035)
+  insert into receipts(tenant_id, customer_id, receipt_number, method, amount)
+    values (v_tenant, v_cust, fn_next_document_number(v_tenant,'RCP'), 'cash', 100) returning id into v_rcp;
+  ok := false; begin update receipts set amount=999 where id=v_rcp; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: receipts was UPDATE-able'; end if;
+  ok := false; begin delete from receipts where id=v_rcp; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: receipts was DELETE-able'; end if;
+  insert into invoices(tenant_id, service_line_id, customer_id, status, total) values (v_tenant, v_sl, v_cust, 'issued', 100) returning id into v_inv;
+  insert into receipt_allocations(tenant_id, receipt_id, invoice_id, amount) values (v_tenant, v_rcp, v_inv, 100) returning id into v_rca;
+  ok := false; begin update receipt_allocations set amount=1 where id=v_rca; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: receipt_allocations was UPDATE-able'; end if;
+  ok := false; begin delete from receipt_allocations where id=v_rca; exception when others then ok := true; end;
+  if not ok then raise exception 'FAIL: receipt_allocations was DELETE-able'; end if;
 
   raise notice 'ALL INVARIANT CHECKS PASSED';
 end $$;

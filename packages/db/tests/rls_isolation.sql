@@ -13,7 +13,7 @@ declare
   s_a uuid; it_a uuid; ib_a uuid; ip_a uuid; sl_a uuid; tech_a uuid; cc_a uuid;
   cust_a uuid; job_a uuid; jle_a uuid; jd_a uuid; veh_a uuid; vf_a uuid; jc_a uuid;
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
-  dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid;
+  dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid; rcp_a uuid; rca_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -224,8 +224,20 @@ begin
   begin insert into invoices(tenant_id, service_line_id, customer_id, status) values (t_a, sl_a, cust_a, 'draft'); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant invoice insert allowed'; end if;
 
+  -- (16) receipts + receipt_allocations (mig 035) isolated
+  reset role;
+  insert into receipts(tenant_id, service_line_id, customer_id, receipt_number, method, amount) values (t_a, sl_a, cust_a, 'RCP/26/00001', 'cash', 100) returning id into rcp_a;
+  insert into receipt_allocations(tenant_id, receipt_id, invoice_id, amount) values (t_a, rcp_a, inv_a, 100) returning id into rca_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from receipts where id = rcp_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A receipt'; end if;
+  perform 1 from receipt_allocations where id = rca_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A receipt allocation'; end if;
+  blocked := false;
+  begin insert into receipts(tenant_id, service_line_id, customer_id, receipt_number, method, amount) values (t_a, sl_a, cust_a, 'RCP/26/00002', 'cash', 50); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant receipt insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 15 checks — customers, groups, inventory, employee cost, cost capture, vehicles/fuel, job costs, pricing models, estimates, surveys, numbering + service reports, invoices)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 16 checks — …, invoices, receipts)' as result;
 rollback;
