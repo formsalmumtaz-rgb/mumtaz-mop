@@ -19,6 +19,7 @@ const nav = [
   { href: "/credit-notes", label: "Credit notes" },
   { href: "/ar", label: "Receivables" },
   { href: "/cash-flow", label: "Cash flow" },
+  { href: "/reports", label: "Reports" },
   { href: "/chemicals", label: "Chemicals" },
   { href: "/purchases", label: "Purchases" },
   { href: "/cost-config", label: "Cost setup" },
