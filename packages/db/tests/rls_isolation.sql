@@ -15,6 +15,7 @@ declare
   st2_a uuid; pm2_a uuid; spm_a uuid; est_a uuid; el_a uuid; sv_a uuid; svl_a uuid;
   dc_a uuid; sr_a uuid; srr_a uuid; sra_a uuid; inv_a uuid; invl_a uuid; rcp_a uuid; rca_a uuid;
   cn_a uuid; cnl_a uuid; rfd_a uuid; acct_a uuid; je_a uuid; jl_a uuid; bf_a uuid;
+  au_a uuid; ro_a uuid; ur_a uuid;
   visible int; blocked boolean;
 begin
   insert into tenants(name) values ('RLS Test A') returning id into t_a;
@@ -272,8 +273,23 @@ begin
   begin insert into billing_failures(tenant_id, contract_id, period, error_text) values (t_a, null, current_date, 'x'); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant billing_failure insert allowed'; end if;
 
+  -- (20) identity/RBAC: app_users + roles + user_roles (mig 039) isolated
+  reset role;
+  insert into app_users(id, tenant_id, full_name, email) values (gen_random_uuid(), t_a, 'A User', 'a@example.com') returning id into au_a;
+  insert into roles(tenant_id, code, name) values (t_a, 'r1', 'R1') returning id into ro_a;
+  insert into role_permissions(tenant_id, role_id, permission_code) values (t_a, ro_a, 'customer.view');
+  insert into user_roles(tenant_id, user_id, role_id) values (t_a, au_a, ro_a) returning id into ur_a;
+  set local role mop_app;
+  perform set_config('app.current_tenant', t_b::text, true);
+  perform 1 from app_users where id = au_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A user'; end if;
+  perform 1 from roles where id = ro_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A role'; end if;
+  perform 1 from user_roles where id = ur_a; if found then raise exception 'RLS FAIL: tenant B can see tenant A user_role'; end if;
+  blocked := false;
+  begin insert into roles(tenant_id, code, name) values (t_a, 'r2', 'R2'); exception when others then blocked := true; end;
+  if not blocked then raise exception 'RLS FAIL: cross-tenant role insert allowed'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
-select 'RLS ISOLATION TEST PASSED (non-privileged role: 19 checks — …, GL journal, billing failures)' as result;
+select 'RLS ISOLATION TEST PASSED (non-privileged role: 20 checks — …, billing failures, identity/RBAC)' as result;
 rollback;

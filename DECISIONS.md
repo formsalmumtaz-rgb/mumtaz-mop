@@ -294,6 +294,20 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 
 *(Known gap: tenants provisioned after mig 033/037 need their document counters + GL accounts/settings seeded; there is effectively one tenant today. Tracked for the tenant-provisioning milestone.)*
 
+## 11 — Security & access model (auth + RBAC + live RLS)
+
+**11.1 — Authentication = Supabase Auth (owner-confirmed).** Office staff log in via Supabase Auth; `app_users.id` = `auth.users.id` (no passwords stored in our schema). The owner enables Supabase Auth and creates the first admin; the rest are added via an admin-driven invite flow. Claude never creates accounts or handles passwords.
+
+**11.2 — RBAC (mig 039).** Six seeded roles — admin, management, finance, operations, technician, viewer — over a 28-code permission catalogue (`permissions` / `roles` / `role_permissions` / `user_roles`). **Profit and GL are finance/management only; technicians have no financial permissions.** Roles are per-tenant and editable.
+
+**11.3 — External parties are not users.** Auditors and municipality inspectors are **not** `app_users`; no role grants them access. Per Constitution Art. V they receive scoped, expiring links (a separate mechanism, built later). Stated explicitly so the boundary isn't missed.
+
+**11.4 — One choke point; phased flip to live RLS.** All DB access flows through `withRequest(ctx, fn)` which sets `app.current_tenant` + `app.current_actor` per transaction. **Phase A1 (done):** identity schema + the helper, privileged role kept → no behaviour change. **A2:** wire Supabase Auth, session, `can(permission)` guards, populate `audit_log.actor_id`. **A3:** add `set local role mop_app` in the one helper → RLS becomes the live boundary. Gated by a fail-closed coverage test: under mop_app with no tenant set, every tenant table returns zero rows.
+
+**11.5 — Offline sessions (constrains the PWA).** The field app validates the Supabase access token locally (JWT signature vs cached JWKS + `exp`) — no live round-trip per request. Short access-token TTL (~1h), long refresh-token TTL (30–60 days). Offline with an expired access but valid refresh token → the technician keeps working; mutations queue under the login actor and are re-authorized server-side at sync. Re-login only if the refresh token itself expires (≫ a working day).
+
+**11.6 — Cron/worker context without superuser.** Scheduled jobs (billing run, outbox drain) run under mop_app and iterate tenants via the single `SECURITY DEFINER` pinhole `fn_all_active_tenant_ids()` (returns tenant IDs only), opening a per-tenant `withRequest` with a reserved system actor. No superuser bypass reopens the hole.
+
 ---
 
 ## Changelog
@@ -310,3 +324,4 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 | 1.7 | 3 Aug 2026 | §9.4 — Roadmap adjustment (owner): build the full revenue subledger first (invoice→receipt→credit note→AR→aging→cash flow) with NO GL posting, then one unified GL posting engine. Invoice subledger shipped (mig 034): AMTX/AMTX-OW numbering on issue, service-report gate, cancel keeps number reserved. |
 | 1.8 | 3 Aug 2026 | §9.5 — Unified GL posting engine shipped (mig 037): deterministic, append-only, idempotent, balanced, settings-configurable postings for invoice/cancel/receipt/credit-note/refund; new ASSUMED accounts (1000/1100/2200/4000). Subledger complete (receipts mig 035, credit notes/refunds mig 036, AR & cash-flow reports). |
 | 1.9 | 3 Aug 2026 | §10 — Recurring Contract Billing (mig 038): deterministic, idempotent date-driven invoice generation from contract terms; DB-enforced one-invoice-per-contract-per-period; daily Vercel Cron `/api/billing/run`; per-visit stays SR-gated; expired/cancelled never bill; per-cycle amount = contract services (ASSUMED). |
+| 2.0 | 3 Aug 2026 | §11 — Security model: Supabase Auth + RBAC (6 roles, 28 permissions; profit/GL finance+management only, technicians none); external parties get scoped links, not logins; `withRequest` choke point with phased flip to live RLS under mop_app; offline field sessions; cron context via `fn_all_active_tenant_ids()` SECURITY DEFINER pinhole. Phase A1 shipped (mig 039): identity schema + helper, inert (no behaviour change). |
