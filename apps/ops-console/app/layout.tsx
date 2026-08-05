@@ -33,6 +33,7 @@ const nav = [
   { href: "/teams", label: "Teams" },
   { href: "/recipes", label: "Treatment recipes" },
   { href: "/settings", label: "Settings" },
+  { href: "/settings/users", label: "Users" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,0 +1,58 @@
+import "server-only";
+import { pool } from "./db";
+import { createSupabaseServerClient } from "./supabase/server";
+
+// Session + permission resolution. Foundation for the A2 guards. Returns null
+// when there is no Supabase session OR the authenticated user is not (yet) a
+// provisioned app_user. In Phase A1 (before the first admin is mapped) this is
+// always null, so nothing enforces yet — the app behaves exactly as before.
+
+export interface AppSession {
+  userId: string;
+  tenantId: string;
+  fullName: string | null;
+  email: string | null;
+  roles: string[];
+  permissions: Set<string>;
+}
+
+export async function getSession(): Promise<AppSession | null> {
+  let user;
+  try {
+    const supabase = await createSupabaseServerClient();
+    ({ data: { user } } = await supabase.auth.getUser());
+  } catch {
+    return null; // auth not reachable/enabled yet — treat as unauthenticated (inert phase)
+  }
+  if (!user) return null;
+
+  // Identity bootstrap: resolve app_user → tenant + roles + permissions. This is
+  // the ONE read that must precede tenant scoping (it establishes the tenant), so
+  // it uses the pool directly — a documented exception to the pool.query gate.
+  const { rows } = await pool.query(
+    `select u.tenant_id, u.full_name, u.email,
+            coalesce(array_agg(distinct r.code) filter (where r.code is not null), '{}') as roles,
+            coalesce(array_agg(distinct rp.permission_code) filter (where rp.permission_code is not null), '{}') as perms
+       from app_users u
+       left join user_roles ur on ur.user_id = u.id
+       left join roles r on r.id = ur.role_id
+       left join role_permissions rp on rp.role_id = r.id
+      where u.id = $1 and u.is_active
+      group by u.tenant_id, u.full_name, u.email`,
+    [user.id],
+  );
+  if (!rows[0]) return null;
+  return {
+    userId: user.id,
+    tenantId: rows[0].tenant_id as string,
+    fullName: rows[0].full_name,
+    email: rows[0].email,
+    roles: rows[0].roles as string[],
+    permissions: new Set(rows[0].perms as string[]),
+  };
+}
+
+export async function can(permission: string): Promise<boolean> {
+  const s = await getSession();
+  return !!s && s.permissions.has(permission);
+}
