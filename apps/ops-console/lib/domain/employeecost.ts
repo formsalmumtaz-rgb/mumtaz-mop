@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -30,7 +30,7 @@ export interface EmployeeCost {
 
 // One row per technician; left-joins the current (open) cost version if any.
 export async function listEmployeeCosts(tenantId: string): Promise<EmployeeCost[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select t.id as technician_id, t.code, t.full_name,
             ec.id as version_id, ec.version_no,
             ec.basic_salary::text, ec.accommodation_monthly::text, ec.transport_allowance_monthly::text,

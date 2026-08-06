@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 export interface Dashboard {
   jobsToday: number;
@@ -15,7 +15,7 @@ export interface Dashboard {
 // Live figures for the owner's dashboard (computed on load; a materialised-view
 // refresh for true real-time is a later phase).
 export async function getDashboard(tenantId: string): Promise<Dashboard> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select
        (select count(*) from jobs where tenant_id=$1 and scheduled_date = current_date)::int as jobs_today,
        (select count(*) from jobs where tenant_id=$1 and status='completed' and completed_at::date = current_date)::int as completed_today,

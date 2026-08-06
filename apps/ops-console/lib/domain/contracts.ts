@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -33,7 +33,7 @@ const clean = (v?: string) => {
 };
 
 export async function listContracts(tenantId: string, customerId: string): Promise<Contract[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select ct.id, ct.contract_number, ct.lifecycle_status, ct.contract_value::text as contract_value,
             ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
             ct.frequency_id, f.name as frequency_name,
@@ -72,7 +72,7 @@ export interface ContractDetail extends Contract {
 }
 
 export async function getContract(tenantId: string, id: string): Promise<ContractDetail | null> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select ct.id, ct.contract_number, ct.lifecycle_status, ct.contract_value::text as contract_value,
             ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
             ct.frequency_id, f.name as frequency_name, ct.pricing_model_id, p.name as pricing_model_name,
@@ -88,7 +88,7 @@ export async function getContract(tenantId: string, id: string): Promise<Contrac
     [tenantId, id],
   );
   if (!rows[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select cs.id, st.name as service_type_name, pm.name as pricing_model_name,
             cs.unit_price::text as unit_price, cs.quantity::text as quantity, cs.notes
        from contract_services cs
@@ -136,14 +136,14 @@ export interface ScheduleSummary {
 
 // What one activated contract produced — for the UI (demo moment #1).
 export async function getScheduleSummary(tenantId: string, contractId: string): Promise<ScheduleSummary> {
-  const { rows: s } = await pool.query(
+  const { rows: s } = await scopedRead(tenantId, 
     `select count(*)::int n, min(scheduled_date)::text f, max(scheduled_date)::text l
        from contract_schedule where tenant_id=$1 and contract_id=$2`,
     [tenantId, contractId],
   );
-  const { rows: j } = await pool.query(
+  const { rows: j } = await scopedRead(tenantId, 
     `select count(*)::int n from jobs where tenant_id=$1 and contract_id=$2`, [tenantId, contractId]);
-  const { rows: r } = await pool.query(
+  const { rows: r } = await scopedRead(tenantId, 
     `select count(*)::int n from reminders where tenant_id=$1 and entity_id=$2 and reminder_type='contract_renewal'`,
     [tenantId, contractId]);
   return { scheduleCount: s[0].n, firstDate: s[0].f, lastDate: s[0].l, jobsCount: j[0].n, remindersCount: r[0].n };

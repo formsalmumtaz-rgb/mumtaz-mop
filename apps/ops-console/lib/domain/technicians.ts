@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -15,7 +15,7 @@ export interface Technician {
 }
 
 export async function listTechnicians(tenantId: string): Promise<Technician[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, full_name, phone, is_assumed, assumed_note, confirmed_at, is_active
        from technicians
       where tenant_id = $1

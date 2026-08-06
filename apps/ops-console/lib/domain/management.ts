@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Management analytics (mig 025 fn_management_profit). Operating Profit is the
 // operational default (labour + vehicle running cost + material + optional
@@ -25,7 +25,7 @@ function parse(m: Record<string, unknown>): ManagementProfit {
 }
 
 export async function getManagementProfit(tenantId: string, from: string, to: string): Promise<ManagementProfit> {
-  const { rows } = await pool.query(`select fn_management_profit($1, $2::date, $3::date) as m`, [tenantId, from, to]);
+  const { rows } = await scopedRead(tenantId, `select fn_management_profit($1, $2::date, $3::date) as m`, [tenantId, from, to]);
   return parse(rows[0].m);
 }
 
@@ -36,7 +36,7 @@ export interface ManagementMonth extends ManagementProfit {
 // Per-calendar-month breakdown across the range (each bucket = one month of
 // depreciation). Capped to keep the query bounded.
 export async function listManagementMonths(tenantId: string, from: string, to: string): Promise<ManagementMonth[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select to_char(m, 'YYYY-MM') as month,
             fn_management_profit($1, m::date, (m + interval '1 month')::date) as data
        from generate_series(date_trunc('month', $2::date), date_trunc('month', $3::date), interval '1 month') m

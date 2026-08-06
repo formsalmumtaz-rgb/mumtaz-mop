@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 import { runContractBilling } from "@mop/worker";
@@ -33,16 +33,16 @@ export interface BillingDashboard {
 
 export async function getBillingDashboard(tenantId: string): Promise<BillingDashboard> {
   const [today, week, overdue, upcoming, recent, failures] = await Promise.all([
-    pool.query(dueQuery("c.next_invoice_date = current_date"), [tenantId]),
-    pool.query(dueQuery("c.next_invoice_date > current_date and c.next_invoice_date <= current_date + 7"), [tenantId]),
-    pool.query(dueQuery("c.next_invoice_date < current_date"), [tenantId]),
-    pool.query(dueQuery("c.next_invoice_date > current_date + 7 and c.next_invoice_date <= current_date + 60"), [tenantId]),
-    pool.query(
+    scopedRead(tenantId, dueQuery("c.next_invoice_date = current_date"), [tenantId]),
+    scopedRead(tenantId, dueQuery("c.next_invoice_date > current_date and c.next_invoice_date <= current_date + 7"), [tenantId]),
+    scopedRead(tenantId, dueQuery("c.next_invoice_date < current_date"), [tenantId]),
+    scopedRead(tenantId, dueQuery("c.next_invoice_date > current_date + 7 and c.next_invoice_date <= current_date + 60"), [tenantId]),
+    scopedRead(tenantId, 
       `select i.id, i.invoice_number, cu.trade_name as customer, i.billing_period::text, i.total::float8, i.status
          from invoices i left join customers cu on cu.id = i.customer_id
         where i.tenant_id=$1 and i.billing_period is not null
         order by i.created_at desc limit 15`, [tenantId]),
-    pool.query(
+    scopedRead(tenantId, 
       `select f.id, f.contract_id, f.period::text, f.error_text, f.created_at::text
          from billing_failures f where f.tenant_id=$1 order by f.created_at desc limit 15`, [tenantId]),
   ]);
@@ -54,7 +54,7 @@ export async function getBillingDashboard(tenantId: string): Promise<BillingDash
 
 export interface PreviewRow { contract_id: string; contract_number: string | null; customer: string | null; billing_frequency: string; next_invoice_date: string; already_billed_to: string | null; }
 export async function previewUpcoming(tenantId: string, horizonDays = 30): Promise<PreviewRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select contract_id, contract_number, customer, billing_frequency, next_invoice_date::text, already_billed_to::text
        from fn_preview_contract_billing($1, current_date + $2::int)`,
     [tenantId, horizonDays],

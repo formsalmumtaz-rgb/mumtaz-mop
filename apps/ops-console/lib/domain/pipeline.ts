@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Sales pipeline (read-only projection over the pre-sales funnel:
 // survey → estimate → quotation → contract). Deterministic counts + values;
@@ -19,7 +19,7 @@ export interface Pipeline {
 const pctOf = (n: number, d: number): number | null => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
 
 export async function getPipeline(tenantId: string): Promise<Pipeline> {
-  const { rows: sv } = await pool.query(
+  const { rows: sv } = await scopedRead(tenantId, 
     `select count(*)::int total,
             count(*) filter (where status='draft')::int draft,
             count(*) filter (where status='completed')::int completed,
@@ -27,13 +27,13 @@ export async function getPipeline(tenantId: string): Promise<Pipeline> {
             count(*) filter (where estimate_id is not null)::int converted
        from surveys where tenant_id=$1`, [tenantId]);
 
-  const { rows: es } = await pool.query(
+  const { rows: es } = await scopedRead(tenantId, 
     `select e.status, count(*)::int n, coalesce(sum(p.revenue),0)::float8 revenue,
             count(*) filter (where e.contract_id is not null)::int with_contract
        from estimates e left join estimate_profitability p on p.estimate_id=e.id
       where e.tenant_id=$1 group by e.status`, [tenantId]);
 
-  const { rows: ct } = await pool.query(
+  const { rows: ct } = await scopedRead(tenantId, 
     `select lifecycle_status, count(*)::int n from contracts where tenant_id=$1 group by lifecycle_status`, [tenantId]);
 
   const eBy = (s: string) => es.find((r) => r.status === s) ?? { n: 0, revenue: 0, with_contract: 0 };

@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -25,7 +25,7 @@ export interface PricingModel {
 }
 
 export async function listPricingModels(tenantId: string): Promise<PricingModel[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, name, model_type, formula_spec, is_assumed, assumed_note
        from pricing_models where tenant_id=$1 and is_active order by model_type, name`,
     [tenantId],
@@ -90,9 +90,9 @@ export async function updatePricingModel(tenantId: string, id: string, d: Pricin
 export interface ServiceModelMap { service_type_id: string; service_name: string; model_ids: string[]; default_id: string | null }
 
 export async function listServiceModelMap(tenantId: string): Promise<ServiceModelMap[]> {
-  const { rows: sts } = await pool.query(
+  const { rows: sts } = await scopedRead(tenantId, 
     `select id, name from service_types where tenant_id=$1 and is_active order by name`, [tenantId]);
-  const { rows: links } = await pool.query(
+  const { rows: links } = await scopedRead(tenantId, 
     `select service_type_id, pricing_model_id, is_default from service_pricing_models where tenant_id=$1 and is_active`, [tenantId]);
   return sts.map((s: { id: string; name: string }) => {
     const mine = links.filter((l: { service_type_id: string }) => l.service_type_id === s.id);

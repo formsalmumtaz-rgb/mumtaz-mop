@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -21,7 +21,7 @@ export interface ServiceReportHeader {
 }
 
 export async function listServiceReports(tenantId: string): Promise<ServiceReportHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select sr.id, sr.report_number, sr.job_id, sr.customer_id, cu.trade_name as customer,
             sr.performed_by, t.full_name as performer, sr.server_completed_at::text,
             st.review_action,
@@ -43,7 +43,7 @@ export interface ServiceReportAttachment { id: string; kind: string; storage_key
 export async function getServiceReport(tenantId: string, id: string): Promise<{
   header: ServiceReportHeader & { snapshot: Record<string, unknown> }; reviews: ServiceReportReview[]; attachments: ServiceReportAttachment[];
 } | null> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select sr.id, sr.report_number, sr.job_id, sr.customer_id, cu.trade_name as customer,
             sr.performed_by, t.full_name as performer, sr.server_completed_at::text, sr.snapshot,
             st.review_action,
@@ -56,11 +56,11 @@ export async function getServiceReport(tenantId: string, id: string): Promise<{
     [tenantId, id],
   );
   if (!rows[0]) return null;
-  const { rows: reviews } = await pool.query(
+  const { rows: reviews } = await scopedRead(tenantId, 
     `select id, action, note, created_at::text from service_report_reviews where tenant_id=$1 and service_report_id=$2 order by created_at desc`,
     [tenantId, id],
   );
-  const { rows: attachments } = await pool.query(
+  const { rows: attachments } = await scopedRead(tenantId, 
     `select id, kind, storage_key, caption, created_at::text from service_report_attachments where tenant_id=$1 and service_report_id=$2 order by created_at`,
     [tenantId, id],
   );
@@ -69,7 +69,7 @@ export async function getServiceReport(tenantId: string, id: string): Promise<{
 
 // Completed jobs that don't yet have a service report — the back-office capture queue.
 export async function listCompletedJobsWithoutSR(tenantId: string): Promise<{ id: string; customer: string | null; scheduled_date: string | null }[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select j.id, cu.trade_name as customer, j.scheduled_date::text
        from jobs j
        left join customers cu on cu.id = j.customer_id

@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -34,7 +34,7 @@ export interface InvoiceLine {
 }
 
 export async function listInvoices(tenantId: string): Promise<InvoiceHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select i.id, i.invoice_number, i.document_type, i.customer_id, cu.trade_name as customer,
             i.contract_id, i.job_id, i.status, i.issue_date::text, i.due_date::text,
             i.currency, i.vat_treatment, i.subtotal::float8, i.vat_total::float8, i.total::float8,
@@ -48,7 +48,7 @@ export async function listInvoices(tenantId: string): Promise<InvoiceHeader[]> {
 }
 
 export async function getInvoice(tenantId: string, id: string): Promise<{ header: InvoiceHeader; lines: InvoiceLine[] } | null> {
-  const { rows: hdr } = await pool.query(
+  const { rows: hdr } = await scopedRead(tenantId, 
     `select i.id, i.invoice_number, i.document_type, i.customer_id, cu.trade_name as customer,
             i.contract_id, i.job_id, i.status, i.issue_date::text, i.due_date::text,
             i.currency, i.vat_treatment, i.subtotal::float8, i.vat_total::float8, i.total::float8,
@@ -58,7 +58,7 @@ export async function getInvoice(tenantId: string, id: string): Promise<{ header
     [tenantId, id],
   );
   if (!hdr[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select id, line_no, description, quantity::float8, unit_price::float8, vat_rate::float8, vat_amount::float8, line_total::float8
        from invoice_lines where tenant_id=$1 and invoice_id=$2 order by line_no nulls last, created_at`,
     [tenantId, id],

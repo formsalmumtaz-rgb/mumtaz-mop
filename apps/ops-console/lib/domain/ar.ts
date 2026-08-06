@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Accounts Receivable & ageing — read-only over invoice_ar (mig 035/036).
 // Deterministic; monitoring only (warnings, never blocks).
@@ -14,7 +14,7 @@ export interface ArSummary {
 }
 
 export async function getArSummary(tenantId: string): Promise<ArSummary> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select coalesce(sum(balance),0)::float8 as outstanding,
             coalesce(sum(balance) filter (where days_overdue > 0),0)::float8 as overdue,
             aging_bucket, coalesce(sum(balance),0)::float8 as bucket_total
@@ -37,7 +37,7 @@ export interface CustomerAgingRow {
 }
 
 export async function getCustomerAging(tenantId: string): Promise<CustomerAgingRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select ar.customer_id, cu.trade_name as customer,
             coalesce(sum(ar.balance),0)::float8 as total,
             coalesce(sum(ar.balance) filter (where ar.days_overdue > 0),0)::float8 as overdue,
@@ -67,7 +67,7 @@ export interface OpenInvoiceRow {
 }
 
 export async function listOutstandingInvoices(tenantId: string): Promise<OpenInvoiceRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select ar.invoice_id, ar.invoice_number, cu.trade_name as customer, ar.issue_date::text, ar.due_date::text,
             ar.total::float8, ar.balance::float8, ar.days_overdue, ar.aging_bucket, ar.payment_status
        from invoice_ar ar left join customers cu on cu.id = ar.customer_id

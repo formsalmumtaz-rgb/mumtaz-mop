@@ -1,6 +1,7 @@
 import "server-only";
 import { recordPurchase, drainOnce, consumers } from "@mop/worker";
-import { pool } from "../db";
+import { pool } from "../db"; // system use only: drainOnce(pool) after a purchase
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -18,7 +19,7 @@ export interface StockLocation {
 }
 
 export async function listStockLocations(tenantId: string): Promise<StockLocation[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, name, location_type, is_assumed
        from stock_locations where tenant_id = $1 and is_active
       order by case location_type when 'warehouse' then 0 when 'van' then 1 else 2 end, name`,
@@ -45,7 +46,7 @@ export interface PurchaseRow {
 }
 
 export async function listPurchases(tenantId: string, limit = 50): Promise<PurchaseRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select p.id, p.purchase_date::text as purchase_date, i.name as item_name, s.name as supplier_name,
             b.batch_no, b.expiry_date::text as expiry_date,
             p.pack_quantity::text as pack_quantity, p.pack_size::text as pack_size,

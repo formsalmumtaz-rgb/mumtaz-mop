@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Cash Flow + revenue recognition (read-only over the subledger). Two bases:
 //  - accrual: revenue recognised when an invoice is ISSUED (ex-VAT subtotal),
@@ -26,7 +26,7 @@ export async function getCashFlow(tenantId: string, basis: Basis): Promise<CashF
          union all
          select to_char(refund_date,'YYYY-MM'), 0, amount from refunds where tenant_id=$1
        ) x group by period order by period`;
-  const { rows } = await pool.query(sql, [tenantId]);
+  const { rows } = await scopedRead(tenantId, sql, [tenantId]);
   const out: CashFlowRow[] = rows.map((r) => ({ period: r.period, inflow: r.inflow, outflow: r.outflow, net: r.inflow - r.outflow }));
   const inflow = out.reduce((s, r) => s + r.inflow, 0);
   const outflow = out.reduce((s, r) => s + r.outflow, 0);

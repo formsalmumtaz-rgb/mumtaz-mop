@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -46,7 +46,7 @@ const num = (v?: string) => {
 };
 
 export async function listItems(tenantId: string): Promise<Item[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select i.id, i.code, i.name, i.base_unit_id, u.code as base_unit_code,
             i.active_ingredient, i.intended_service_type_ids, i.is_recurring_stock,
             i.shelf_life_days, i.reorder_level::text as reorder_level,

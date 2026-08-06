@@ -5,6 +5,8 @@
   "description": "Office-facing admin console for MOP master-data maintenance (Next.js 15).",
   "scripts": {
     "dev": "next dev -p 3100",
+    "lint:rls": "node scripts/rls-gate.mjs",
+    "prebuild": "node scripts/rls-gate.mjs",
     "build": "next build",
     "start": "next start -p 3100",
     "typecheck": "tsc --noEmit"
