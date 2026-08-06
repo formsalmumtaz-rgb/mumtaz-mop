@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -32,7 +32,7 @@ const clean = (v?: string) => {
 
 export async function listCustomers(tenantId: string, search?: string): Promise<Customer[]> {
   const term = (search ?? "").trim();
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active
        from customers
       where tenant_id = $1
@@ -44,7 +44,7 @@ export async function listCustomers(tenantId: string, search?: string): Promise<
 }
 
 export async function getCustomer(tenantId: string, id: string): Promise<Customer | null> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active
        from customers where id = $1 and tenant_id = $2`,
     [id, tenantId],

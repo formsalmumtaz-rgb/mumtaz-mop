@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -54,7 +54,7 @@ const ACCOUNT_KEYS: { key: string; label: string }[] = [
 ];
 
 async function settingRow(tenantId: string, key: string): Promise<{ value: string | null; is_assumed: boolean } | null> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select value #>> '{}' as value, is_assumed from settings where tenant_id=$1 and key=$2 order by service_line_id nulls last limit 1`,
     [tenantId, key],
   );
@@ -80,7 +80,7 @@ export async function getCostRates(tenantId: string): Promise<CostRates> {
 }
 
 export async function listCostAccounts(tenantId: string): Promise<CostAccount[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select s.key, (s.value #>> '{}') as code, a.name as account_name, a.is_assumed
        from settings s
        left join accounts a on a.tenant_id = s.tenant_id and a.code = (s.value #>> '{}')
@@ -95,12 +95,12 @@ export async function listCostAccounts(tenantId: string): Promise<CostAccount[]>
 }
 
 export async function getReadiness(tenantId: string): Promise<ReadinessStatus> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select fn_cost_config_status($1, (select id from service_lines where tenant_id=$1 and code='pest_control')) as s`,
     [tenantId],
   );
   const s = rows[0].s as { ready: boolean; config_assumed: boolean; unconfirmed: number; items: string[] };
-  const { rows: jc } = await pool.query(
+  const { rows: jc } = await scopedRead(tenantId, 
     `select count(*)::int n from jobs j
       where j.tenant_id=$1 and j.status='completed'
         and not exists (select 1 from job_cost_current c where c.job_id=j.id)`,
@@ -191,6 +191,6 @@ export async function confirmCostAccount(
 
 // The unlock action: cost every completed job that has no current cost.
 export async function runBacklog(tenantId: string): Promise<{ costed: number; blocked: number }> {
-  const { rows } = await pool.query(`select fn_cost_jobs_backlog($1, 1000) as r`, [tenantId]);
+  const { rows } = await scopedRead(tenantId, `select fn_cost_jobs_backlog($1, 1000) as r`, [tenantId]);
   return rows[0].r as { costed: number; blocked: number };
 }

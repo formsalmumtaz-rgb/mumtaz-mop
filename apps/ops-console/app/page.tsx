@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { pool } from "@/lib/db";
+import { scopedRead } from "@/lib/rls";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 async function assumedCounts(tenantId: string) {
   const tables = ["technicians", "teams", "service_types", "pest_types", "treatment_methods", "frequencies", "facility_types", "pricing_models"];
   const parts = tables.map((t) => `select '${t}' as tbl, count(*) filter (where is_assumed)::int as n from ${t} where tenant_id = $1`);
-  const { rows } = await pool.query(parts.join("\nunion all\n"), [tenantId]);
+  const { rows } = await scopedRead(tenantId, parts.join("\nunion all\n"), [tenantId]);
   return rows as { tbl: string; n: number }[];
 }
 

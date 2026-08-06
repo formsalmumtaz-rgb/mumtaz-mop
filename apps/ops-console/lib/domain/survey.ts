@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -44,7 +44,7 @@ export interface SurveyLine {
 }
 
 export async function listSurveys(tenantId: string): Promise<SurveyHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
@@ -61,7 +61,7 @@ export async function listSurveys(tenantId: string): Promise<SurveyHeader[]> {
 }
 
 export async function listSurveysForCustomer(tenantId: string, customerId: string): Promise<SurveyHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
@@ -78,7 +78,7 @@ export async function listSurveysForCustomer(tenantId: string, customerId: strin
 }
 
 export async function getSurvey(tenantId: string, id: string): Promise<{ header: SurveyHeader; lines: SurveyLine[] } | null> {
-  const { rows: hdr } = await pool.query(
+  const { rows: hdr } = await scopedRead(tenantId, 
     `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
@@ -91,7 +91,7 @@ export async function getSurvey(tenantId: string, id: string): Promise<{ header:
     [tenantId, id],
   );
   if (!hdr[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select l.id, l.service_type_id, st.name as service_name, l.pricing_model_id, pm.name as model_name, pm.model_type,
             l.description, l.unit_price::float8, l.measure::float8, l.measures, l.line_total::float8,
             l.est_labour_hours::float8, l.est_distance_km::float8, l.est_material_cost::float8, l.est_cost::float8, l.observed_notes

@@ -1,5 +1,5 @@
 import "server-only";
-import type { PoolClient } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { pool } from "./db";
 
 // The single choke point for tenant + actor scoped database access.
@@ -16,6 +16,20 @@ import { pool } from "./db";
 export interface RequestContext {
   tenantId: string;
   actorId?: string | null; // authenticated user id (Phase A2 populates this)
+}
+
+// Ergonomic scoped read: a one-shot query inside a tenant/actor-scoped
+// transaction. All domain reads use this instead of the bare pool, so the
+// A3 role flip (in withRequest) makes every read RLS-enforced with no further
+// change. Enforced by the pool.query gate (scripts/rls-gate.mjs).
+// Default row type is `any` to match the previous pool.query ergonomics (callers
+// cast `.rows` themselves), so this is a behaviour-preserving swap.
+export async function scopedRead<T extends QueryResultRow = any>(
+  tenantId: string,
+  sql: string,
+  params: unknown[] = [],
+): Promise<QueryResult<T>> {
+  return withRequest({ tenantId }, (c) => c.query<T>(sql, params));
 }
 
 export async function withRequest<T>(ctx: RequestContext, fn: (client: PoolClient) => Promise<T>): Promise<T> {

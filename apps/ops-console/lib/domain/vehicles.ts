@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -26,7 +26,7 @@ export interface Vehicle {
 }
 
 export async function listVehicles(tenantId: string): Promise<Vehicle[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select v.id, v.code, v.name, v.registration_plate, v.ownership_type,
             v.monthly_depreciation::text, v.monthly_lease_cost::text, v.monthly_fixed_cost::text,
             v.technician_id, coalesce(t.full_name, t.code) as technician_name,
@@ -41,7 +41,7 @@ export async function listVehicles(tenantId: string): Promise<Vehicle[]> {
 }
 
 export async function getDefaultMonthlyDepreciation(tenantId: string): Promise<string | null> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select value #>> '{}' as v from settings where tenant_id=$1 and key='cost.default_monthly_depreciation' limit 1`,
     [tenantId],
   );

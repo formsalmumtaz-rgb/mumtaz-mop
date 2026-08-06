@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Financial statements — read-only over the double-entry GL (journal_entries /
 // journal_lines / accounts). Deterministic. Because every entry is balanced,
@@ -9,7 +9,7 @@ export interface TrialBalanceRow { code: string; name: string; account_type: str
 export interface TrialBalance { rows: TrialBalanceRow[]; total_debit: number; total_credit: number; as_of: string | null; }
 
 export async function getTrialBalance(tenantId: string, asOf?: string): Promise<TrialBalance> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select a.code, a.name, a.account_type,
             coalesce(sum(jl.debit),0)::float8 as debit, coalesce(sum(jl.credit),0)::float8 as credit
        from accounts a
@@ -29,7 +29,7 @@ export async function getTrialBalance(tenantId: string, asOf?: string): Promise<
 export interface GlLine { entry_id: string; entry_date: string; source_type: string | null; memo: string | null; code: string; name: string; debit: number; credit: number; }
 
 export async function getGeneralLedger(tenantId: string, opts: { from?: string; to?: string } = {}): Promise<GlLine[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select je.id as entry_id, je.entry_date::text, je.source_type, je.memo, a.code, a.name,
             jl.debit::float8, jl.credit::float8
        from journal_entries je
@@ -49,7 +49,7 @@ export interface PlRow { code: string; name: string; amount: number; }
 export interface ProfitAndLoss { income: PlRow[]; expense: PlRow[]; total_income: number; total_expense: number; net: number; from: string; to: string; }
 
 export async function getProfitAndLoss(tenantId: string, from: string, to: string): Promise<ProfitAndLoss> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select a.code, a.name, a.account_type,
             coalesce(sum(jl.credit - jl.debit),0)::float8 as amount
        from accounts a
@@ -78,7 +78,7 @@ export interface BalanceSheet {
 }
 
 export async function getBalanceSheet(tenantId: string, asOf: string): Promise<BalanceSheet> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select a.code, a.name, a.account_type,
             coalesce(sum(jl.debit - jl.credit),0)::float8 as dr_minus_cr,
             coalesce(sum(jl.credit - jl.debit),0)::float8 as cr_minus_dr
@@ -111,7 +111,7 @@ export interface VatSummary { output_vat: number; taxable_sales: number; from: s
 // Output VAT and taxable sales from the GL (VAT-Output account movements net of
 // credits, and revenue recognised). Input VAT is not tracked separately yet.
 export async function getVatSummary(tenantId: string, from: string, to: string): Promise<VatSummary> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select
        coalesce(sum(jl.credit - jl.debit) filter (where a.code = (select value #>> '{}' from settings where tenant_id=$1 and service_line_id is null and key='gl.account_code.vat_output')),0)::float8 as output_vat,
        coalesce(sum(jl.credit - jl.debit) filter (where a.code = (select value #>> '{}' from settings where tenant_id=$1 and service_line_id is null and key='gl.account_code.revenue')),0)::float8 as taxable_sales
@@ -130,8 +130,8 @@ export interface CustomerStatement { customer: string | null; rows: StatementRow
 // Chronological receivable ledger for one customer. Debit increases what the
 // customer owes (invoice, refund); credit decreases it (receipt, credit note).
 export async function getCustomerStatement(tenantId: string, customerId: string): Promise<CustomerStatement> {
-  const cust = (await pool.query(`select trade_name from customers where id=$1 and tenant_id=$2`, [customerId, tenantId])).rows[0];
-  const { rows } = await pool.query(
+  const cust = (await scopedRead(tenantId, `select trade_name from customers where id=$1 and tenant_id=$2`, [customerId, tenantId])).rows[0];
+  const { rows } = await scopedRead(tenantId, 
     `select d, doc_type, reference, debit::float8, credit::float8 from (
        select coalesce(issue_date, created_at::date) d, 'Invoice' doc_type, invoice_number reference, total debit, 0 credit
          from invoices where tenant_id=$1 and customer_id=$2 and document_type='tax_invoice' and status in ('issued','paid')
@@ -152,7 +152,7 @@ export async function getCustomerStatement(tenantId: string, customerId: string)
 export interface RevenueRow { key: string; label: string; revenue: number; }
 
 export async function getRevenueByMonth(tenantId: string): Promise<RevenueRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select period, sum(rev)::float8 revenue from (
        select to_char(issue_date,'YYYY-MM') period, subtotal rev from invoices where tenant_id=$1 and document_type='tax_invoice' and status in ('issued','paid') and issue_date is not null
        union all
@@ -164,7 +164,7 @@ export async function getRevenueByMonth(tenantId: string): Promise<RevenueRow[]>
 }
 
 export async function getRevenueByCustomer(tenantId: string): Promise<RevenueRow[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select customer_id, coalesce(customer,'(unknown)') label, sum(rev)::float8 revenue from (
        select i.customer_id, cu.trade_name customer, i.subtotal rev
          from invoices i left join customers cu on cu.id=i.customer_id

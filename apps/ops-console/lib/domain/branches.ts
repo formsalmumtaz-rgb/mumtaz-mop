@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -30,7 +30,7 @@ const clean = (v?: string) => {
 };
 
 export async function listBranches(tenantId: string, customerId: string): Promise<Branch[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select b.id, b.code, b.name, b.address, b.emirate, b.facility_type_id,
             f.name as facility_type_name,
             ST_Y(b.location::geometry) as lat, ST_X(b.location::geometry) as lng

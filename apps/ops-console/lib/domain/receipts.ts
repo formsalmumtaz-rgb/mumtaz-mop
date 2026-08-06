@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -13,7 +13,7 @@ export interface ReceiptHeader {
 }
 
 export async function listReceipts(tenantId: string): Promise<ReceiptHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select r.id, r.receipt_number, r.customer_id, cu.trade_name as customer, r.receipt_date::text,
             r.method, r.amount::float8, r.reference, r.others_note,
             (select count(*)::int from receipt_allocations ra where ra.receipt_id = r.id) as allocated_count
@@ -27,7 +27,7 @@ export async function listReceipts(tenantId: string): Promise<ReceiptHeader[]> {
 export interface ReceiptAllocation { id: string; invoice_id: string; invoice_number: string | null; amount: number; }
 
 export async function getReceipt(tenantId: string, id: string): Promise<{ header: ReceiptHeader; allocations: ReceiptAllocation[] } | null> {
-  const { rows: hdr } = await pool.query(
+  const { rows: hdr } = await scopedRead(tenantId, 
     `select r.id, r.receipt_number, r.customer_id, cu.trade_name as customer, r.receipt_date::text,
             r.method, r.amount::float8, r.reference, r.others_note, 0 as allocated_count
        from receipts r left join customers cu on cu.id = r.customer_id
@@ -35,7 +35,7 @@ export async function getReceipt(tenantId: string, id: string): Promise<{ header
     [tenantId, id],
   );
   if (!hdr[0]) return null;
-  const { rows: alloc } = await pool.query(
+  const { rows: alloc } = await scopedRead(tenantId, 
     `select ra.id, ra.invoice_id, i.invoice_number, ra.amount::float8
        from receipt_allocations ra left join invoices i on i.id = ra.invoice_id
       where ra.tenant_id=$1 and ra.receipt_id=$2 order by ra.created_at`,
@@ -51,7 +51,7 @@ export interface OpenInvoice {
 
 // Open (issued/queued, unpaid/partial) invoices for a customer — the allocation queue.
 export async function listOpenInvoicesForCustomer(tenantId: string, customerId: string): Promise<OpenInvoice[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select ar.invoice_id, ar.invoice_number, ar.issue_date::text, ar.due_date::text,
             ar.total::float8, ar.balance::float8, ar.is_contract_invoice, ar.aging_bucket
        from invoice_ar ar

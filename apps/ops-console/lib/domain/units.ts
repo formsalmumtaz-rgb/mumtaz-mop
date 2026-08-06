@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Units with their conversion factor, for UoM/pack pickers and the live
 // unit-cost preview on the purchase form (mig 016 added base_unit_id/to_base_factor).
@@ -13,7 +13,7 @@ export interface Unit {
 }
 
 export async function listUnits(tenantId: string): Promise<Unit[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, name, dimension, to_base_factor::text as to_base_factor, base_unit_id
        from units
       where tenant_id = $1 and is_active

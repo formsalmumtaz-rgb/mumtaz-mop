@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -23,7 +23,7 @@ export interface EstimateHeader {
 }
 
 export async function listEstimates(tenantId: string): Promise<EstimateHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
             e.property_type, e.engagement_type, e.valid_until::text,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
@@ -38,7 +38,7 @@ export async function listEstimates(tenantId: string): Promise<EstimateHeader[]>
 }
 
 export async function listEstimatesForCustomer(tenantId: string, customerId: string): Promise<EstimateHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
             e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
@@ -71,7 +71,7 @@ export interface EstimateLine {
 }
 
 export async function getEstimate(tenantId: string, id: string): Promise<{ header: EstimateHeader; lines: EstimateLine[] } | null> {
-  const { rows: hdr } = await pool.query(
+  const { rows: hdr } = await scopedRead(tenantId, 
     `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
             e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
@@ -81,7 +81,7 @@ export async function getEstimate(tenantId: string, id: string): Promise<{ heade
     [tenantId, id],
   );
   if (!hdr[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select l.id, l.service_type_id, st.name as service_name, l.pricing_model_id, pm.name as model_name, pm.model_type,
             l.description, l.unit_price::float8, l.measure::float8, l.measures,
             l.line_total::float8, l.est_labour_hours::float8, l.est_distance_km::float8, l.est_material_cost::float8, l.est_cost::float8
@@ -209,17 +209,17 @@ export interface Quotation {
 // Customer-facing quotation view — REVENUE ONLY. Never returns cost/margin (retail
 // mode by construction). Lines are frozen once the estimate is quoted.
 export async function getQuotation(tenantId: string, id: string): Promise<Quotation | null> {
-  const { rows: h } = await pool.query(
+  const { rows: h } = await scopedRead(tenantId, 
     `select e.quotation_number, e.status, e.snapshot->>'quoted_at' as quoted_at, e.valid_until::text,
             cu.trade_name as customer, cu.trn as customer_trn
        from estimates e left join customers cu on cu.id=e.customer_id
       where e.tenant_id=$1 and e.id=$2`, [tenantId, id]);
   if (!h[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select coalesce(nullif(l.description,''), st.name, 'Service') as description, l.line_total::float8 as amount
        from estimate_lines l left join service_types st on st.id=l.service_type_id
       where l.tenant_id=$1 and l.estimate_id=$2 order by l.seq nulls last, l.created_at`, [tenantId, id]);
-  const { rows: vr } = await pool.query(
+  const { rows: vr } = await scopedRead(tenantId, 
     `select coalesce((value #>> '{}')::numeric, 5) as v from settings where tenant_id=$1 and key='vat_rate_percent' limit 1`, [tenantId]);
   const vat_rate = Number(vr[0]?.v ?? 5);
   const subtotal = lines.reduce((s: number, l: { amount: number }) => s + Number(l.amount), 0);

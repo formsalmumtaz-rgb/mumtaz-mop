@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 // Read-only profitability reporting over the job_profitability view (mig 023).
 // Margin is computed over revenue-bearing jobs; cost totals are over all filtered
@@ -50,7 +50,7 @@ export interface ProfitSummary {
 
 export async function getProfitSummary(tenantId: string, f: ProfitFilters): Promise<ProfitSummary> {
   const { where, params } = buildWhere(tenantId, f);
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select
        count(*)::int as jobs,
        count(*) filter (where jp.revenue is not null)::int as revenue_jobs,
@@ -93,7 +93,7 @@ export interface ProfitRow {
 export async function listProfitRows(tenantId: string, f: ProfitFilters, limit = 200): Promise<ProfitRow[]> {
   const { where, params } = buildWhere(tenantId, f);
   params.push(limit);
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select jp.job_id, jp.customer, j.completed_at::text as completed_at,
             jp.revenue::float8, jp.material_cost::float8, jp.labour_cost::float8, jp.vehicle_cost::float8,
             jp.overhead_cost::float8, jp.total_cost::float8, jp.gross_profit::float8,
@@ -118,10 +118,10 @@ export interface ProfitFilterOptions {
 
 export async function listProfitFilterOptions(tenantId: string): Promise<ProfitFilterOptions> {
   const [customers, branches, technicians, divisions] = await Promise.all([
-    pool.query(`select id, trade_name as name from customers where tenant_id=$1 order by trade_name`, [tenantId]),
-    pool.query(`select id, coalesce(name, code) as name from customer_branches where tenant_id=$1 order by name`, [tenantId]),
-    pool.query(`select id, coalesce(full_name, code) as name from technicians where tenant_id=$1 and is_active order by code`, [tenantId]),
-    pool.query(`select id, name from service_lines where tenant_id=$1 order by name`, [tenantId]),
+    scopedRead(tenantId, `select id, trade_name as name from customers where tenant_id=$1 order by trade_name`, [tenantId]),
+    scopedRead(tenantId, `select id, coalesce(name, code) as name from customer_branches where tenant_id=$1 order by name`, [tenantId]),
+    scopedRead(tenantId, `select id, coalesce(full_name, code) as name from technicians where tenant_id=$1 and is_active order by code`, [tenantId]),
+    scopedRead(tenantId, `select id, name from service_lines where tenant_id=$1 order by name`, [tenantId]),
   ]);
   return { customers: customers.rows, branches: branches.rows, technicians: technicians.rows, divisions: divisions.rows };
 }

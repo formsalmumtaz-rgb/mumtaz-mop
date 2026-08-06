@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
 
@@ -17,7 +17,7 @@ export interface CreditNoteLine { id: string; line_no: number | null; descriptio
 export interface Refund { id: string; refund_number: string | null; refund_date: string | null; method: string; amount: number; reference: string | null; }
 
 export async function listCreditNotes(tenantId: string): Promise<CreditNoteHeader[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
@@ -32,7 +32,7 @@ export async function listCreditNotes(tenantId: string): Promise<CreditNoteHeade
 }
 
 export async function getCreditNote(tenantId: string, id: string): Promise<{ header: CreditNoteHeader; lines: CreditNoteLine[]; refunds: Refund[] } | null> {
-  const { rows: hdr } = await pool.query(
+  const { rows: hdr } = await scopedRead(tenantId, 
     `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
@@ -44,10 +44,10 @@ export async function getCreditNote(tenantId: string, id: string): Promise<{ hea
     [tenantId, id],
   );
   if (!hdr[0]) return null;
-  const { rows: lines } = await pool.query(
+  const { rows: lines } = await scopedRead(tenantId, 
     `select id, line_no, description, quantity::float8, unit_price::float8, vat_rate::float8, vat_amount::float8, line_total::float8
        from credit_note_lines where tenant_id=$1 and credit_note_id=$2 order by line_no nulls last, created_at`, [tenantId, id]);
-  const { rows: refunds } = await pool.query(
+  const { rows: refunds } = await scopedRead(tenantId, 
     `select id, refund_number, refund_date::text, method, amount::float8, reference
        from refunds where tenant_id=$1 and credit_note_id=$2 order by created_at`, [tenantId, id]);
   return { header: hdr[0] as CreditNoteHeader, lines: lines as CreditNoteLine[], refunds: refunds as Refund[] };
@@ -55,7 +55,7 @@ export async function getCreditNote(tenantId: string, id: string): Promise<{ hea
 
 // Issued invoices the current customer can be credited against.
 export async function listIssuedInvoices(tenantId: string): Promise<{ id: string; invoice_number: string | null; customer_id: string | null; customer: string | null; total: number }[]> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select i.id, i.invoice_number, i.customer_id, cu.trade_name as customer, i.total::float8
        from invoices i left join customers cu on cu.id = i.customer_id
       where i.tenant_id=$1 and i.document_type='tax_invoice' and i.status in ('issued','paid')

@@ -1,5 +1,5 @@
 import "server-only";
-import { pool } from "../db";
+import { scopedRead } from "../rls";
 
 export interface Ref {
   id: string;
@@ -10,7 +10,7 @@ export interface Ref {
 
 async function listRef(table: string, tenantId: string): Promise<Ref[]> {
   // table names are internal literals, never user input
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id, code, name, is_assumed from ${table} where tenant_id = $1 and is_active order by name`,
     [tenantId],
   );
@@ -25,7 +25,7 @@ export const listJobSources = (t: string) => listRef("job_sources", t);
 export const listTeams = (t: string) => listRef("teams", t);
 
 export async function getServiceLineId(tenantId: string): Promise<string> {
-  const { rows } = await pool.query(
+  const { rows } = await scopedRead(tenantId, 
     `select id from service_lines where tenant_id = $1 and code = 'pest_control' limit 1`,
     [tenantId],
   );
