@@ -1,29 +1,28 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { listCustomers } from "@/lib/domain/customers";
-import { createCustomerAction } from "./actions";
+import { listCustomersPaged } from "@/lib/domain/customers";
+import { parseListParams } from "@/lib/list";
+import { ListToolbar, Pagination } from "@/components/ListControls";
+import { createCustomerAction, archiveCustomerAction, restoreCustomerAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 const EMIRATES = ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah", "Fujairah"];
 
-export default async function CustomersPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
+export default async function CustomersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const params = parseListParams(sp);
   const tenantId = await getTenantId();
-  const customers = await listCustomers(tenantId, q);
+  const { rows: customers, total } = await listCustomersPaged(tenantId, params);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Customers</h1>
-          <p className="mt-1 text-sm text-neutral-600">{customers.length} customer(s)</p>
+          <p className="mt-1 text-sm text-neutral-600">{total} customer(s)</p>
         </div>
-        <form className="flex gap-2" action="/customers" method="get">
-          <input name="q" defaultValue={q ?? ""} placeholder="Search name or code"
-                 className="w-64 rounded border border-neutral-300 px-3 py-1.5 text-sm" />
-          <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm">Search</button>
-        </form>
+        <ListToolbar basePath="/customers" params={sp} placeholder="Search name or code" />
       </div>
 
       {/* Create */}
@@ -80,17 +79,19 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
               <th className="px-4 py-2 font-medium">Legal name / TRN</th>
               <th className="px-4 py-2 font-medium">Emirate</th>
               <th className="px-4 py-2 font-medium">Type</th>
+              <th className="px-4 py-2"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
             {customers.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-neutral-500">No customers yet — create one above.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-neutral-500">No customers found.</td></tr>
             )}
             {customers.map((c) => (
-              <tr key={c.id}>
+              <tr key={c.id} className={c.archived_at ? "bg-neutral-50 text-neutral-400" : ""}>
                 <td className="px-4 py-2 font-mono text-xs text-neutral-500">{c.code}</td>
                 <td className="px-4 py-2">
                   <Link href={`/customers/${c.id}`} className="text-brand underline">{c.trade_name ?? "(no name)"}</Link>
+                  {c.archived_at && <span className="ml-2 rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-600">archived</span>}
                 </td>
                 <td className="px-4 py-2 text-neutral-600">
                   {c.legal_name ?? <span className="text-amber-600">legal name missing</span>}
@@ -99,11 +100,21 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
                 </td>
                 <td className="px-4 py-2 text-neutral-600">{c.emirate ?? "—"}</td>
                 <td className="px-4 py-2 text-neutral-600">{c.customer_type ?? "—"}</td>
+                <td className="px-4 py-2 text-right">
+                  {c.archived_at ? (
+                    <form action={restoreCustomerAction}><input type="hidden" name="id" value={c.id} />
+                      <button className="text-xs text-brand hover:underline">restore</button></form>
+                  ) : (
+                    <form action={archiveCustomerAction}><input type="hidden" name="id" value={c.id} />
+                      <button className="text-xs text-neutral-500 hover:text-red-600">archive</button></form>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <Pagination basePath="/customers" params={sp} page={params.page} pageSize={params.pageSize} total={total} />
     </div>
   );
 }

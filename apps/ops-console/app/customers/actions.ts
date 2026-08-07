@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createCustomer } from "@/lib/domain/customers";
+import { createCustomer, archiveCustomer, restoreCustomer } from "@/lib/domain/customers";
 
 export async function createCustomerAction(formData: FormData): Promise<void> {
   await requirePermission("customer.edit");
@@ -20,4 +20,20 @@ export async function createCustomerAction(formData: FormData): Promise<void> {
   });
   revalidatePath("/customers");
   redirect(`/customers/${id}`);
+}
+
+export async function archiveCustomerAction(fd: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const id = String(fd.get("id") ?? "");
+  if (!id) return;
+  await archiveCustomer(await getTenantId(), id);
+  revalidatePath("/customers");
+}
+
+export async function restoreCustomerAction(fd: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const id = String(fd.get("id") ?? "");
+  if (!id) return;
+  await restoreCustomer(await getTenantId(), id);
+  revalidatePath("/customers");
 }

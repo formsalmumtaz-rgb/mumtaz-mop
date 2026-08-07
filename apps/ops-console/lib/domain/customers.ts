@@ -2,6 +2,7 @@ import "server-only";
 import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
+import type { ListParams } from "../list";
 
 export interface Customer {
   id: string;
@@ -14,6 +15,7 @@ export interface Customer {
   emirate: string | null;
   is_assumed: boolean;
   is_active: boolean;
+  archived_at?: string | null;
 }
 
 export interface CustomerInput {
@@ -30,17 +32,48 @@ const clean = (v?: string) => {
   return t === "" ? null : t;
 };
 
+// Active (non-archived) customers for dropdowns/pickers.
 export async function listCustomers(tenantId: string, search?: string): Promise<Customer[]> {
   const term = (search ?? "").trim();
-  const { rows } = await scopedRead(tenantId, 
-    `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active, archived_at::text
        from customers
-      where tenant_id = $1
+      where tenant_id = $1 and archived_at is null
         and ($2 = '' or trade_name ilike '%'||$2||'%' or legal_name ilike '%'||$2||'%' or code ilike '%'||$2||'%')
       order by created_at desc`,
     [tenantId, term],
   );
   return rows as Customer[];
+}
+
+// Paginated list for the customers page: search + include-archived + total count.
+export async function listCustomersPaged(tenantId: string, p: ListParams): Promise<{ rows: Customer[]; total: number }> {
+  const where = `where tenant_id = $1
+        and ($2 = '' or trade_name ilike '%'||$2||'%' or legal_name ilike '%'||$2||'%' or code ilike '%'||$2||'%')
+        and ($3 or archived_at is null)`;
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active, archived_at::text
+       from customers ${where}
+      order by archived_at nulls first, created_at desc
+      limit $4 offset $5`,
+    [tenantId, p.q, p.includeArchived, p.pageSize, p.offset],
+  );
+  const { rows: cnt } = await scopedRead(tenantId, `select count(*)::int n from customers ${where}`, [tenantId, p.q, p.includeArchived]);
+  return { rows: rows as Customer[], total: cnt[0].n as number };
+}
+
+export async function archiveCustomer(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update customers set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "customers", rowId: id, action: "update", newValue: { archived: true }, note: "customer archived" });
+  });
+}
+
+export async function restoreCustomer(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update customers set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "customers", rowId: id, action: "update", newValue: { archived: false }, note: "customer restored" });
+  });
 }
 
 export async function getCustomer(tenantId: string, id: string): Promise<Customer | null> {
