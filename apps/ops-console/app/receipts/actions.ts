@@ -1,9 +1,11 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { recordReceipt } from "@/lib/domain/receipts";
 
 export async function recordReceiptAction(fd: FormData): Promise<void> {
+  await requirePermission("payment.record");
   const customerId = String(fd.get("customer_id") ?? "");
   if (!customerId) return;
   const tenantId = await getTenantId();

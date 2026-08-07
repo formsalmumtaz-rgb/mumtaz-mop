@@ -1,10 +1,12 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { createCreditNote, addCreditNoteLine, deleteCreditNoteLine, issueCreditNote, recordRefund } from "@/lib/domain/creditnotes";
 
 export async function createCreditNoteAction(fd: FormData): Promise<void> {
+  await requirePermission("creditnote.issue");
   const invoiceId = String(fd.get("invoice_id") ?? "");
   if (!invoiceId) return;
   const tenantId = await getTenantId();
@@ -17,6 +19,7 @@ export async function createCreditNoteAction(fd: FormData): Promise<void> {
 }
 
 export async function addCreditNoteLineAction(fd: FormData): Promise<void> {
+  await requirePermission("creditnote.issue");
   const cnId = String(fd.get("cn_id") ?? "");
   if (!cnId) return;
   const tenantId = await getTenantId();
@@ -29,6 +32,7 @@ export async function addCreditNoteLineAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteCreditNoteLineAction(fd: FormData): Promise<void> {
+  await requirePermission("creditnote.issue");
   const lineId = String(fd.get("line_id") ?? "");
   const cnId = String(fd.get("cn_id") ?? "");
   if (!lineId || !cnId) return;
@@ -38,6 +42,7 @@ export async function deleteCreditNoteLineAction(fd: FormData): Promise<void> {
 }
 
 export async function issueCreditNoteAction(fd: FormData): Promise<void> {
+  await requirePermission("creditnote.issue");
   const id = String(fd.get("cn_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -46,6 +51,7 @@ export async function issueCreditNoteAction(fd: FormData): Promise<void> {
 }
 
 export async function recordRefundAction(fd: FormData): Promise<void> {
+  await requirePermission("refund.record");
   const cnId = String(fd.get("cn_id") ?? "");
   if (!cnId) return;
   const tenantId = await getTenantId();

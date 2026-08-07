@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -18,6 +19,7 @@ function itemInputFromForm(fd: FormData): ItemInput {
 }
 
 export async function createItemAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await createItem(tenantId, sl, itemInputFromForm(fd));
@@ -25,6 +27,7 @@ export async function createItemAction(fd: FormData): Promise<void> {
 }
 
 export async function updateItemAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
   const id = String(fd.get("id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -33,6 +36,7 @@ export async function updateItemAction(fd: FormData): Promise<void> {
 }
 
 export async function confirmItemAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
   const id = String(fd.get("id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

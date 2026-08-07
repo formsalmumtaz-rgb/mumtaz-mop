@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { drainOnce, consumers } from "@mop/worker";
 import { pool } from "@/lib/db";
@@ -16,6 +17,7 @@ const num = (v: FormDataEntryValue | null): number | null => {
 };
 
 export async function updateCustomerAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
   const id = String(formData.get("id"));
   const tenantId = await getTenantId();
   await updateCustomer(tenantId, id, {
@@ -30,6 +32,7 @@ export async function updateCustomerAction(formData: FormData): Promise<void> {
 }
 
 export async function confirmCustomerAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
   const id = String(formData.get("id"));
   const tenantId = await getTenantId();
   await confirmCustomer(tenantId, id);
@@ -37,6 +40,7 @@ export async function confirmCustomerAction(formData: FormData): Promise<void> {
 }
 
 export async function createBranchAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
   const customerId = String(formData.get("customer_id"));
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
@@ -52,6 +56,7 @@ export async function createBranchAction(formData: FormData): Promise<void> {
 }
 
 export async function createContractAction(formData: FormData): Promise<void> {
+  await requirePermission("contract.edit");
   const customerId = String(formData.get("customer_id"));
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
@@ -68,6 +73,7 @@ export async function createContractAction(formData: FormData): Promise<void> {
 }
 
 export async function activateContractAction(formData: FormData): Promise<void> {
+  await requirePermission("contract.activate");
   const customerId = String(formData.get("customer_id"));
   const contractId = String(formData.get("contract_id"));
   const tenantId = await getTenantId();

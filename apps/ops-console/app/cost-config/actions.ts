@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -6,6 +7,7 @@ import { saveCostRates, confirmCostAccount, runBacklog } from "@/lib/domain/cost
 import { saveEmployeeCost } from "@/lib/domain/employeecost";
 
 export async function saveRatesAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await saveCostRates(tenantId, sl, {
@@ -18,6 +20,7 @@ export async function saveRatesAction(fd: FormData): Promise<void> {
 }
 
 export async function confirmAccountAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const key = String(fd.get("key") ?? "");
   if (!key) return;
   const tenantId = await getTenantId();
@@ -26,6 +29,7 @@ export async function confirmAccountAction(fd: FormData): Promise<void> {
 }
 
 export async function saveEmployeeCostAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const technicianId = String(fd.get("technician_id") ?? "");
   if (!technicianId) return;
   const tenantId = await getTenantId();
@@ -46,6 +50,7 @@ export async function saveEmployeeCostAction(fd: FormData): Promise<void> {
 }
 
 export async function runBacklogAction(): Promise<void> {
+  await requirePermission("settings.manage");
   const tenantId = await getTenantId();
   await runBacklog(tenantId);
   revalidatePath("/cost-config");

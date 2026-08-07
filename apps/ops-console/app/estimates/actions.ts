@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
@@ -6,6 +7,7 @@ import { getServiceLineId } from "@/lib/domain/reference";
 import { createEstimate, addEstimateLine, deleteEstimateLine, setEstimateStatus, convertEstimateToContract } from "@/lib/domain/estimation";
 
 export async function createEstimateAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   const id = await createEstimate(tenantId, sl, {
@@ -19,6 +21,7 @@ export async function createEstimateAction(fd: FormData): Promise<void> {
 }
 
 export async function addLineAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
   const estimateId = String(fd.get("estimate_id") ?? "");
   if (!estimateId) return;
   const tenantId = await getTenantId();
@@ -42,6 +45,7 @@ export async function addLineAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteLineAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
   const id = String(fd.get("line_id") ?? "");
   const estimateId = String(fd.get("estimate_id") ?? "");
   if (!id) return;
@@ -51,6 +55,7 @@ export async function deleteLineAction(fd: FormData): Promise<void> {
 }
 
 export async function setStatusAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
   const id = String(fd.get("estimate_id") ?? "");
   const status = String(fd.get("status") ?? "");
   if (!id || !status) return;
@@ -60,6 +65,7 @@ export async function setStatusAction(fd: FormData): Promise<void> {
 }
 
 export async function convertToContractAction(fd: FormData): Promise<void> {
+  await requirePermission("contract.edit");
   const id = String(fd.get("estimate_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

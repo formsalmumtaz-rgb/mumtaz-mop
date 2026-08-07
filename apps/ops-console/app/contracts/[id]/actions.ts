@@ -1,10 +1,12 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { activateContract } from "@/lib/domain/contracts";
 import { setContractBilling } from "@/lib/domain/billing";
 
 export async function setContractBillingAction(fd: FormData): Promise<void> {
+  await requirePermission("contract.edit");
   const id = String(fd.get("contract_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -19,6 +21,7 @@ export async function setContractBillingAction(fd: FormData): Promise<void> {
 }
 
 export async function activateContractAction(fd: FormData): Promise<void> {
+  await requirePermission("contract.activate");
   const id = String(fd.get("contract_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

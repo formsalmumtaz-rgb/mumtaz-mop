@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -14,6 +15,7 @@ const num = (v: FormDataEntryValue | null): number | null => {
 const str = (v: FormDataEntryValue | null) => String(v ?? "").trim() || null;
 
 export async function createJobAction(formData: FormData): Promise<void> {
+  await requirePermission("job.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
 
