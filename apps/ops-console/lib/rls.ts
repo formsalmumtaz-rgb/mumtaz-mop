@@ -36,7 +36,10 @@ export async function withRequest<T>(ctx: RequestContext, fn: (client: PoolClien
   const client = await pool.connect();
   try {
     await client.query("begin");
-    // Phase A3 will insert here: await client.query("set local role mop_app");
+    // A3 flip: drop to the non-privileged role for the rest of the transaction, so
+    // RLS is the LIVE boundary for every app read/write. `set local` reverts at
+    // commit/rollback, and the pool hands back a clean (privileged) connection.
+    await client.query("set local role mop_app");
     await client.query(`select set_config('app.current_tenant', $1, true)`, [ctx.tenantId]);
     await client.query(`select set_config('app.current_actor', $1, true)`, [ctx.actorId ?? ""]);
     const result = await fn(client);
