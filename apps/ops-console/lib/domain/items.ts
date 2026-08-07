@@ -20,6 +20,7 @@ export interface Item {
   assumed_note: string | null;
   confirmed_at: string | null;
   is_active: boolean;
+  archived_at?: string | null;
 }
 
 export interface ItemInput {
@@ -45,19 +46,33 @@ const num = (v?: string) => {
   return n;
 };
 
-export async function listItems(tenantId: string): Promise<Item[]> {
-  const { rows } = await scopedRead(tenantId, 
+export async function listItems(tenantId: string, includeArchived = false): Promise<Item[]> {
+  const { rows } = await scopedRead(tenantId,
     `select i.id, i.code, i.name, i.base_unit_id, u.code as base_unit_code,
             i.active_ingredient, i.intended_service_type_ids, i.is_recurring_stock,
             i.shelf_life_days, i.reorder_level::text as reorder_level,
-            i.is_assumed, i.assumed_note, i.confirmed_at, i.is_active
+            i.is_assumed, i.assumed_note, i.confirmed_at, i.is_active, i.archived_at::text
        from items i
        left join units u on u.id = i.base_unit_id
-      where i.tenant_id = $1 and i.item_type = 'chemical'
-      order by i.name`,
-    [tenantId],
+      where i.tenant_id = $1 and i.item_type = 'chemical' and ($2 or i.archived_at is null)
+      order by i.archived_at nulls first, i.name`,
+    [tenantId, includeArchived],
   );
   return rows as Item[];
+}
+
+export async function archiveItem(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update items set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "items", rowId: id, action: "update", newValue: { archived: true }, note: "item archived" });
+  });
+}
+
+export async function restoreItem(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update items set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "items", rowId: id, action: "update", newValue: { archived: false }, note: "item restored" });
+  });
 }
 
 export async function createItem(tenantId: string, serviceLineId: string, d: ItemInput): Promise<string> {

@@ -12,17 +12,32 @@ export interface Technician {
   assumed_note: string | null;
   confirmed_at: string | null;
   is_active: boolean;
+  archived_at?: string | null;
 }
 
-export async function listTechnicians(tenantId: string): Promise<Technician[]> {
-  const { rows } = await scopedRead(tenantId, 
-    `select id, code, full_name, phone, is_assumed, assumed_note, confirmed_at, is_active
+export async function listTechnicians(tenantId: string, includeArchived = false): Promise<Technician[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, full_name, phone, is_assumed, assumed_note, confirmed_at, is_active, archived_at::text
        from technicians
-      where tenant_id = $1
-      order by code`,
-    [tenantId],
+      where tenant_id = $1 and ($2 or archived_at is null)
+      order by archived_at nulls first, code`,
+    [tenantId, includeArchived],
   );
   return rows as Technician[];
+}
+
+export async function archiveTechnician(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update technicians set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "technicians", rowId: id, action: "update", newValue: { archived: true }, note: "technician archived" });
+  });
+}
+
+export async function restoreTechnician(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update technicians set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "technicians", rowId: id, action: "update", newValue: { archived: false }, note: "technician restored" });
+  });
 }
 
 // Confirm an ASSUMED technician as-is (clears the flag, audit-logged).

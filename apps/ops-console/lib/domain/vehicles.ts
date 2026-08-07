@@ -23,21 +23,36 @@ export interface Vehicle {
   is_active: boolean;
   is_assumed: boolean;
   assumed_note: string | null;
+  archived_at?: string | null;
 }
 
-export async function listVehicles(tenantId: string): Promise<Vehicle[]> {
-  const { rows } = await scopedRead(tenantId, 
+export async function listVehicles(tenantId: string, includeArchived = false): Promise<Vehicle[]> {
+  const { rows } = await scopedRead(tenantId,
     `select v.id, v.code, v.name, v.registration_plate, v.ownership_type,
             v.monthly_depreciation::text, v.monthly_lease_cost::text, v.monthly_fixed_cost::text,
             v.technician_id, coalesce(t.full_name, t.code) as technician_name,
-            v.is_active, v.is_assumed, v.assumed_note
+            v.is_active, v.is_assumed, v.assumed_note, v.archived_at::text
        from vehicles v
        left join technicians t on t.id = v.technician_id
-      where v.tenant_id = $1
-      order by v.code, v.name`,
-    [tenantId],
+      where v.tenant_id = $1 and ($2 or v.archived_at is null)
+      order by v.archived_at nulls first, v.code, v.name`,
+    [tenantId, includeArchived],
   );
   return rows as Vehicle[];
+}
+
+export async function archiveVehicle(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update vehicles set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "vehicles", rowId: id, action: "update", newValue: { archived: true }, note: "vehicle archived" });
+  });
+}
+
+export async function restoreVehicle(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update vehicles set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "vehicles", rowId: id, action: "update", newValue: { archived: false }, note: "vehicle restored" });
+  });
 }
 
 export async function getDefaultMonthlyDepreciation(tenantId: string): Promise<string | null> {
