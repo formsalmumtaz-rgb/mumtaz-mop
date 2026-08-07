@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -6,6 +7,7 @@ import { createSupplier } from "@/lib/domain/suppliers";
 import { logPurchase } from "@/lib/domain/purchases";
 
 export async function createSupplierAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await createSupplier(tenantId, sl, {
@@ -17,6 +19,7 @@ export async function createSupplierAction(fd: FormData): Promise<void> {
 }
 
 export async function logPurchaseAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await logPurchase(tenantId, sl, {

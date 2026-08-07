@@ -1,10 +1,12 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { createManualInvoice, addInvoiceLine, deleteInvoiceLine, issueInvoice, cancelInvoice } from "@/lib/domain/invoices";
 
 export async function createInvoiceAction(fd: FormData): Promise<void> {
+  await requirePermission("invoice.issue");
   const customerId = String(fd.get("customer_id") ?? "");
   if (!customerId) return;
   const tenantId = await getTenantId();
@@ -16,6 +18,7 @@ export async function createInvoiceAction(fd: FormData): Promise<void> {
 }
 
 export async function addInvoiceLineAction(fd: FormData): Promise<void> {
+  await requirePermission("invoice.issue");
   const invoiceId = String(fd.get("invoice_id") ?? "");
   if (!invoiceId) return;
   const tenantId = await getTenantId();
@@ -28,6 +31,7 @@ export async function addInvoiceLineAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteInvoiceLineAction(fd: FormData): Promise<void> {
+  await requirePermission("invoice.issue");
   const lineId = String(fd.get("line_id") ?? "");
   const invoiceId = String(fd.get("invoice_id") ?? "");
   if (!lineId || !invoiceId) return;
@@ -37,6 +41,7 @@ export async function deleteInvoiceLineAction(fd: FormData): Promise<void> {
 }
 
 export async function issueInvoiceAction(fd: FormData): Promise<void> {
+  await requirePermission("invoice.issue");
   const id = String(fd.get("invoice_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -45,6 +50,7 @@ export async function issueInvoiceAction(fd: FormData): Promise<void> {
 }
 
 export async function cancelInvoiceAction(fd: FormData): Promise<void> {
+  await requirePermission("invoice.cancel");
   const id = String(fd.get("invoice_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

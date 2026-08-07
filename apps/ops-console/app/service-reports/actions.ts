@@ -1,10 +1,12 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { createServiceReport, reviewServiceReport, addServiceReportAttachment } from "@/lib/domain/servicereports";
 
 export async function createServiceReportAction(fd: FormData): Promise<void> {
+  await requirePermission("service_report.file");
   const jobId = String(fd.get("job_id") ?? "");
   if (!jobId) return;
   const tenantId = await getTenantId();
@@ -16,6 +18,7 @@ export async function createServiceReportAction(fd: FormData): Promise<void> {
 }
 
 export async function reviewServiceReportAction(fd: FormData): Promise<void> {
+  await requirePermission("service_report.approve");
   const id = String(fd.get("sr_id") ?? "");
   const action = String(fd.get("action") ?? "");
   if (!id || (action !== "approved" && action !== "rejected")) return;
@@ -25,6 +28,7 @@ export async function reviewServiceReportAction(fd: FormData): Promise<void> {
 }
 
 export async function addAttachmentAction(fd: FormData): Promise<void> {
+  await requirePermission("service_report.file");
   const id = String(fd.get("sr_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

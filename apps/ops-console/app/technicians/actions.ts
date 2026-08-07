@@ -1,9 +1,11 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { confirmTechnician, updateTechnicianName } from "@/lib/domain/technicians";
 
 export async function confirmAction(formData: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -12,6 +14,7 @@ export async function confirmAction(formData: FormData): Promise<void> {
 }
 
 export async function updateNameAction(formData: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("full_name") ?? "").trim();
   if (!id || !name) return;

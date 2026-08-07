@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -17,6 +18,7 @@ function fromForm(fd: FormData): VehicleInput {
 }
 
 export async function createVehicleAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await createVehicle(tenantId, sl, fromForm(fd));
@@ -24,6 +26,7 @@ export async function createVehicleAction(fd: FormData): Promise<void> {
 }
 
 export async function updateVehicleAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const id = String(fd.get("id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

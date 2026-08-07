@@ -1,6 +1,14 @@
 import "server-only";
 import { pool } from "./db";
 import { createSupabaseServerClient } from "./supabase/server";
+import { authEnforced } from "./auth-flags";
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
 
 // Session + permission resolution. Foundation for the A2 guards. Returns null
 // when there is no Supabase session OR the authenticated user is not (yet) a
@@ -55,4 +63,16 @@ export async function getSession(): Promise<AppSession | null> {
 export async function can(permission: string): Promise<boolean> {
   const s = await getSession();
   return !!s && s.permissions.has(permission);
+}
+
+// Server-action guard. When enforcement is off (dev opt-out) it's a no-op that
+// returns the session if any (behaviour preserved). When on, it throws unless the
+// caller is authenticated AND holds the permission — so role boundaries hold even
+// if the UI failed to hide a control.
+export async function requirePermission(permission: string): Promise<AppSession | null> {
+  if (!authEnforced()) return getSession();
+  const s = await getSession();
+  if (!s) throw new AuthError("Not authenticated");
+  if (!s.permissions.has(permission)) throw new AuthError(`Missing permission: ${permission}`);
+  return s;
 }

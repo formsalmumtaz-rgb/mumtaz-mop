@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
@@ -6,6 +7,7 @@ import { getServiceLineId } from "@/lib/domain/reference";
 import { createCustomer } from "@/lib/domain/customers";
 
 export async function createCustomerAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   const id = await createCustomer(tenantId, sl, {

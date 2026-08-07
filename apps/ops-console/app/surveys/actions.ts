@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
@@ -6,6 +7,7 @@ import { getServiceLineId } from "@/lib/domain/reference";
 import { createSurvey, addSurveyLine, deleteSurveyLine, setSurveyStatus, createEstimateFromSurvey } from "@/lib/domain/survey";
 
 export async function createSurveyAction(fd: FormData): Promise<void> {
+  await requirePermission("survey.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   const id = await createSurvey(tenantId, sl, {
@@ -19,6 +21,7 @@ export async function createSurveyAction(fd: FormData): Promise<void> {
 }
 
 export async function addSurveyLineAction(fd: FormData): Promise<void> {
+  await requirePermission("survey.edit");
   const surveyId = String(fd.get("survey_id") ?? "");
   if (!surveyId) return;
   const tenantId = await getTenantId();
@@ -43,6 +46,7 @@ export async function addSurveyLineAction(fd: FormData): Promise<void> {
 }
 
 export async function deleteSurveyLineAction(fd: FormData): Promise<void> {
+  await requirePermission("survey.edit");
   const id = String(fd.get("line_id") ?? "");
   const surveyId = String(fd.get("survey_id") ?? "");
   if (!id) return;
@@ -52,6 +56,7 @@ export async function deleteSurveyLineAction(fd: FormData): Promise<void> {
 }
 
 export async function setSurveyStatusAction(fd: FormData): Promise<void> {
+  await requirePermission("survey.edit");
   const id = String(fd.get("survey_id") ?? "");
   const status = String(fd.get("status") ?? "");
   if (!id || !status) return;
@@ -61,6 +66,7 @@ export async function setSurveyStatusAction(fd: FormData): Promise<void> {
 }
 
 export async function createEstimateFromSurveyAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
   const id = String(fd.get("survey_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();

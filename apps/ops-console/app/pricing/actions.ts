@@ -1,4 +1,5 @@
 "use server";
+import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
@@ -16,6 +17,7 @@ function modelInput(fd: FormData): PricingModelInput {
 }
 
 export async function createModelAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   await createPricingModel(tenantId, sl, modelInput(fd));
@@ -23,6 +25,7 @@ export async function createModelAction(fd: FormData): Promise<void> {
 }
 
 export async function updateModelAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const id = String(fd.get("id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
@@ -31,6 +34,7 @@ export async function updateModelAction(fd: FormData): Promise<void> {
 }
 
 export async function setServiceModelsAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
   const serviceTypeId = String(fd.get("service_type_id") ?? "");
   if (!serviceTypeId) return;
   const tenantId = await getTenantId();
