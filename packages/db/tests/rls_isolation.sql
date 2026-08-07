@@ -288,6 +288,14 @@ begin
   begin insert into roles(tenant_id, code, name) values (t_a, 'r2', 'R2'); exception when others then blocked := true; end;
   if not blocked then raise exception 'RLS FAIL: cross-tenant role insert allowed'; end if;
 
+  -- (structural) no public table may have RLS enabled with ZERO policies — that
+  -- is a deny-all gap that breaks reads under mop_app (found + fixed mig 040).
+  if exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname='public' and c.relkind='r' and c.relrowsecurity
+       and not exists (select 1 from pg_policies p where p.schemaname='public' and p.tablename=c.relname)
+  ) then raise exception 'RLS FAIL: a public table has RLS enabled but no policy (deny-all gap)'; end if;
+
   reset role;
   raise notice 'RLS ISOLATION checks passed';
 end $$;
