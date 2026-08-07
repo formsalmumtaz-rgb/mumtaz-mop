@@ -3,7 +3,8 @@ import { getServiceLineId, listServiceTypes, type Ref } from "@/lib/domain/refer
 import { listUnits, type Unit } from "@/lib/domain/units";
 import { listItems, type Item } from "@/lib/domain/items";
 import { AssumedBadge } from "@/components/AssumedBadge";
-import { createItemAction, updateItemAction, confirmItemAction } from "./actions";
+import Link from "next/link";
+import { createItemAction, updateItemAction, confirmItemAction, archiveItemAction, restoreItemAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -65,11 +66,13 @@ function ChemicalFields({ units, serviceTypes, item }: { units: Unit[]; serviceT
   );
 }
 
-export default async function ChemicalsPage() {
+export default async function ChemicalsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const includeArchived = sp.archived === "1";
   const tenantId = await getTenantId();
   await getServiceLineId(tenantId);
   const [items, units, serviceTypes] = await Promise.all([
-    listItems(tenantId),
+    listItems(tenantId, includeArchived),
     listUnits(tenantId),
     listServiceTypes(tenantId),
   ]);
@@ -77,9 +80,15 @@ export default async function ChemicalsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Chemical master</h1>
-        <p className="mt-1 text-sm text-neutral-600">{items.length} chemical(s)</p>
+      <div className="flex items-end justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Chemical master</h1>
+          <p className="mt-1 text-sm text-neutral-600">{items.length} chemical(s)</p>
+        </div>
+        <Link href={includeArchived ? "/chemicals" : "/chemicals?archived=1"}
+              className={`rounded border px-3 py-1.5 text-sm ${includeArchived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
+          {includeArchived ? "✓ Including archived" : "Include archived"}
+        </Link>
       </div>
 
       {/* Create */}
@@ -101,12 +110,13 @@ export default async function ChemicalsPage() {
           </p>
         )}
         {items.map((it) => (
-          <div key={it.id} className="rounded-lg border border-neutral-200 bg-white p-4">
+          <div key={it.id} className={`rounded-lg border border-neutral-200 bg-white p-4 ${it.archived_at ? "opacity-60" : ""}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{it.name}</span>
                   {it.is_assumed && <AssumedBadge note={it.assumed_note} />}
+                  {it.archived_at && <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-600">archived</span>}
                 </div>
                 <div className="mt-1 text-sm text-neutral-600">
                   {it.active_ingredient ? <span>{it.active_ingredient}</span> : <span className="text-neutral-400">no active ingredient</span>}
@@ -122,14 +132,23 @@ export default async function ChemicalsPage() {
                     : "no service types"}
                 </div>
               </div>
-              {it.is_assumed && (
-                <form action={confirmItemAction}>
-                  <input type="hidden" name="id" value={it.id} />
-                  <button className="rounded border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100">
-                    I confirm this value
-                  </button>
-                </form>
-              )}
+              <div className="flex items-center gap-2">
+                {it.is_assumed && (
+                  <form action={confirmItemAction}>
+                    <input type="hidden" name="id" value={it.id} />
+                    <button className="rounded border border-amber-400 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100">
+                      I confirm this value
+                    </button>
+                  </form>
+                )}
+                {it.archived_at ? (
+                  <form action={restoreItemAction}><input type="hidden" name="id" value={it.id} />
+                    <button className="text-xs text-brand hover:underline">restore</button></form>
+                ) : (
+                  <form action={archiveItemAction}><input type="hidden" name="id" value={it.id} />
+                    <button className="text-xs text-neutral-500 hover:text-red-600">archive</button></form>
+                )}
+              </div>
             </div>
 
             <details className="mt-3">

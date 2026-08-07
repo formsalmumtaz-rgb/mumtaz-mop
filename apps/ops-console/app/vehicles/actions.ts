@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createVehicle, updateVehicle, type VehicleInput } from "@/lib/domain/vehicles";
+import { createVehicle, updateVehicle, archiveVehicle, restoreVehicle, type VehicleInput } from "@/lib/domain/vehicles";
 
 function fromForm(fd: FormData): VehicleInput {
   return {
@@ -31,5 +31,18 @@ export async function updateVehicleAction(fd: FormData): Promise<void> {
   if (!id) return;
   const tenantId = await getTenantId();
   await updateVehicle(tenantId, id, fromForm(fd));
+  revalidatePath("/vehicles");
+}
+
+export async function archiveVehicleAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await archiveVehicle(await getTenantId(), id);
+  revalidatePath("/vehicles");
+}
+export async function restoreVehicleAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await restoreVehicle(await getTenantId(), id);
   revalidatePath("/vehicles");
 }

@@ -3,7 +3,7 @@ import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createItem, updateItem, confirmItem, type ItemInput } from "@/lib/domain/items";
+import { createItem, updateItem, confirmItem, archiveItem, restoreItem, type ItemInput } from "@/lib/domain/items";
 
 function itemInputFromForm(fd: FormData): ItemInput {
   return {
@@ -41,5 +41,18 @@ export async function confirmItemAction(fd: FormData): Promise<void> {
   if (!id) return;
   const tenantId = await getTenantId();
   await confirmItem(tenantId, id);
+  revalidatePath("/chemicals");
+}
+
+export async function archiveItemAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await archiveItem(await getTenantId(), id);
+  revalidatePath("/chemicals");
+}
+export async function restoreItemAction(fd: FormData): Promise<void> {
+  await requirePermission("inventory.edit");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await restoreItem(await getTenantId(), id);
   revalidatePath("/chemicals");
 }
