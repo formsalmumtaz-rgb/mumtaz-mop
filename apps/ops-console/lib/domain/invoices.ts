@@ -34,7 +34,7 @@ export interface InvoiceLine {
 }
 
 export async function listInvoices(tenantId: string): Promise<InvoiceHeader[]> {
-  const { rows } = await scopedRead(tenantId, 
+  const { rows } = await scopedRead(tenantId,
     `select i.id, i.invoice_number, i.document_type, i.customer_id, cu.trade_name as customer,
             i.contract_id, i.job_id, i.status, i.issue_date::text, i.due_date::text,
             i.currency, i.vat_treatment, i.subtotal::float8, i.vat_total::float8, i.total::float8,
@@ -45,6 +45,30 @@ export async function listInvoices(tenantId: string): Promise<InvoiceHeader[]> {
     [tenantId],
   );
   return rows as InvoiceHeader[];
+}
+
+// Paged + searchable list (invoice number, customer name, or status).
+export async function listInvoicesPaged(
+  tenantId: string, opts: { q?: string; limit: number; offset: number },
+): Promise<{ rows: InvoiceHeader[]; total: number }> {
+  const q = (opts.q ?? "").trim();
+  const like = `%${q}%`;
+  const filter = q
+    ? `and (i.invoice_number ilike $2 or cu.trade_name ilike $2 or i.status = lower($3))`
+    : ``;
+  const params = q ? [tenantId, like, q] : [tenantId];
+  const { rows: cnt } = await scopedRead(tenantId,
+    `select count(*)::int as n from invoices i left join customers cu on cu.id = i.customer_id
+      where i.tenant_id=$1 and i.document_type='tax_invoice' ${filter}`, params);
+  const { rows } = await scopedRead(tenantId,
+    `select i.id, i.invoice_number, i.document_type, i.customer_id, cu.trade_name as customer,
+            i.contract_id, i.job_id, i.status, i.issue_date::text, i.due_date::text,
+            i.currency, i.vat_treatment, i.subtotal::float8, i.vat_total::float8, i.total::float8,
+            i.cancelled_reason, i.cancelled_at::text
+       from invoices i left join customers cu on cu.id = i.customer_id
+      where i.tenant_id=$1 and i.document_type='tax_invoice' ${filter}
+      order by i.created_at desc limit ${opts.limit} offset ${opts.offset}`, params);
+  return { rows: rows as InvoiceHeader[], total: cnt[0]?.n ?? 0 };
 }
 
 export async function getInvoice(tenantId: string, id: string): Promise<{ header: InvoiceHeader; lines: InvoiceLine[] } | null> {

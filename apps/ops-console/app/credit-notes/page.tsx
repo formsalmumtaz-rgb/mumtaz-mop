@@ -1,15 +1,22 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { listCreditNotes, listIssuedInvoices } from "@/lib/domain/creditnotes";
+import { listCreditNotesPaged, listIssuedInvoices } from "@/lib/domain/creditnotes";
+import { parseListParams } from "@/lib/list";
+import { ListToolbar, Pagination } from "@/components/ListControls";
 import { createCreditNoteAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const STATUS_CLASS: Record<string, string> = { draft: "bg-neutral-100 text-neutral-700", issued: "bg-indigo-100 text-indigo-800", cancelled: "bg-red-100 text-red-700" };
 
-export default async function CreditNotesPage() {
+export default async function CreditNotesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const lp = parseListParams(sp);
   const tenantId = await getTenantId();
-  const [notes, invoices] = await Promise.all([listCreditNotes(tenantId), listIssuedInvoices(tenantId)]);
+  const [{ rows: notes, total }, invoices] = await Promise.all([
+    listCreditNotesPaged(tenantId, { q: lp.q, limit: lp.pageSize, offset: lp.offset }),
+    listIssuedInvoices(tenantId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -17,6 +24,8 @@ export default async function CreditNotesPage() {
         <h1 className="text-2xl font-semibold">Credit notes</h1>
         <p className="mt-1 text-sm text-neutral-600">A credit note (full or partial) reduces what a customer owes on an invoice. Refunds are recorded against an issued credit note.</p>
       </div>
+
+      <ListToolbar basePath="/credit-notes" params={sp} showArchived={false} placeholder="Search credit note #, customer, invoice, or status…" />
 
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={notes.length === 0}>
         <summary className="cursor-pointer font-medium">New credit note</summary>
@@ -50,7 +59,7 @@ export default async function CreditNotesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {notes.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-500">No credit notes yet.</td></tr>}
+            {notes.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-500">{lp.q ? "No credit notes match your search." : "No credit notes yet."}</td></tr>}
             {notes.map((n) => (
               <tr key={n.id}>
                 <td className="px-3 py-2"><Link href={`/credit-notes/${n.id}`} className="font-mono text-xs text-brand underline">{n.credit_note_number ?? "(draft)"}</Link></td>
@@ -64,6 +73,8 @@ export default async function CreditNotesPage() {
           </tbody>
         </table>
       </div>
+
+      <Pagination basePath="/credit-notes" params={sp} page={lp.page} pageSize={lp.pageSize} total={total} />
     </div>
   );
 }

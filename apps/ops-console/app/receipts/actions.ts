@@ -1,8 +1,20 @@
 "use server";
 import { requirePermission } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
-import { recordReceipt } from "@/lib/domain/receipts";
+import { recordReceipt, reverseReceipt } from "@/lib/domain/receipts";
+
+export async function reverseReceiptAction(fd: FormData): Promise<void> {
+  await requirePermission("payment.record");
+  const id = String(fd.get("id") ?? "");
+  const reason = String(fd.get("reason") ?? "").trim();
+  if (!id) return;
+  const tenantId = await getTenantId();
+  await reverseReceipt(tenantId, id, reason);
+  revalidatePath(`/receipts/${id}`);
+  redirect(`/receipts/${id}`);
+}
 
 export async function recordReceiptAction(fd: FormData): Promise<void> {
   await requirePermission("payment.record");

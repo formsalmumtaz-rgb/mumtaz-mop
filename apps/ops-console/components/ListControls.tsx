@@ -11,8 +11,8 @@ function withParams(base: string, current: Record<string, string | undefined>, o
   return qs ? `${base}?${qs}` : base;
 }
 
-export function ListToolbar({ basePath, params, placeholder = "Search…" }: {
-  basePath: string; params: Record<string, string | undefined>; placeholder?: string;
+export function ListToolbar({ basePath, params, placeholder = "Search…", showArchived = true }: {
+  basePath: string; params: Record<string, string | undefined>; placeholder?: string; showArchived?: boolean;
 }) {
   const archived = params.archived === "1";
   return (
@@ -20,13 +20,15 @@ export function ListToolbar({ basePath, params, placeholder = "Search…" }: {
       <form className="flex gap-2" action={basePath} method="get">
         <input name="q" defaultValue={params.q ?? ""} placeholder={placeholder}
                className="w-64 rounded border border-neutral-300 px-3 py-1.5 text-sm" />
-        {archived && <input type="hidden" name="archived" value="1" />}
+        {showArchived && archived && <input type="hidden" name="archived" value="1" />}
         <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50">Search</button>
       </form>
-      <Link href={withParams(basePath, params, { archived: archived ? undefined : "1", page: undefined })}
-            className={`rounded border px-3 py-1.5 text-sm ${archived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
-        {archived ? "✓ Including archived" : "Include archived"}
-      </Link>
+      {showArchived && (
+        <Link href={withParams(basePath, params, { archived: archived ? undefined : "1", page: undefined })}
+              className={`rounded border px-3 py-1.5 text-sm ${archived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
+          {archived ? "✓ Including archived" : "Include archived"}
+        </Link>
+      )}
     </div>
   );
 }

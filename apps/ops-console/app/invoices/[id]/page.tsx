@@ -20,6 +20,9 @@ export default async function InvoiceDetail({ params }: { params: Promise<{ id: 
   const isDraft = header.status === "draft" || header.status === "queued";
   const canIssue = isDraft && lines.length > 0;
   const canCancel = header.status === "issued" || header.status === "queued" || header.status === "draft";
+  // Once issued, an invoice is a posted financial record — it is corrected by a
+  // credit note or cancellation (reversing GL), never edited in place.
+  const isPosted = header.status === "issued" || header.status === "paid";
 
   return (
     <div className="space-y-6">
@@ -62,6 +65,16 @@ export default async function InvoiceDetail({ params }: { params: Promise<{ id: 
           </div>
         ))}
       </div>
+
+      {isPosted && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
+          <div className="font-medium text-amber-900">Correcting this invoice</div>
+          <p className="mt-1 text-amber-800">
+            An issued invoice is a posted financial record and is never edited. To correct it, {header.status === "issued" && "cancel it (a reversing GL entry backs it out) if nothing has been paid, or "}
+            issue a <Link href="/credit-notes" className="font-medium underline">credit note</Link> against it to reduce or refund the amount. The original stays on the ledger; the correction is a new, linked entry.
+          </p>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full min-w-[760px] text-sm">

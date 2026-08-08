@@ -9,11 +9,21 @@ import { audit } from "./audit";
 export interface ReceiptHeader {
   id: string; receipt_number: string | null; customer_id: string | null; customer: string | null;
   receipt_date: string | null; method: string; amount: number; reference: string | null;
-  others_note: string | null; allocated_count: number;
+  others_note: string | null; allocated_count: number; reversed_at?: string | null; reversed_reason?: string | null;
+}
+
+// Reverse a receipt (bounced cheque / misapplied). Append-only: records a
+// receipt_reversals row, reverts any invoices it had paid, posts the reversing
+// GL entry — all in fn_reverse_receipt.
+export async function reverseReceipt(tenantId: string, id: string, reason: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    await c.query(`select fn_reverse_receipt($1, $2)`, [id, reason]);
+    await audit(c, tenantId, { table: "receipts", rowId: id, action: "update", newValue: { reversed: true, reason }, note: "receipt reversed" });
+  });
 }
 
 export async function listReceipts(tenantId: string): Promise<ReceiptHeader[]> {
-  const { rows } = await scopedRead(tenantId, 
+  const { rows } = await scopedRead(tenantId,
     `select r.id, r.receipt_number, r.customer_id, cu.trade_name as customer, r.receipt_date::text,
             r.method, r.amount::float8, r.reference, r.others_note,
             (select count(*)::int from receipt_allocations ra where ra.receipt_id = r.id) as allocated_count
@@ -24,13 +34,38 @@ export async function listReceipts(tenantId: string): Promise<ReceiptHeader[]> {
   return rows as ReceiptHeader[];
 }
 
+// Paged + searchable list (receipt number, customer name, or reference).
+export async function listReceiptsPaged(
+  tenantId: string, opts: { q?: string; limit: number; offset: number },
+): Promise<{ rows: ReceiptHeader[]; total: number }> {
+  const q = (opts.q ?? "").trim();
+  const like = `%${q}%`;
+  const filter = q ? `and (r.receipt_number ilike $2 or cu.trade_name ilike $2 or r.reference ilike $2)` : ``;
+  const params = q ? [tenantId, like] : [tenantId];
+  const { rows: cnt } = await scopedRead(tenantId,
+    `select count(*)::int as n from receipts r left join customers cu on cu.id = r.customer_id
+      where r.tenant_id=$1 ${filter}`, params);
+  const { rows } = await scopedRead(tenantId,
+    `select r.id, r.receipt_number, r.customer_id, cu.trade_name as customer, r.receipt_date::text,
+            r.method, r.amount::float8, r.reference, r.others_note,
+            (select count(*)::int from receipt_allocations ra where ra.receipt_id = r.id) as allocated_count,
+            (select rr.created_at::text from receipt_reversals rr where rr.receipt_id = r.id) as reversed_at
+       from receipts r left join customers cu on cu.id = r.customer_id
+      where r.tenant_id=$1 ${filter}
+      order by r.receipt_date desc, r.created_at desc limit ${opts.limit} offset ${opts.offset}`, params);
+  return { rows: rows as ReceiptHeader[], total: cnt[0]?.n ?? 0 };
+}
+
 export interface ReceiptAllocation { id: string; invoice_id: string; invoice_number: string | null; amount: number; }
 
 export async function getReceipt(tenantId: string, id: string): Promise<{ header: ReceiptHeader; allocations: ReceiptAllocation[] } | null> {
   const { rows: hdr } = await scopedRead(tenantId, 
     `select r.id, r.receipt_number, r.customer_id, cu.trade_name as customer, r.receipt_date::text,
-            r.method, r.amount::float8, r.reference, r.others_note, 0 as allocated_count
-       from receipts r left join customers cu on cu.id = r.customer_id
+            r.method, r.amount::float8, r.reference, r.others_note, 0 as allocated_count,
+            rr.created_at::text as reversed_at, rr.reason as reversed_reason
+       from receipts r
+       left join customers cu on cu.id = r.customer_id
+       left join receipt_reversals rr on rr.receipt_id = r.id
       where r.tenant_id=$1 and r.id=$2`,
     [tenantId, id],
   );

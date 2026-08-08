@@ -17,7 +17,7 @@ export interface CreditNoteLine { id: string; line_no: number | null; descriptio
 export interface Refund { id: string; refund_number: string | null; refund_date: string | null; method: string; amount: number; reference: string | null; }
 
 export async function listCreditNotes(tenantId: string): Promise<CreditNoteHeader[]> {
-  const { rows } = await scopedRead(tenantId, 
+  const { rows } = await scopedRead(tenantId,
     `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
@@ -29,6 +29,34 @@ export async function listCreditNotes(tenantId: string): Promise<CreditNoteHeade
     [tenantId],
   );
   return rows as CreditNoteHeader[];
+}
+
+// Paged + searchable list (credit-note number, customer, invoice number, or status).
+export async function listCreditNotesPaged(
+  tenantId: string, opts: { q?: string; limit: number; offset: number },
+): Promise<{ rows: CreditNoteHeader[]; total: number }> {
+  const q = (opts.q ?? "").trim();
+  const like = `%${q}%`;
+  const filter = q
+    ? `and (cn.credit_note_number ilike $2 or cu.trade_name ilike $2 or i.invoice_number ilike $2 or cn.status = lower($3))`
+    : ``;
+  const params = q ? [tenantId, like, q] : [tenantId];
+  const { rows: cnt } = await scopedRead(tenantId,
+    `select count(*)::int as n from credit_notes cn
+       left join customers cu on cu.id = cn.customer_id
+       left join invoices i on i.id = cn.invoice_id
+      where cn.tenant_id=$1 ${filter}`, params);
+  const { rows } = await scopedRead(tenantId,
+    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
+            cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
+            cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
+            coalesce((select sum(amount) from refunds r where r.credit_note_id=cn.id),0)::float8 as refunded
+       from credit_notes cn
+       left join customers cu on cu.id = cn.customer_id
+       left join invoices i on i.id = cn.invoice_id
+      where cn.tenant_id=$1 ${filter}
+      order by cn.created_at desc limit ${opts.limit} offset ${opts.offset}`, params);
+  return { rows: rows as CreditNoteHeader[], total: cnt[0]?.n ?? 0 };
 }
 
 export async function getCreditNote(tenantId: string, id: string): Promise<{ header: CreditNoteHeader; lines: CreditNoteLine[]; refunds: Refund[] } | null> {
