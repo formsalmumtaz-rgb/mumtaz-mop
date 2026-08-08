@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getCustomer } from "@/lib/domain/customers";
 import { listBranches } from "@/lib/domain/branches";
+import { listContacts } from "@/lib/domain/contacts";
 import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
 import { listSurveysForCustomer } from "@/lib/domain/survey";
 import { listEstimatesForCustomer } from "@/lib/domain/estimation";
@@ -11,6 +12,8 @@ import { AssumedBadge } from "@/components/AssumedBadge";
 import { PinPicker } from "@/components/PinPicker";
 import {
   updateCustomerAction, confirmCustomerAction, createBranchAction,
+  updateBranchAction, archiveBranchAction, restoreBranchAction,
+  createContactAction, updateContactAction, archiveContactAction, restoreContactAction,
   createContractAction, activateContractAction,
 } from "./actions";
 
@@ -18,14 +21,20 @@ export const dynamic = "force-dynamic";
 
 const EMIRATES = ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah", "Fujairah"];
 
-export default async function CustomerDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function CustomerDetail({ params, searchParams }: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const { id } = await params;
+  const sp = await searchParams;
+  const includeArchived = sp.archived === "1";
   const tenantId = await getTenantId();
   const customer = await getCustomer(tenantId, id);
   if (!customer) notFound();
 
-  const [branches, contracts, frequencies, pricingModels, facilityTypes, surveys, estimates] = await Promise.all([
-    listBranches(tenantId, id),
+  const [branches, contacts, contracts, frequencies, pricingModels, facilityTypes, surveys, estimates] = await Promise.all([
+    listBranches(tenantId, id, includeArchived),
+    listContacts(tenantId, id, includeArchived),
     listContracts(tenantId, id),
     listFrequencies(tenantId),
     listPricingModels(tenantId),
@@ -40,13 +49,19 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-8">
-      <div>
-        <Link href="/customers" className="text-sm text-neutral-500 hover:underline">← Customers</Link>
-        <h1 className="mt-1 flex items-center gap-3 text-2xl font-semibold">
-          {customer.trade_name ?? "(no name)"}
-          <span className="font-mono text-sm text-neutral-400">{customer.code}</span>
-          {customer.is_assumed && <AssumedBadge />}
-        </h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Link href="/customers" className="text-sm text-neutral-500 hover:underline">← Customers</Link>
+          <h1 className="mt-1 flex items-center gap-3 text-2xl font-semibold">
+            {customer.trade_name ?? "(no name)"}
+            <span className="font-mono text-sm text-neutral-400">{customer.code}</span>
+            {customer.is_assumed && <AssumedBadge />}
+          </h1>
+        </div>
+        <Link href={includeArchived ? `/customers/${customer.id}` : `/customers/${customer.id}?archived=1`}
+              className={`shrink-0 rounded border px-3 py-1.5 text-sm ${includeArchived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
+          {includeArchived ? "✓ Showing archived sites & contacts" : "Show archived"}
+        </Link>
       </div>
 
       {/* Edit customer */}
@@ -86,24 +101,67 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
 
       {/* Branches */}
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
-        <h2 className="mb-4 font-medium">Branches / sites <span className="text-neutral-400">({branches.length})</span></h2>
+        <h2 className="mb-4 font-medium">Branches / sites <span className="text-neutral-400">({branches.filter((b) => !b.archived_at).length})</span></h2>
         <div className="mb-4 overflow-hidden rounded border border-neutral-200">
           <table className="w-full text-sm">
             <thead className="bg-neutral-100 text-left text-neutral-600">
-              <tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Address</th><th className="px-3 py-2">Facility</th><th className="px-3 py-2">GPS pin</th></tr>
+              <tr><th className="px-3 py-2">Code</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Address</th><th className="px-3 py-2">Facility</th><th className="px-3 py-2">GPS pin</th><th className="px-3 py-2 text-right">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {branches.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-neutral-500">No sites yet.</td></tr>}
+              {branches.length === 0 && <tr><td colSpan={6} className="px-3 py-4 text-center text-neutral-500">No sites yet.</td></tr>}
               {branches.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} className={`align-top ${b.archived_at ? "opacity-60" : ""}`}>
                   <td className="px-3 py-2 font-mono text-xs text-neutral-500">{b.code}</td>
-                  <td className="px-3 py-2">{b.name ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {b.name ?? "—"}
+                      {b.archived_at && <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-600">archived</span>}
+                    </div>
+                    {!b.archived_at && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-brand">Edit</summary>
+                        <form action={updateBranchAction} className="mt-3 space-y-4">
+                          <input type="hidden" name="customer_id" value={customer.id} />
+                          <input type="hidden" name="id" value={b.id} />
+                          <div className="grid grid-cols-2 gap-4">
+                            <Field label="Site name" name="name" defaultValue={b.name} />
+                            <Field label="Address" name="address" defaultValue={b.address} />
+                            <label className="text-sm">
+                              <span className="text-neutral-600">Emirate</span>
+                              <select name="emirate" defaultValue={b.emirate ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-1">
+                                <option value="">—</option>{EMIRATES.map((e) => <option key={e}>{e}</option>)}
+                              </select>
+                            </label>
+                            <label className="text-sm">
+                              <span className="text-neutral-600">Facility type</span>
+                              <select name="facility_type_id" defaultValue={b.facility_type_id ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-1">
+                                <option value="">—</option>
+                                {facilityTypes.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                              </select>
+                            </label>
+                          </div>
+                          <p className="text-xs text-neutral-500">Re-pin only if the location changed — leaving the pin untouched keeps the existing GPS.</p>
+                          <PinPicker name="location" initialLat={b.lat ?? undefined} initialLng={b.lng ?? undefined} />
+                          <button className="rounded bg-neutral-800 px-4 py-1.5 text-sm text-white hover:bg-neutral-700">Save changes</button>
+                        </form>
+                      </details>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-neutral-600">{b.address ?? "—"}</td>
                   <td className="px-3 py-2 text-neutral-600">{b.facility_type_name ?? "—"}</td>
                   <td className="px-3 py-2">
                     {b.lat != null
                       ? <span className="font-mono text-xs text-emerald-700">{b.lat.toFixed(5)}, {b.lng!.toFixed(5)}</span>
                       : <span className="text-amber-600 text-xs">no pin</span>}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {b.archived_at ? (
+                      <form action={restoreBranchAction}><input type="hidden" name="customer_id" value={customer.id} /><input type="hidden" name="id" value={b.id} />
+                        <button className="text-xs text-brand hover:underline">restore</button></form>
+                    ) : (
+                      <form action={archiveBranchAction}><input type="hidden" name="customer_id" value={customer.id} /><input type="hidden" name="id" value={b.id} />
+                        <button className="text-xs text-neutral-500 hover:text-red-600">archive</button></form>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -135,6 +193,56 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
             <PinPicker name="location" />
             <button className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">Add site</button>
           </form>
+        </details>
+      </section>
+
+      {/* Contacts */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-4 font-medium">Contacts <span className="text-neutral-400">({contacts.filter((c) => !c.archived_at).length})</span></h2>
+        <div className="mb-4 overflow-hidden rounded border border-neutral-200">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-100 text-left text-neutral-600">
+              <tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Phone</th><th className="px-3 py-2">Email</th><th className="px-3 py-2">Role / site</th><th className="px-3 py-2 text-right">Actions</th></tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {contacts.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-neutral-500">No contacts yet.</td></tr>}
+              {contacts.map((ct) => (
+                <tr key={ct.id} className={`align-top ${ct.archived_at ? "opacity-60" : ""}`}>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{ct.name ?? "—"}</span>
+                      {ct.is_primary && <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">primary</span>}
+                      {ct.is_assumed && <AssumedBadge note={ct.assumed_note} />}
+                      {ct.archived_at && <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-600">archived</span>}
+                    </div>
+                    {!ct.archived_at && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer text-xs text-brand">Edit</summary>
+                        <ContactForm action={updateContactAction} customerId={customer.id} branches={branches} initial={ct} submitLabel="Save changes" />
+                      </details>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-neutral-600">{ct.phone ?? "—"}</td>
+                  <td className="px-3 py-2 text-neutral-600">{ct.email ?? "—"}</td>
+                  <td className="px-3 py-2 text-neutral-600">{[ct.role, ct.branch_name].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="px-3 py-2 text-right">
+                    {ct.archived_at ? (
+                      <form action={restoreContactAction}><input type="hidden" name="customer_id" value={customer.id} /><input type="hidden" name="id" value={ct.id} />
+                        <button className="text-xs text-brand hover:underline">restore</button></form>
+                    ) : (
+                      <form action={archiveContactAction}><input type="hidden" name="customer_id" value={customer.id} /><input type="hidden" name="id" value={ct.id} />
+                        <button className="text-xs text-neutral-500 hover:text-red-600">archive</button></form>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <details className="rounded border border-neutral-200 p-4" open={contacts.length === 0}>
+          <summary className="cursor-pointer text-sm font-medium">Add a contact</summary>
+          <ContactForm action={createContactAction} customerId={customer.id} branches={branches} submitLabel="Add contact" />
         </details>
       </section>
 
@@ -260,6 +368,39 @@ export default async function CustomerDetail({ params }: { params: Promise<{ id:
         </p>
       </section>
     </div>
+  );
+}
+
+function ContactForm({ action, customerId, branches, initial, submitLabel }: {
+  action: (fd: FormData) => Promise<void>;
+  customerId: string;
+  branches: { id: string; name: string | null; archived_at?: string | null }[];
+  initial?: { id: string; name: string | null; phone: string | null; email: string | null; role: string | null; is_primary: boolean; branch_id: string | null };
+  submitLabel: string;
+}) {
+  return (
+    <form action={action} className="mt-3 space-y-4">
+      <input type="hidden" name="customer_id" value={customerId} />
+      {initial && <input type="hidden" name="id" value={initial.id} />}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Name" name="name" defaultValue={initial?.name} />
+        <Field label="Role / title" name="role" defaultValue={initial?.role} />
+        <Field label="Phone" name="phone" defaultValue={initial?.phone} />
+        <Field label="Email" name="email" type="email" defaultValue={initial?.email} />
+        <label className="text-sm">
+          <span className="text-neutral-600">Site (optional)</span>
+          <select name="branch_id" defaultValue={initial?.branch_id ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-1">
+            <option value="">Customer level</option>
+            {branches.filter((b) => !b.archived_at).map((b) => <option key={b.id} value={b.id}>{b.name ?? "(unnamed site)"}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 self-end text-sm">
+          <input type="checkbox" name="is_primary" defaultChecked={initial?.is_primary ?? false} className="rounded border-neutral-300" />
+          <span className="text-neutral-600">Primary contact</span>
+        </label>
+      </div>
+      <button className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">{submitLabel}</button>
+    </form>
   );
 }
 

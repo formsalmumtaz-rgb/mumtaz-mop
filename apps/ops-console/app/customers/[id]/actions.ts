@@ -6,7 +6,8 @@ import { pool } from "@/lib/db";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
 import { updateCustomer, confirmCustomer } from "@/lib/domain/customers";
-import { createBranch } from "@/lib/domain/branches";
+import { createBranch, updateBranch, archiveBranch, restoreBranch } from "@/lib/domain/branches";
+import { createContact, updateContact, archiveContact, restoreContact } from "@/lib/domain/contacts";
 import { createContract, activateContract } from "@/lib/domain/contracts";
 
 const num = (v: FormDataEntryValue | null): number | null => {
@@ -52,6 +53,85 @@ export async function createBranchAction(formData: FormData): Promise<void> {
     lat: num(formData.get("location_lat")),
     lng: num(formData.get("location_lng")),
   });
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function updateBranchAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id"));
+  if (!id) return;
+  await updateBranch(await getTenantId(), id, {
+    name: String(formData.get("name") ?? ""),
+    address: String(formData.get("address") ?? ""),
+    emirate: String(formData.get("emirate") ?? ""),
+    facility_type_id: String(formData.get("facility_type_id") ?? ""),
+    lat: num(formData.get("location_lat")),
+    lng: num(formData.get("location_lng")),
+  });
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function archiveBranchAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id")); if (!id) return;
+  await archiveBranch(await getTenantId(), id);
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function restoreBranchAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id")); if (!id) return;
+  await restoreBranch(await getTenantId(), id);
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function createContactAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  await createContact(tenantId, sl, customerId, {
+    name: String(formData.get("name") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    role: String(formData.get("role") ?? ""),
+    is_primary: formData.get("is_primary") === "on",
+    branch_id: String(formData.get("branch_id") ?? ""),
+  });
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function updateContactAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id")); if (!id) return;
+  await updateContact(await getTenantId(), id, {
+    name: String(formData.get("name") ?? ""),
+    phone: String(formData.get("phone") ?? ""),
+    email: String(formData.get("email") ?? ""),
+    role: String(formData.get("role") ?? ""),
+    is_primary: formData.get("is_primary") === "on",
+    branch_id: String(formData.get("branch_id") ?? ""),
+  });
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function archiveContactAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id")); if (!id) return;
+  await archiveContact(await getTenantId(), id);
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function restoreContactAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const customerId = String(formData.get("customer_id"));
+  const id = String(formData.get("id")); if (!id) return;
+  await restoreContact(await getTenantId(), id);
   revalidatePath(`/customers/${customerId}`);
 }
 

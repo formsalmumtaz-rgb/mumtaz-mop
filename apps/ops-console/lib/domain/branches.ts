@@ -13,6 +13,7 @@ export interface Branch {
   facility_type_name: string | null;
   lat: number | null;
   lng: number | null;
+  archived_at?: string | null;
 }
 
 export interface BranchInput {
@@ -29,16 +30,17 @@ const clean = (v?: string) => {
   return t === "" ? null : t;
 };
 
-export async function listBranches(tenantId: string, customerId: string): Promise<Branch[]> {
-  const { rows } = await scopedRead(tenantId, 
+export async function listBranches(tenantId: string, customerId: string, includeArchived = false): Promise<Branch[]> {
+  const { rows } = await scopedRead(tenantId,
     `select b.id, b.code, b.name, b.address, b.emirate, b.facility_type_id,
             f.name as facility_type_name,
-            ST_Y(b.location::geometry) as lat, ST_X(b.location::geometry) as lng
+            ST_Y(b.location::geometry) as lat, ST_X(b.location::geometry) as lng,
+            b.archived_at::text
        from customer_branches b
        left join facility_types f on f.id = b.facility_type_id
-      where b.tenant_id = $1 and b.customer_id = $2
-      order by b.created_at`,
-    [tenantId, customerId],
+      where b.tenant_id = $1 and b.customer_id = $2 and ($3 or b.archived_at is null)
+      order by b.archived_at nulls first, b.created_at`,
+    [tenantId, customerId, includeArchived],
   );
   return rows as Branch[];
 }
@@ -70,5 +72,48 @@ export async function createBranch(
       note: "branch created in admin console",
     });
     return rows[0].id as string;
+  });
+}
+
+// Full edit. The GPS pin is only rewritten when a fresh lat/lng is supplied, so a
+// plain detail edit never wipes an existing pin.
+export async function updateBranch(tenantId: string, id: string, data: BranchInput): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(
+      `select code, name, address, emirate, facility_type_id,
+              ST_Y(location::geometry) as lat, ST_X(location::geometry) as lng
+         from customer_branches where id=$1 and tenant_id=$2 for update`, [id, tenantId],
+    )).rows[0];
+    if (!before) throw new Error("Branch not found");
+    const setPin = data.lat != null && data.lng != null;
+    await c.query(
+      `update customer_branches
+          set name=$1, address=$2, emirate=$3, facility_type_id=$4
+              ${setPin ? ", location = ST_SetSRID(ST_MakePoint($5,$6),4326)::geography" : ""}
+        where id=${setPin ? "$7" : "$5"}`,
+      setPin
+        ? [clean(data.name), clean(data.address), clean(data.emirate), clean(data.facility_type_id), data.lng, data.lat, id]
+        : [clean(data.name), clean(data.address), clean(data.emirate), clean(data.facility_type_id), id],
+    );
+    await audit(c, tenantId, {
+      table: "customer_branches", rowId: id, action: "update",
+      oldValue: before,
+      newValue: { ...data, ...(setPin ? {} : { lat: before.lat, lng: before.lng }) },
+      note: setPin ? "branch edited (pin updated)" : "branch edited in admin console",
+    });
+  });
+}
+
+export async function archiveBranch(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update customer_branches set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "customer_branches", rowId: id, action: "update", newValue: { archived: true }, note: "branch archived" });
+  });
+}
+
+export async function restoreBranch(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update customer_branches set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "customer_branches", rowId: id, action: "update", newValue: { archived: false }, note: "branch restored" });
   });
 }
