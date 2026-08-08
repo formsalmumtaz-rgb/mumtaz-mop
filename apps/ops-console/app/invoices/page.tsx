@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { listInvoices } from "@/lib/domain/invoices";
+import { listInvoicesPaged } from "@/lib/domain/invoices";
 import { listCustomers } from "@/lib/domain/customers";
+import { parseListParams } from "@/lib/list";
+import { ListToolbar, Pagination } from "@/components/ListControls";
 import { createInvoiceAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -11,9 +13,14 @@ const STATUS_CLASS: Record<string, string> = {
   issued: "bg-indigo-100 text-indigo-800", paid: "bg-emerald-100 text-emerald-800", cancelled: "bg-red-100 text-red-700",
 };
 
-export default async function InvoicesPage() {
+export default async function InvoicesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  const lp = parseListParams(sp);
   const tenantId = await getTenantId();
-  const [invoices, customers] = await Promise.all([listInvoices(tenantId), listCustomers(tenantId)]);
+  const [{ rows: invoices, total }, customers] = await Promise.all([
+    listInvoicesPaged(tenantId, { q: lp.q, limit: lp.pageSize, offset: lp.offset }),
+    listCustomers(tenantId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -21,6 +28,8 @@ export default async function InvoicesPage() {
         <h1 className="text-2xl font-semibold">Invoices</h1>
         <p className="mt-1 text-sm text-neutral-600">Numbering is assigned on issue: contract → AMTX, ad-hoc → AMTX/OW. Numbers are never reused; cancelled invoices keep their number.</p>
       </div>
+
+      <ListToolbar basePath="/invoices" params={sp} showArchived={false} placeholder="Search invoice #, customer, or status…" />
 
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={invoices.length === 0}>
         <summary className="cursor-pointer font-medium">New manual invoice</summary>
@@ -47,7 +56,7 @@ export default async function InvoicesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {invoices.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-500">No invoices yet.</td></tr>}
+            {invoices.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-500">{lp.q ? "No invoices match your search." : "No invoices yet."}</td></tr>}
             {invoices.map((i) => (
               <tr key={i.id}>
                 <td className="px-3 py-2"><Link href={`/invoices/${i.id}`} className="font-mono text-xs text-brand underline">{i.invoice_number ?? "(draft)"}</Link></td>
@@ -63,6 +72,8 @@ export default async function InvoicesPage() {
           </tbody>
         </table>
       </div>
+
+      <Pagination basePath="/invoices" params={sp} page={lp.page} pageSize={lp.pageSize} total={total} />
     </div>
   );
 }
