@@ -32,6 +32,7 @@ const nav = [
   { href: "/technicians", label: "Technicians" },
   { href: "/teams", label: "Teams" },
   { href: "/recipes", label: "Treatment recipes" },
+  { href: "/settings/master-data", label: "Master data" },
   { href: "/settings", label: "Settings" },
   { href: "/settings/users", label: "Users" },
 ];

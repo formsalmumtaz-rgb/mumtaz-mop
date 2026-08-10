@@ -22,15 +22,31 @@ export interface PricingModel {
   formula_spec: FormulaSpec;
   is_assumed: boolean;
   assumed_note: string | null;
+  is_active?: boolean;
 }
 
-export async function listPricingModels(tenantId: string): Promise<PricingModel[]> {
-  const { rows } = await scopedRead(tenantId, 
-    `select id, code, name, model_type, formula_spec, is_assumed, assumed_note
-       from pricing_models where tenant_id=$1 and is_active order by model_type, name`,
-    [tenantId],
+export async function listPricingModels(tenantId: string, includeArchived = false): Promise<PricingModel[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, name, model_type, formula_spec, is_assumed, assumed_note, is_active
+       from pricing_models where tenant_id=$1 and ($2 or is_active)
+      order by is_active desc, model_type, name`,
+    [tenantId, includeArchived],
   );
   return rows as PricingModel[];
+}
+
+export async function archivePricingModel(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update pricing_models set is_active=false where id=$1 and tenant_id=$2 and is_active returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "pricing_models", rowId: id, action: "update", oldValue: { is_active: true }, newValue: { is_active: false }, note: "pricing model archived (deactivated)" });
+  });
+}
+
+export async function restorePricingModel(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update pricing_models set is_active=true where id=$1 and tenant_id=$2 and not is_active returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "pricing_models", rowId: id, action: "update", oldValue: { is_active: false }, newValue: { is_active: true }, note: "pricing model restored (reactivated)" });
+  });
 }
 
 const clean = (v?: string) => { const t = (v ?? "").trim(); return t === "" ? null : t; };
