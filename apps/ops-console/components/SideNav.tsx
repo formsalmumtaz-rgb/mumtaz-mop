@@ -36,6 +36,7 @@ const GROUPS: Group[] = [
     { href: "/receipts", label: "Receipts" },
     { href: "/credit-notes", label: "Credit notes" },
     { href: "/ar", label: "Receivables" },
+    { href: "/expenses", label: "Expenses" },
     { href: "/cash-flow", label: "Cash flow" },
     { href: "/reports", label: "Reports" },
     { href: "/profitability", label: "Profitability" },
