@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
-import { listServiceTypes } from "@/lib/domain/reference";
+import { listServiceTypes, getServiceLineId } from "@/lib/domain/reference";
 import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
 import { getSurvey } from "@/lib/domain/survey";
+import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
-import { addSurveyLineAction, deleteSurveyLineAction, setSurveyStatusAction, createEstimateFromSurveyAction } from "../actions";
+import { addSurveyLineAction, addSurveyLineFromCategoryAction, deleteSurveyLineAction, setSurveyStatusAction, createEstimateFromSurveyAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -14,11 +15,13 @@ const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximum
 export default async function SurveyDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const tenantId = await getTenantId();
-  const [data, services, models, rates] = await Promise.all([
+  const sl = await getServiceLineId(tenantId);
+  const [data, services, models, rates, categories] = await Promise.all([
     getSurvey(tenantId, id),
     listServiceTypes(tenantId),
     listPricingModels(tenantId),
     getCostRates(tenantId),
+    listCategories(tenantId, sl),
   ]);
   if (!data) notFound();
   const { header, lines } = data;
@@ -106,6 +109,28 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
           </tbody>
         </table>
       </div>
+
+      {isDraft && categories.length > 0 && (
+        <div className="rounded-lg border border-neutral-200 bg-white p-4">
+          <h2 className="font-medium">Quick add from category</h2>
+          <p className="mt-1 text-sm text-neutral-600">Pick a configured category — crew, duration, material cost and price fill in deterministically.</p>
+          <form action={addSurveyLineFromCategoryAction} className="mt-3 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="survey_id" value={header.id} />
+            <label className="text-sm">
+              <span className="text-neutral-600">Category</span>
+              <select name="category_id" required className="mt-1 block w-72 rounded-md border border-neutral-300 px-2 py-2 text-sm">
+                <option value="">Select…</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id} disabled={!c.default_pricing_model_id}>
+                    {c.name}{c.property_type ? ` (${c.property_type})` : ""}{!c.default_pricing_model_id ? " — no pricing set" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="rounded-md bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark">Add from category</button>
+          </form>
+        </div>
+      )}
 
       {isDraft ? (
         <div className="rounded-lg border border-neutral-200 bg-white p-4">
