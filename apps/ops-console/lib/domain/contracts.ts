@@ -68,6 +68,11 @@ export interface ContractDetail extends Contract {
   auto_generate_invoice: boolean;
   next_invoice_date: string | null;
   last_invoice_date: string | null;
+  archived_at: string | null;
+  // True once the contract has issued/paid tax invoices: its commercial terms are
+  // then lifecycle-frozen (corrections flow through credit notes / reversals,
+  // never edits). The UI renders those fields read-only with an explanation.
+  financially_locked: boolean;
   lines: ContractLine[];
 }
 
@@ -79,6 +84,9 @@ export async function getContract(tenantId: string, id: string): Promise<Contrac
             ct.customer_id, cu.trade_name as customer_name, ct.service_line_id,
             ct.billing_frequency, ct.billing_day, ct.billing_interval_days, ct.auto_generate_invoice,
             ct.next_invoice_date::text as next_invoice_date, ct.last_invoice_date::text as last_invoice_date,
+            ct.archived_at::text as archived_at,
+            exists(select 1 from invoices iv where iv.contract_id = ct.id
+                     and iv.document_type = 'tax_invoice' and iv.status in ('issued','paid')) as financially_locked,
             (select e.id from estimates e where e.contract_id = ct.id limit 1) as source_estimate_id
        from contracts ct
        left join frequencies f on f.id = ct.frequency_id
@@ -123,6 +131,69 @@ export async function createContract(
       newValue: data, note: "contract created in admin console",
     });
     return rows[0].id as string;
+  });
+}
+
+// Edit commercial terms. Refused once the contract is financially locked (has
+// issued invoices) — those terms are then frozen and corrected via credit
+// notes/reversals. Editable while unlocked (draft, or active but not yet billed).
+export async function updateContract(tenantId: string, id: string, data: ContractInput): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(
+      `select contract_number, frequency_id, pricing_model_id, contract_value::text as contract_value,
+              currency, start_date::text as start_date, end_date::text as end_date,
+              exists(select 1 from invoices iv where iv.contract_id=$1
+                       and iv.document_type='tax_invoice' and iv.status in ('issued','paid')) as locked
+         from contracts where id=$1 and tenant_id=$2 for update`, [id, tenantId],
+    )).rows[0];
+    if (!before) throw new Error("Contract not found");
+    if (before.locked) throw new Error("Contract has issued invoices — commercial terms are locked. Extend the term instead, or correct via a credit note.");
+    await c.query(
+      `update contracts set contract_number=$1, frequency_id=$2, pricing_model_id=$3,
+              contract_value=$4, currency=coalesce($5,'AED'), start_date=$6, end_date=$7 where id=$8`,
+      [clean(data.contract_number), clean(data.frequency_id), clean(data.pricing_model_id),
+       clean(data.contract_value), clean(data.currency), clean(data.start_date), clean(data.end_date), id],
+    );
+    await audit(c, tenantId, {
+      table: "contracts", rowId: id, action: "update",
+      oldValue: before, newValue: data, note: "contract terms edited in admin console",
+    });
+  });
+}
+
+// Extend (or clear) the contract end date. Always allowed — a forward-looking
+// term change that does not touch any past billing, so it stays available even
+// when the contract is financially locked.
+export async function extendContractEndDate(tenantId: string, id: string, endDate: string): Promise<void> {
+  const nd = clean(endDate);
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(`select end_date::text as end_date from contracts where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!before) throw new Error("Contract not found");
+    await c.query(`update contracts set end_date=$1 where id=$2`, [nd, id]);
+    await audit(c, tenantId, {
+      table: "contracts", rowId: id, action: "update",
+      oldValue: { end_date: before.end_date }, newValue: { end_date: nd }, note: "contract term extended",
+    });
+  });
+}
+
+// Archive is a soft hide (never a hard delete, financial records untouched). An
+// active contract must be handled through its lifecycle first, so archive is
+// refused while active.
+export async function archiveContract(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const cur = (await c.query(`select lifecycle_status from contracts where id=$1 and tenant_id=$2 and archived_at is null for update`, [id, tenantId])).rows[0];
+    if (!cur) return;
+    if (cur.lifecycle_status === "active") throw new Error("Cannot archive an active contract — end or cancel it first.");
+    const r = await c.query(`update contracts set archived_at=now(), archived_by=app_current_actor() where id=$1 and tenant_id=$2 and archived_at is null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "contracts", rowId: id, action: "update", newValue: { archived: true }, note: "contract archived" });
+  });
+}
+
+export async function restoreContract(tenantId: string, id: string): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const r = await c.query(`update contracts set archived_at=null, archived_by=null where id=$1 and tenant_id=$2 and archived_at is not null returning id`, [id, tenantId]);
+    if (r.rowCount) await audit(c, tenantId, { table: "contracts", rowId: id, action: "update", newValue: { archived: false }, note: "contract restored" });
   });
 }
 
