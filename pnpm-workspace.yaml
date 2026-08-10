@@ -3,11 +3,19 @@ packages:
   - "packages/*"
   - "services/*"
 
-# pnpm 11 blocks dependency install/build scripts until each is explicitly
-# approved (true) or declined (false). Unresolved entries fail the install
-# (ERR_PNPM_IGNORED_BUILDS) — which is what broke the Vercel build. esbuild and
-# sharp need their native binaries; core-js only prints a donation notice.
+# Dependency build-script approval. Written for BOTH pnpm versions so the Vercel
+# build is robust regardless of which pnpm the platform resolves:
+#   - pnpm 11 honours `allowBuilds` (boolean map).
+#   - pnpm 10 honours `onlyBuiltDependencies` (allowlist; unlisted pkgs are
+#     skipped without error).
+# esbuild + sharp need their native binaries; core-js only prints a donation
+# notice and is intentionally not built. This is what unblocks `pnpm install`
+# on Vercel (ERR_PNPM_IGNORED_BUILDS otherwise).
 allowBuilds:
   core-js: false
   esbuild: true
   sharp: true
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
