@@ -151,6 +151,48 @@ export async function addEstimateLine(tenantId: string, serviceLineId: string, e
   });
 }
 
+// Add an estimate line FROM a service category (Category Engine, mig 044). The
+// category's deterministic assumptions become the line: person-hours = crew ×
+// duration, material cost, and a pricing recommendation — all run through the
+// SAME fn_price / fn_estimate_cost as a manual line, so nothing is special-cased
+// or invented. Revenue comes from the category's pricing model (configure it as
+// a fixed model with the recommended price to realise a flat quote).
+export async function addEstimateLineFromCategory(
+  tenantId: string, serviceLineId: string, estimateId: string, categoryId: string,
+): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const est = await c.query(`select status from estimates where id=$1 and tenant_id=$2`, [estimateId, tenantId]);
+    if (!est.rowCount) throw new Error("Estimate not found");
+    if (est.rows[0].status !== "draft") throw new Error("Only draft estimates can be edited");
+    const cat = (await c.query(
+      `select name, service_type_id, default_pricing_model_id, default_unit_price::float8 as unit_price,
+              default_measure::float8 as measure, crew_size, est_duration_hours::float8 as duration,
+              est_material_cost::float8 as material
+         from service_categories where id=$1 and tenant_id=$2 and is_active`, [categoryId, tenantId])).rows[0];
+    if (!cat) throw new Error("Category not found or archived");
+    if (!cat.default_pricing_model_id) throw new Error(`Category "${cat.name}" has no pricing model set — configure it under Service categories first.`);
+    const hours = Number(cat.crew_size) * Number(cat.duration); // deterministic person-hours
+    const { rows } = await c.query(
+      `insert into estimate_lines
+         (tenant_id, estimate_id, service_type_id, pricing_model_id, category_id, description, unit_price, measure, measures,
+          line_total, est_labour_hours, est_distance_km, est_material_cost, est_cost)
+       select $1,$2,$3,$4,$5,$6,$7,$8,'{}'::jsonb,
+              fn_price(pm.model_type, $7, $8, pm.formula_spec, '{}'::jsonb),
+              $9,0,$10, fn_estimate_cost($1,$11,$9,0,$10)
+         from pricing_models pm where pm.id=$4 and pm.tenant_id=$1
+       returning id, line_total::float8, est_cost::float8`,
+      [tenantId, estimateId, cat.service_type_id, cat.default_pricing_model_id, categoryId,
+       cat.name, cat.unit_price, cat.measure, hours, cat.material, serviceLineId],
+    );
+    if (!rows[0]) throw new Error("Pricing model not found");
+    await audit(c, tenantId, {
+      table: "estimate_lines", rowId: rows[0].id, action: "insert",
+      newValue: { from_category: categoryId, category: cat.name, est_labour_hours: hours, line_total: rows[0].line_total, est_cost: rows[0].est_cost },
+      note: `estimate line added from category "${cat.name}"`,
+    });
+  });
+}
+
 export async function deleteEstimateLine(tenantId: string, lineId: string): Promise<void> {
   await withTenantTx(tenantId, async (c) => {
     const r = await c.query(

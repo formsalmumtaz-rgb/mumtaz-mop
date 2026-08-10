@@ -4,7 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createEstimate, addEstimateLine, deleteEstimateLine, setEstimateStatus, convertEstimateToContract } from "@/lib/domain/estimation";
+import { createEstimate, addEstimateLine, addEstimateLineFromCategory, deleteEstimateLine, setEstimateStatus, convertEstimateToContract } from "@/lib/domain/estimation";
+
+export async function addLineFromCategoryAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
+  const estimateId = String(fd.get("estimate_id") ?? "");
+  const categoryId = String(fd.get("category_id") ?? "");
+  if (!estimateId || !categoryId) return;
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  await addEstimateLineFromCategory(tenantId, sl, estimateId, categoryId);
+  revalidatePath(`/estimates/${estimateId}`);
+}
 
 export async function createEstimateAction(fd: FormData): Promise<void> {
   await requirePermission("estimate.edit");
