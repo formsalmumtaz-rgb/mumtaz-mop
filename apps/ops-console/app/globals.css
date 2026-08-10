@@ -6,5 +6,16 @@
   color-scheme: light;
 }
 body {
-  @apply bg-neutral-50 text-neutral-900;
+  @apply bg-neutral-50 text-neutral-900 antialiased;
+}
+
+/* Consistent brand focus ring for native controls not yet on the UI primitives. */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    @apply outline-none ring-2 ring-brand/40;
+  }
 }
