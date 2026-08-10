@@ -41,3 +41,6 @@ next-env.d.ts
 dev-dist/
 **/dev-dist/
 /customer_dedup_decision_sheet.csv
+
+# Vercel
+.vercel
