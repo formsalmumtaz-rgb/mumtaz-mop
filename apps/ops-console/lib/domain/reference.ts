@@ -24,11 +24,39 @@ export const listServiceTypes = (t: string) => listRef("service_types", t);
 export const listJobSources = (t: string) => listRef("job_sources", t);
 export const listTeams = (t: string) => listRef("teams", t);
 
-export async function getServiceLineId(tenantId: string): Promise<string> {
-  const { rows } = await scopedRead(tenantId, 
-    `select id from service_lines where tenant_id = $1 and code = 'pest_control' limit 1`,
+export interface ServiceLine { id: string; code: string; name: string }
+
+// Active divisions (service lines) the operator can switch between.
+export async function listServiceLines(tenantId: string): Promise<ServiceLine[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, name from service_lines where tenant_id = $1 and is_active order by name`,
     [tenantId],
   );
-  if (!rows[0]) throw new Error("pest_control service line not found (apply 010_seed)");
+  return rows as ServiceLine[];
+}
+
+// The operator's currently-selected division (service-line code), from the
+// mop_division cookie. Null when unset.
+export async function getActiveServiceLineCode(): Promise<string | null> {
+  const { cookies } = await import("next/headers");
+  const v = (await cookies()).get("mop_division")?.value?.trim();
+  return v || null;
+}
+
+// Resolve the ACTIVE division's service_line id (Art. XVIII — the app is
+// service-driven, not hardcoded). Honours the mop_division cookie when it names
+// an active line for this tenant; otherwise falls back to pest_control, then to
+// the first active line. Same signature as before, so every caller is now
+// division-aware with no change.
+export async function getServiceLineId(tenantId: string): Promise<string> {
+  const code = await getActiveServiceLineCode();
+  const { rows } = await scopedRead(tenantId,
+    `select id from service_lines
+      where tenant_id = $1 and is_active
+      order by (code = $2) desc, (code = 'pest_control') desc, name
+      limit 1`,
+    [tenantId, code],
+  );
+  if (!rows[0]) throw new Error("No active service line found (apply 010_seed)");
   return rows[0].id as string;
 }
