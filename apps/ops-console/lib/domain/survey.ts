@@ -161,6 +161,45 @@ export async function addSurveyLine(tenantId: string, serviceLineId: string, sur
   });
 }
 
+// Add a survey line FROM a service category (Category Engine). Identical
+// deterministic derivation as the estimate path (person-hours = crew × duration,
+// fn_price / fn_estimate_cost), so survey and estimate numbers stay byte-identical.
+export async function addSurveyLineFromCategory(
+  tenantId: string, serviceLineId: string, surveyId: string, categoryId: string,
+): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const owns = await c.query(`select status from surveys where id=$1 and tenant_id=$2`, [surveyId, tenantId]);
+    if (!owns.rowCount) throw new Error("Survey not found");
+    if (owns.rows[0].status !== "draft") throw new Error("Only draft surveys can be edited");
+    const cat = (await c.query(
+      `select name, service_type_id, default_pricing_model_id, default_unit_price::float8 as unit_price,
+              default_measure::float8 as measure, crew_size, est_duration_hours::float8 as duration,
+              est_material_cost::float8 as material
+         from service_categories where id=$1 and tenant_id=$2 and is_active`, [categoryId, tenantId])).rows[0];
+    if (!cat) throw new Error("Category not found or archived");
+    if (!cat.default_pricing_model_id) throw new Error(`Category "${cat.name}" has no pricing model set — configure it under Service categories first.`);
+    const hours = Number(cat.crew_size) * Number(cat.duration);
+    const { rows } = await c.query(
+      `insert into survey_lines
+         (tenant_id, survey_id, service_type_id, pricing_model_id, category_id, description, unit_price, measure, measures,
+          line_total, est_labour_hours, est_distance_km, est_material_cost, est_cost)
+       select $1,$2,$3,$4,$5,$6,$7,$8,'{}'::jsonb,
+              fn_price(pm.model_type, $7, $8, pm.formula_spec, '{}'::jsonb),
+              $9,0,$10, fn_estimate_cost($1,$11,$9,0,$10)
+         from pricing_models pm where pm.id=$4 and pm.tenant_id=$1
+       returning id, line_total::float8, est_cost::float8`,
+      [tenantId, surveyId, cat.service_type_id, cat.default_pricing_model_id, categoryId,
+       cat.name, cat.unit_price, cat.measure, hours, cat.material, serviceLineId],
+    );
+    if (!rows[0]) throw new Error("Pricing model not found");
+    await audit(c, tenantId, {
+      table: "survey_lines", rowId: rows[0].id, action: "insert",
+      newValue: { from_category: categoryId, category: cat.name, est_labour_hours: hours, line_total: rows[0].line_total, est_cost: rows[0].est_cost },
+      note: `survey line added from category "${cat.name}"`,
+    });
+  });
+}
+
 export async function deleteSurveyLine(tenantId: string, lineId: string): Promise<void> {
   await withTenantTx(tenantId, async (c) => {
     const r = await c.query(
@@ -197,9 +236,9 @@ export async function createEstimateFromSurvey(tenantId: string, serviceLineId: 
     // copy every survey line into an estimate line (values already computed identically)
     await c.query(
       `insert into estimate_lines
-         (tenant_id, estimate_id, service_type_id, pricing_model_id, description, unit_price, measure, measures,
+         (tenant_id, estimate_id, service_type_id, pricing_model_id, category_id, description, unit_price, measure, measures,
           line_total, est_labour_hours, est_distance_km, est_material_cost, est_cost, seq)
-       select tenant_id, $2, service_type_id, pricing_model_id, description, unit_price, measure, measures,
+       select tenant_id, $2, service_type_id, pricing_model_id, category_id, description, unit_price, measure, measures,
               line_total, est_labour_hours, est_distance_km, est_material_cost, est_cost, seq
          from survey_lines where survey_id=$1 and tenant_id=$3`,
       [surveyId, est.id, tenantId]);

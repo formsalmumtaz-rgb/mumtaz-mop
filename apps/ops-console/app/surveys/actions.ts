@@ -4,7 +4,18 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createSurvey, addSurveyLine, deleteSurveyLine, setSurveyStatus, createEstimateFromSurvey } from "@/lib/domain/survey";
+import { createSurvey, addSurveyLine, addSurveyLineFromCategory, deleteSurveyLine, setSurveyStatus, createEstimateFromSurvey } from "@/lib/domain/survey";
+
+export async function addSurveyLineFromCategoryAction(fd: FormData): Promise<void> {
+  await requirePermission("survey.edit");
+  const surveyId = String(fd.get("survey_id") ?? "");
+  const categoryId = String(fd.get("category_id") ?? "");
+  if (!surveyId || !categoryId) return;
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  await addSurveyLineFromCategory(tenantId, sl, surveyId, categoryId);
+  revalidatePath(`/surveys/${surveyId}`);
+}
 
 export async function createSurveyAction(fd: FormData): Promise<void> {
   await requirePermission("survey.edit");
