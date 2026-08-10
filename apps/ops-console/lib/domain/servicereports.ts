@@ -41,16 +41,19 @@ export interface ServiceReportReview { id: string; action: string; note: string 
 export interface ServiceReportAttachment { id: string; kind: string; storage_key: string; caption: string | null; created_at: string; }
 
 export async function getServiceReport(tenantId: string, id: string): Promise<{
-  header: ServiceReportHeader & { snapshot: Record<string, unknown> }; reviews: ServiceReportReview[]; attachments: ServiceReportAttachment[];
+  header: ServiceReportHeader & { snapshot: Record<string, unknown>; service_line_code: string | null; service_line_name: string | null };
+  reviews: ServiceReportReview[]; attachments: ServiceReportAttachment[];
 } | null> {
-  const { rows } = await scopedRead(tenantId, 
+  const { rows } = await scopedRead(tenantId,
     `select sr.id, sr.report_number, sr.job_id, sr.customer_id, cu.trade_name as customer,
             sr.performed_by, t.full_name as performer, sr.server_completed_at::text, sr.snapshot,
+            sl.code as service_line_code, sl.name as service_line_name,
             st.review_action,
             (select count(*)::int from service_report_attachments a where a.service_report_id = sr.id) as attachment_count
        from service_reports sr
        left join customers cu on cu.id = sr.customer_id
        left join technicians t on t.id = sr.performed_by
+       left join service_lines sl on sl.id = sr.service_line_id
        left join service_report_status st on st.service_report_id = sr.id
       where sr.tenant_id = $1 and sr.id = $2`,
     [tenantId, id],

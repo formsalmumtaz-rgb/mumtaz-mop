@@ -30,6 +30,8 @@ export default async function ServiceReportDetail({ params }: { params: Promise<
           {notes && <p className="mt-2 text-sm text-neutral-700">{notes}</p>}
         </div>
         <div className="flex gap-2">
+          <a href={`/service-reports/${header.id}/pdf`} target="_blank" rel="noopener"
+             className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">Download PDF</a>
           <form action={reviewServiceReportAction}><input type="hidden" name="sr_id" value={header.id} /><input type="hidden" name="action" value="approved" />
             <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Approve</button></form>
           <form action={reviewServiceReportAction}><input type="hidden" name="sr_id" value={header.id} /><input type="hidden" name="action" value="rejected" />

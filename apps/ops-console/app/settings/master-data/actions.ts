@@ -14,8 +14,22 @@ import {
   createSupplier, updateSupplier, archiveSupplier, restoreSupplier,
 } from "@/lib/domain/suppliers";
 import { archivePricingModel, restorePricingModel } from "@/lib/domain/pricing";
+import { updateDocumentBrand } from "@/lib/domain/branding";
 
 const PATH = "/settings/master-data";
+
+// ── Document branding (division-aware logos on generated documents) ──
+export async function updateBrandingAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await updateDocumentBrand(await getTenantId(), id, {
+    name: String(fd.get("name") ?? ""),
+    logo_key: String(fd.get("logo_key") ?? ""),
+    tagline: String(fd.get("tagline") ?? ""),
+    show_toll_free: fd.get("show_toll_free") === "on",
+  });
+  revalidatePath(PATH);
+}
 
 function catalogKey(fd: FormData): CatalogKey {
   const k = String(fd.get("catalog") ?? "");
