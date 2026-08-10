@@ -5,11 +5,12 @@ import { listCatalog, CATALOGS, type CatalogKey, type CatalogItem } from "@/lib/
 import { listFrequenciesAdmin, PERIOD_UNITS, type Frequency } from "@/lib/domain/frequencies";
 import { listSuppliers, type Supplier } from "@/lib/domain/suppliers";
 import { listPricingModels, type PricingModel } from "@/lib/domain/pricing";
+import { listDocumentBranding, LOGO_CHOICES, type DocumentBrand } from "@/lib/domain/branding";
 import {
   createCatalogAction, updateCatalogAction, archiveCatalogAction, restoreCatalogAction,
   createFrequencyAction, updateFrequencyAction, archiveFrequencyAction, restoreFrequencyAction,
   createSupplierAction, updateSupplierAction, archiveSupplierAction, restoreSupplierAction,
-  archivePricingAction, restorePricingAction,
+  archivePricingAction, restorePricingAction, updateBrandingAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -239,11 +240,59 @@ function PricingSection({ items }: { items: PricingModel[] }) {
   );
 }
 
+function BrandingSection({ brands }: { brands: DocumentBrand[] }) {
+  return (
+    <section className="rounded-lg border border-neutral-200 bg-white p-5">
+      <h2 className="mb-1 font-medium">Document branding</h2>
+      <p className="mb-3 text-sm text-neutral-600">
+        Which logo and name each generated document carries, chosen by division. Pest-control documents use the Pest Control mark, cleaning the Cleaning Crew mark, FM the Facilities Management mark; group/unmatched documents fall back to Mumtaz ISG. Editable here — nothing is hardcoded.
+      </p>
+      <div className="space-y-3">
+        {brands.map((b) => (
+          <div key={b.id} className="rounded border border-neutral-200 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/brand/${b.logo_key}`} alt={b.name} className="h-8 w-auto" />
+                <div>
+                  <div className="font-medium">{b.name}</div>
+                  <div className="text-xs text-neutral-500">
+                    {b.applies_to_service_line_code ? `division: ${b.applies_to_service_line_code}` : "group / default fallback"}
+                    {b.show_toll_free && " · shows toll-free"}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-brand">Edit</summary>
+              <form action={updateBrandingAction} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <input type="hidden" name="id" value={b.id} />
+                <label className="text-sm"><span className="text-neutral-600">Printed name</span>
+                  <input name="name" defaultValue={b.name} className={input} /></label>
+                <label className="text-sm"><span className="text-neutral-600">Logo</span>
+                  <select name="logo_key" defaultValue={b.logo_key} className={input}>
+                    {LOGO_CHOICES.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}
+                  </select></label>
+                <label className="text-sm"><span className="text-neutral-600">Tagline</span>
+                  <input name="tagline" defaultValue={b.tagline ?? ""} className={input} /></label>
+                <label className="flex items-center gap-2 self-end text-sm">
+                  <input type="checkbox" name="show_toll_free" defaultChecked={b.show_toll_free} className="rounded border-neutral-300" />
+                  <span className="text-neutral-600">Show toll-free on documents</span></label>
+                <div className="sm:col-span-2"><button className={saveBtn}>Save branding</button></div>
+              </form>
+            </details>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default async function MasterDataPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const inc = sp.archived === "1";
   const tenantId = await getTenantId();
-  const [serviceTypes, jobTypes, facilityTypes, jobSources, frequencies, suppliers, pricing] = await Promise.all([
+  const [serviceTypes, jobTypes, facilityTypes, jobSources, frequencies, suppliers, pricing, branding] = await Promise.all([
     listCatalog(tenantId, "service_types", inc),
     listCatalog(tenantId, "job_types", inc),
     listCatalog(tenantId, "facility_types", inc),
@@ -251,6 +300,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     listFrequenciesAdmin(tenantId, inc),
     listSuppliers(tenantId, inc),
     listPricingModels(tenantId, inc),
+    listDocumentBranding(tenantId),
   ]);
 
   return (
@@ -273,6 +323,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
       <CatalogSection ckey="job_sources" items={jobSources} />
       <SupplierSection items={suppliers} />
       <PricingSection items={pricing} />
+      <BrandingSection brands={branding} />
     </div>
   );
 }
