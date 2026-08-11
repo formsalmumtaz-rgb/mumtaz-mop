@@ -167,7 +167,8 @@ export async function addEstimateLineFromCategory(
     const cat = (await c.query(
       `select name, service_type_id, default_pricing_model_id, default_unit_price::float8 as unit_price,
               default_measure::float8 as measure, crew_size, est_duration_hours::float8 as duration,
-              est_material_cost::float8 as material
+              -- prefer the deterministic BOM cost; fall back to the flat estimate when no BOM
+              coalesce(nullif(fn_category_material_cost($2, id), 0), est_material_cost)::float8 as material
          from service_categories where id=$1 and tenant_id=$2 and is_active`, [categoryId, tenantId])).rows[0];
     if (!cat) throw new Error("Category not found or archived");
     if (!cat.default_pricing_model_id) throw new Error(`Category "${cat.name}" has no pricing model set — configure it under Service categories first.`);

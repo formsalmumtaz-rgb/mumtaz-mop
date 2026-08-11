@@ -91,25 +91,36 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
             <tr>
               <th className="px-3 py-2 font-medium">Service</th><th className="px-3 py-2 font-medium">Model</th>
               <th className="px-3 py-2 font-medium">Detail</th>
-              <th className="px-3 py-2 font-medium text-right">Revenue</th><th className="px-3 py-2 font-medium text-right">Est. cost</th>
+              <th className="px-3 py-2 font-medium text-right">Revenue</th>
+              <th className="px-3 py-2 font-medium text-right">Material</th>
+              <th className="px-3 py-2 font-medium text-right">Labour</th>
+              <th className="px-3 py-2 font-medium text-right">Est. cost</th>
+              <th className="px-3 py-2 font-medium text-right">Margin</th>
               {isDraft && <th className="px-3 py-2"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {lines.length === 0 && <tr><td colSpan={isDraft ? 6 : 5} className="px-3 py-6 text-center text-neutral-500">No lines yet.</td></tr>}
-            {lines.map((l) => (
+            {lines.length === 0 && <tr><td colSpan={isDraft ? 9 : 8} className="px-3 py-6 text-center text-neutral-500">No lines yet.</td></tr>}
+            {lines.map((l) => {
+              const gp = l.line_total - l.est_cost;
+              const pct = l.line_total > 0 ? `${((gp / l.line_total) * 100).toFixed(0)}%` : "—";
+              return (
               <tr key={l.id}>
                 <td className="px-3 py-2">{l.service_name ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{l.model_name} <span className="font-mono text-xs text-neutral-400">{l.model_type}</span></td>
                 <td className="px-3 py-2 text-neutral-500">{l.description ?? (l.model_type === "formula" ? JSON.stringify(l.measures) : `${l.unit_price} × ${l.measure}`)}</td>
                 <td className="px-3 py-2 text-right">{aed(l.line_total)}</td>
+                <td className="px-3 py-2 text-right text-neutral-600">{aed(l.est_material_cost)}</td>
+                <td className="px-3 py-2 text-right text-neutral-600">{l.est_labour_hours ? `${l.est_labour_hours}h` : "—"}</td>
                 <td className="px-3 py-2 text-right text-neutral-600">{aed(l.est_cost)}</td>
+                <td className={`px-3 py-2 text-right font-medium ${gp < 0 ? "text-red-600" : "text-emerald-700"}`}>{pct}</td>
                 {isDraft && <td className="px-3 py-2 text-right">
                   <form action={deleteLineAction}><input type="hidden" name="line_id" value={l.id} /><input type="hidden" name="estimate_id" value={header.id} />
                     <button className="text-xs text-neutral-500 hover:text-red-600">remove</button></form>
                 </td>}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
