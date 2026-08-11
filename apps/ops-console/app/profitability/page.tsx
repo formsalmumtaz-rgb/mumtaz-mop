@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/tenant";
+import { requireView } from "@/lib/auth";
 import {
   getProfitSummary, listProfitRows, listProfitFilterOptions, type ProfitFilters,
 } from "@/lib/domain/profitability";
@@ -25,6 +26,7 @@ function ConfidenceBadge({ row }: { row: { cost_confidence: string; labour_estim
 export default async function ProfitabilityPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams;
   const tenantId = await getTenantId();
+  await requireView("profit.view");
   const f: ProfitFilters = {
     from: sp.from, to: sp.to, customerId: sp.customer, branchId: sp.branch,
     technicianId: sp.technician, serviceLineId: sp.division, confidence: sp.confidence ?? "all",

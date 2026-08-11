@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/tenant";
+import { requireView } from "@/lib/auth";
 import { listPricingModels, listServiceModelMap } from "@/lib/domain/pricing";
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { PricingModelForm } from "./PricingModelForm";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function PricingPage() {
   const tenantId = await getTenantId();
+  await requireView("settings.manage");
   const [models, svcMap] = await Promise.all([listPricingModels(tenantId), listServiceModelMap(tenantId)]);
 
   return (

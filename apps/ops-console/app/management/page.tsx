@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/tenant";
+import { requireView } from "@/lib/auth";
 import { getManagementProfit, listManagementMonths } from "@/lib/domain/management";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function ManagementPage({ searchParams }: { searchParams: P
   const from = sp.from || def.from;
   const to = sp.to || def.to;
   const tenantId = await getTenantId();
+  await requireView("profit.view");
   const [summary, months] = await Promise.all([
     getManagementProfit(tenantId, from, to),
     listManagementMonths(tenantId, from, to),
