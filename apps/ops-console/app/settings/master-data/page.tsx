@@ -255,7 +255,11 @@ function BrandingSection({ brands }: { brands: DocumentBrand[] }) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={`/brand/${b.logo_key}`} alt={b.name} className="h-8 w-auto" />
                 <div>
-                  <div className="font-medium">{b.name}</div>
+                  <div className="flex items-center gap-2 font-medium">
+                    {b.name}
+                    {b.label && <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-normal text-neutral-600">{b.label}</span>}
+                    {b.accent_color && <span className="inline-block h-3.5 w-3.5 rounded-sm border border-neutral-300" style={{ backgroundColor: b.accent_color }} title={b.accent_color} />}
+                  </div>
                   <div className="text-xs text-neutral-500">
                     {b.applies_to_service_line_code ? `division: ${b.applies_to_service_line_code}` : "group / default fallback"}
                     {b.show_toll_free && " · shows toll-free"}
@@ -275,9 +279,16 @@ function BrandingSection({ brands }: { brands: DocumentBrand[] }) {
                   </select></label>
                 <label className="text-sm"><span className="text-neutral-600">Tagline</span>
                   <input name="tagline" defaultValue={b.tagline ?? ""} className={input} /></label>
+                <label className="text-sm"><span className="text-neutral-600">Division label</span>
+                  <input name="label" defaultValue={b.label ?? ""} placeholder="e.g. Pest Control" className={input} /></label>
+                <label className="text-sm"><span className="text-neutral-600">Accent colour (hex)</span>
+                  <input name="accent_color" defaultValue={b.accent_color ?? ""} placeholder="#A31E22" className={input} /></label>
                 <label className="flex items-center gap-2 self-end text-sm">
                   <input type="checkbox" name="show_toll_free" defaultChecked={b.show_toll_free} className="rounded border-neutral-300" />
                   <span className="text-neutral-600">Show toll-free on documents</span></label>
+                <label className="flex items-center gap-2 self-end text-sm">
+                  <input type="checkbox" name="show_label_on_document" defaultChecked={b.show_label_on_document} className="rounded border-neutral-300" />
+                  <span className="text-neutral-600">Print label on documents <span className="text-neutral-400">(off when the logo already says it)</span></span></label>
                 <div className="sm:col-span-2"><button className={saveBtn}>Save branding</button></div>
               </form>
             </details>
