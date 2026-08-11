@@ -62,6 +62,7 @@ const GROUPS: Group[] = [
     { href: "/management", label: "Management" },
   ] },
   { label: "Admin", items: [
+    { href: "/settings/divisions", label: "Divisions" },
     { href: "/categories", label: "Service categories" },
     { href: "/pricing", label: "Pricing models" },
     { href: "/cost-config", label: "Cost setup" },
