@@ -26,6 +26,8 @@ export async function updateBrandingAction(fd: FormData): Promise<void> {
     name: String(fd.get("name") ?? ""),
     logo_key: String(fd.get("logo_key") ?? ""),
     tagline: String(fd.get("tagline") ?? ""),
+    label: String(fd.get("label") ?? ""),
+    accent_color: String(fd.get("accent_color") ?? ""),
     show_toll_free: fd.get("show_toll_free") === "on",
   });
   revalidatePath(PATH);
