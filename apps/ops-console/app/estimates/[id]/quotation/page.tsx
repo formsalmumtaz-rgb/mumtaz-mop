@@ -18,9 +18,13 @@ export default async function QuotationPage({ params }: { params: Promise<{ id: 
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center justify-between print:hidden">
         <Link href={`/estimates/${id}`} className="text-sm text-brand underline">← Back to estimate</Link>
-        {q.status !== "quoted" && q.status !== "accepted" && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Not yet quoted — mark the estimate quoted to issue</span>
-        )}
+        <div className="flex items-center gap-3">
+          {q.status !== "quoted" && q.status !== "accepted" && (
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Not yet quoted — mark the estimate quoted to issue</span>
+          )}
+          <a href={`/estimates/${id}/quotation/pdf`} target="_blank" rel="noopener noreferrer"
+             className="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">Download PDF</a>
+        </div>
       </div>
 
       <div className="rounded-lg border border-neutral-200 bg-white p-8">

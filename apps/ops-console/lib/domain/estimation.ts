@@ -241,6 +241,8 @@ export interface Quotation {
   valid_until: string | null;
   customer: string | null;
   customer_trn: string | null;
+  service_line_code: string | null;
+  service_line_name: string | null;
   lines: { description: string; amount: number }[];
   subtotal: number;
   vat_rate: number;
@@ -253,8 +255,11 @@ export interface Quotation {
 export async function getQuotation(tenantId: string, id: string): Promise<Quotation | null> {
   const { rows: h } = await scopedRead(tenantId, 
     `select e.quotation_number, e.status, e.snapshot->>'quoted_at' as quoted_at, e.valid_until::text,
-            cu.trade_name as customer, cu.trn as customer_trn
-       from estimates e left join customers cu on cu.id=e.customer_id
+            cu.trade_name as customer, cu.trn as customer_trn,
+            sl.code as service_line_code, sl.name as service_line_name
+       from estimates e
+       left join customers cu on cu.id=e.customer_id
+       left join service_lines sl on sl.id=e.service_line_id
       where e.tenant_id=$1 and e.id=$2`, [tenantId, id]);
   if (!h[0]) return null;
   const { rows: lines } = await scopedRead(tenantId, 
@@ -269,6 +274,7 @@ export async function getQuotation(tenantId: string, id: string): Promise<Quotat
   return {
     quotation_number: h[0].quotation_number, status: h[0].status, quoted_at: h[0].quoted_at,
     valid_until: h[0].valid_until, customer: h[0].customer, customer_trn: h[0].customer_trn,
+    service_line_code: h[0].service_line_code, service_line_name: h[0].service_line_name,
     lines: lines as { description: string; amount: number }[],
     subtotal, vat_rate, vat, total: subtotal + vat,
   };
