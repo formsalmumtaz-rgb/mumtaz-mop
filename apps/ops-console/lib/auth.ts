@@ -1,4 +1,5 @@
 import "server-only";
+import { redirect } from "next/navigation";
 import { pool } from "./db";
 import { createSupabaseServerClient } from "./supabase/server";
 import { authEnforced } from "./auth-flags";
@@ -75,4 +76,15 @@ export async function requirePermission(permission: string): Promise<AppSession 
   if (!s) throw new AuthError("Not authenticated");
   if (!s.permissions.has(permission)) throw new AuthError(`Missing permission: ${permission}`);
   return s;
+}
+
+// Page-load guard: server-side authorization for a page component. Redirects
+// (rather than throwing) so an unauthorized user is cleanly bounced to /login or
+// the dashboard instead of seeing an error — and, crucially, cannot VIEW a
+// restricted page by typing its URL, not merely by having the menu item hidden.
+export async function requireView(permission: string): Promise<void> {
+  if (!authEnforced()) return; // dev/staging opt-out (same fail-closed flag as everything else)
+  const s = await getSession();
+  if (!s) redirect("/login");
+  if (!s.permissions.has(permission)) redirect("/dashboard?denied=1");
 }
