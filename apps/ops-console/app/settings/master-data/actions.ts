@@ -29,6 +29,7 @@ export async function updateBrandingAction(fd: FormData): Promise<void> {
     label: String(fd.get("label") ?? ""),
     accent_color: String(fd.get("accent_color") ?? ""),
     show_toll_free: fd.get("show_toll_free") === "on",
+    show_label_on_document: fd.get("show_label_on_document") === "on",
   });
   revalidatePath(PATH);
 }

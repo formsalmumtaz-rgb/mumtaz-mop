@@ -50,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     jobRef: header.job_id.slice(0, 8),
     divisionName: header.service_line_name ?? "—",
     notes,
-    brand: { name: brand.name, label: brand.label, tagline: brand.tagline, accent: brand.accent_color ?? "#A31E22", showTollFree: brand.show_toll_free },
+    brand: { name: brand.name, label: brand.label, showLabel: brand.show_label_on_document, tagline: brand.tagline, accent: brand.accent_color ?? "#A31E22", showTollFree: brand.show_toll_free },
     org: {
       legal_name: org.legal_name,
       group_line: org.group_line,

@@ -286,6 +286,9 @@ function BrandingSection({ brands }: { brands: DocumentBrand[] }) {
                 <label className="flex items-center gap-2 self-end text-sm">
                   <input type="checkbox" name="show_toll_free" defaultChecked={b.show_toll_free} className="rounded border-neutral-300" />
                   <span className="text-neutral-600">Show toll-free on documents</span></label>
+                <label className="flex items-center gap-2 self-end text-sm">
+                  <input type="checkbox" name="show_label_on_document" defaultChecked={b.show_label_on_document} className="rounded border-neutral-300" />
+                  <span className="text-neutral-600">Print label on documents <span className="text-neutral-400">(off when the logo already says it)</span></span></label>
                 <div className="sm:col-span-2"><button className={saveBtn}>Save branding</button></div>
               </form>
             </details>

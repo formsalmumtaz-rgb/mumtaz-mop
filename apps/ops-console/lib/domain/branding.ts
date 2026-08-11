@@ -16,6 +16,7 @@ export interface DocumentBrand {
   show_toll_free: boolean;
   label: string | null;
   accent_color: string | null;
+  show_label_on_document: boolean;
   is_active: boolean;
   is_assumed: boolean;
   assumed_note: string | null;
@@ -28,13 +29,14 @@ export interface ResolvedBrand {
   show_toll_free: boolean;
   label: string | null;         // short division label, e.g. 'Pest Control' (mig 052)
   accent_color: string | null;  // hex accent for this division (mig 052)
+  show_label_on_document: boolean; // print the label on documents? (mig 053)
 }
 
 // Resolve the brand for a document from its division (service-line code). Matches
 // an active brand mapped to that code; otherwise the group/default brand.
 export async function resolveDocumentBrand(tenantId: string, serviceLineCode: string | null): Promise<ResolvedBrand> {
   const { rows } = await scopedRead(tenantId,
-    `select name, logo_key, tagline, show_toll_free, label, accent_color,
+    `select name, logo_key, tagline, show_toll_free, label, accent_color, show_label_on_document,
             (applies_to_service_line_code is not distinct from $2) as exact
        from document_branding
       where tenant_id = $1 and is_active
@@ -45,7 +47,7 @@ export async function resolveDocumentBrand(tenantId: string, serviceLineCode: st
   );
   if (rows[0]) return rows[0] as ResolvedBrand;
   // Absolute fallback if branding was never seeded — never leave a document unbranded.
-  return { name: "Mumtaz Integrated Services Group", logo_key: "mumtaz-isg.png", tagline: "Integrated Services Group", show_toll_free: true, label: null, accent_color: "#A31E22" };
+  return { name: "Mumtaz Integrated Services Group", logo_key: "mumtaz-isg.png", tagline: "Integrated Services Group", show_toll_free: true, label: null, accent_color: "#A31E22", show_label_on_document: false };
 }
 
 // The group-level legal block every generated document footer must carry (mig
@@ -80,7 +82,7 @@ export async function resolveDocumentBrandOrg(tenantId: string): Promise<BrandOr
 export async function listDocumentBranding(tenantId: string): Promise<DocumentBrand[]> {
   const { rows } = await scopedRead(tenantId,
     `select id, brand_key, name, logo_key, tagline, applies_to_service_line_code,
-            show_toll_free, label, accent_color, is_active, is_assumed, assumed_note
+            show_toll_free, label, accent_color, show_label_on_document, is_active, is_assumed, assumed_note
        from document_branding where tenant_id = $1 order by (applies_to_service_line_code is null) desc, name`,
     [tenantId],
   );
@@ -94,6 +96,7 @@ export interface DocumentBrandInput {
   show_toll_free?: boolean;
   label?: string;
   accent_color?: string;
+  show_label_on_document?: boolean;
 }
 
 const clean = (v?: string) => { const t = (v ?? "").trim(); return t === "" ? null : t; };
@@ -108,14 +111,14 @@ export async function updateDocumentBrand(tenantId: string, id: string, d: Docum
   if (accent && !HEX.test(accent)) throw new Error("Accent colour must be a hex value like #A31E22");
   await withTenantTx(tenantId, async (c) => {
     const before = (await c.query(
-      `select name, logo_key, tagline, show_toll_free, label, accent_color, is_assumed from document_branding where id=$1 and tenant_id=$2 for update`,
+      `select name, logo_key, tagline, show_toll_free, label, accent_color, show_label_on_document, is_assumed from document_branding where id=$1 and tenant_id=$2 for update`,
       [id, tenantId],
     )).rows[0];
     if (!before) throw new Error("Brand not found");
     await c.query(
-      `update document_branding set name=$1, logo_key=$2, tagline=$3, show_toll_free=$4, label=$5, accent_color=$6
-              ${before.is_assumed ? ", is_assumed=false, confirmed_at=now()" : ""} where id=$7`,
-      [(d.name ?? "").trim(), (d.logo_key ?? "").trim(), clean(d.tagline), d.show_toll_free ?? false, clean(d.label), accent, id],
+      `update document_branding set name=$1, logo_key=$2, tagline=$3, show_toll_free=$4, label=$5, accent_color=$6, show_label_on_document=$7
+              ${before.is_assumed ? ", is_assumed=false, confirmed_at=now()" : ""} where id=$8`,
+      [(d.name ?? "").trim(), (d.logo_key ?? "").trim(), clean(d.tagline), d.show_toll_free ?? false, clean(d.label), accent, d.show_label_on_document ?? true, id],
     );
     await audit(c, tenantId, {
       table: "document_branding", rowId: id, action: "update",

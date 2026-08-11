@@ -33,7 +33,7 @@ export interface ServiceReportPdfData {
   jobRef: string;
   divisionName: string;      // service line name, e.g. "Pest Control"
   notes: string;
-  brand: { name: string; label: string | null; tagline: string | null; accent: string; showTollFree: boolean };
+  brand: { name: string; label: string | null; showLabel: boolean; tagline: string | null; accent: string; showTollFree: boolean };
   org: DocOrg;               // group legal block for the footer (mig 052)
   logo: Asset | null;        // resolved division logo
   tollFree: Asset | null;    // documents only, never in the UI
@@ -60,7 +60,9 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
     doc.setFont("times", "bold"); doc.setFontSize(22); doc.setTextColor(accent);
     doc.text(d.brand.name, M, y + 26);
   }
-  if (d.brand.label) {
+  // The label prints only where it adds clarity — suppressed on divisions whose
+  // logo wordmark already states it (show_label_on_document, mig 053).
+  if (d.brand.label && d.brand.showLabel) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(accent); doc.setCharSpace(1.2);
     doc.text(d.brand.label.toUpperCase(), M, y + 50); doc.setCharSpace(0);
   }
