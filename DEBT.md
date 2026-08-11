@@ -196,3 +196,33 @@ stable egress IP to lock to — a Vercel static-IP/egress option, or route Googl
 calls through a fixed-IP proxy (e.g. a small function on infrastructure with a
 static IP) — then add the IP restriction. The API restriction + quota cap remain
 either way.
+
+---
+
+## D8 — Field PWA has no login (blocked by the /api/field/* auth fix)
+
+**Logged:** 11 Aug 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — field app inert until repaid
+
+**The shortcut.** The field PWA (`apps/field-pwa`) authenticates to nothing — it
+calls `/api/field/sync|upload|media` with a plain same-origin `fetch` and no
+identity. Those routes were themselves unauthenticated (anonymous, privileged
+pool, `Access-Control-Allow-Origin: *`), so it worked.
+
+**What changed.** The routes now **require a Supabase session** and scope every
+read/write to the technician the session user operates as
+(`technicians.user_id`, migration 051), through `scopedRead`/`mop_app` with no
+wildcard CORS. The PDPL exposure is closed. **Consequence:** the PWA, having no
+login, now gets `401` from all three — it cannot sync until it authenticates.
+
+**Why we accept it (for now).** Closing the tenant-wide anonymous read/write was
+urgent and the field app is not yet in real use. A broken-but-secure endpoint
+beats a working-but-open one.
+
+**Repayment trigger.** Before the field app is used by a real technician.
+
+**Repayment.** (1) Add a Supabase login to the PWA and send its session with each
+request (same-origin cookies, or `Authorization: Bearer` + `credentials:"include"`
+plus the origin in `FIELD_APP_ORIGINS` if deployed cross-origin). (2) Provision a
+technician login and set `technicians.user_id` for them (no UI for this mapping
+yet — currently a manual insert). (3) Re-verify sync returns only that
+technician's jobs and upload/media reject other technicians' jobs.
