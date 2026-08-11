@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { authEnforced } from "@/lib/auth-flags";
 import { getTenantId } from "@/lib/tenant";
 import { getQuotation } from "@/lib/domain/estimation";
-import { resolveDocumentBrand } from "@/lib/domain/branding";
+import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
 import { renderQuotationPdf, pngSize, type Asset } from "@/lib/documents/quotationPdf";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const q = await getQuotation(tenantId, id);
   if (!q) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const brand = await resolveDocumentBrand(tenantId, q.service_line_code);
+  const [brand, org] = await Promise.all([
+    resolveDocumentBrand(tenantId, q.service_line_code),
+    resolveDocumentBrandOrg(tenantId),
+  ]);
   const [logo, tollFree] = await Promise.all([
     loadAsset(brand.logo_key),
     brand.show_toll_free ? loadAsset("toll-free.png") : Promise.resolve(null),
@@ -49,7 +52,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     vatRate: q.vat_rate,
     vat: q.vat,
     total: q.total,
-    brand: { name: brand.name, tagline: brand.tagline, showTollFree: brand.show_toll_free },
+    brand: {
+      name: brand.name, label: brand.label, showLabel: brand.show_label_on_document,
+      tagline: brand.tagline, accent: brand.accent_color ?? "#A31E22", showTollFree: brand.show_toll_free,
+    },
+    org: {
+      legal_name: org.legal_name, group_line: org.group_line, established: org.established,
+      trade_licence: org.trade_licence, offices: org.offices,
+    },
     logo,
     tollFree,
   });
