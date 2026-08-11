@@ -1,10 +1,11 @@
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId, listPricingModels } from "@/lib/domain/reference";
 import { listCategories } from "@/lib/domain/categories";
+import { listBom, listBomItemOptions, type BomLine, type ItemOption } from "@/lib/domain/categorybom";
 import { AssumedBadge } from "@/components/AssumedBadge";
-import { Card, Badge, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
+import { Card, Badge, Button, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
 import { CategoryForm } from "./CategoryForm";
-import { createCategoryAction, updateCategoryAction, archiveCategoryAction, restoreCategoryAction } from "./actions";
+import { createCategoryAction, updateCategoryAction, archiveCategoryAction, restoreCategoryAction, addBomLineAction, removeBomLineAction } from "./actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,12 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
     listPricingModels(tenantId),
   ]);
   const pmOpts = pricingModels.map((p) => ({ id: p.id, name: p.name }));
+  // BOM (materials) per category + the division's item options (shared across categories in this division).
+  const itemOpts: ItemOption[] = categories[0] ? await listBomItemOptions(tenantId, categories[0].id) : [];
+  const bomByCat = new Map<string, { lines: BomLine[]; total: string }>(
+    await Promise.all(categories.map(async (c) => [c.id, await listBom(tenantId, c.id)] as const)),
+  );
+  const aedt = (v: string) => "AED " + Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
   const assumed = categories.filter((c) => c.is_assumed).length;
 
   return (
@@ -79,11 +86,44 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
                     <CategoryForm action={updateCategoryAction} pricingModels={pmOpts} initial={c} submitLabel="Save changes" />
                   </details>
                 )}
+                {c.is_active && (() => {
+                  const bom = bomByCat.get(c.id) ?? { lines: [], total: "0" };
+                  return (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs text-brand">Materials (BOM) · {bom.lines.length} · {aedt(bom.total)}/job</summary>
+                      <div className="mt-2 space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+                        {bom.lines.length === 0 && <p className="text-xs text-neutral-500">No materials yet. Add the standard chemicals/consumables this category uses per job.</p>}
+                        {bom.lines.map((b) => (
+                          <div key={b.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span>{b.item_name} <span className="text-neutral-400">({b.item_type})</span> — <b>{b.quantity}</b> {b.unit_code ?? ""} × {aedt(b.unit_cost)} = <b>{aedt(b.line_cost)}</b></span>
+                            <form action={removeBomLineAction}><input type="hidden" name="id" value={b.id} /><button className="text-neutral-400 hover:text-red-600">remove</button></form>
+                          </div>
+                        ))}
+                        <form action={addBomLineAction} className="flex flex-wrap items-end gap-2 border-t border-neutral-200 pt-2">
+                          <input type="hidden" name="category_id" value={c.id} />
+                          <label className="text-xs"><span className="text-neutral-500">Item</span>
+                            <select name="item_id" required className="mt-0.5 block w-52 rounded border border-neutral-300 px-2 py-1 text-xs">
+                              <option value="">Select…</option>
+                              {itemOpts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.item_type}{o.unit_code ? `, ${o.unit_code}` : ""})</option>)}
+                            </select></label>
+                          <label className="text-xs"><span className="text-neutral-500">Qty / job</span>
+                            <input name="quantity" type="number" min="0" step="any" required placeholder="e.g. 50 or 0.25" className="mt-0.5 block w-28 rounded border border-neutral-300 px-2 py-1 text-xs" /></label>
+                          <Button type="submit" size="sm" variant="secondary">Add material</Button>
+                        </form>
+                        <p className="text-[11px] text-neutral-500">Quantity is in the item&apos;s base unit; partial units allowed (e.g. 0.25 of a gel tube). Cost = latest purchase cost × quantity — deterministic, and it feeds the estimate&apos;s material cost automatically.</p>
+                      </div>
+                    </details>
+                  );
+                })()}
               </td>
               <td className="px-4 py-2.5 capitalize text-neutral-600">{c.property_type ?? "—"}</td>
               <td className="px-4 py-2.5 text-right text-neutral-700">{c.crew_size}</td>
               <td className="px-4 py-2.5 text-right text-neutral-700">{c.est_duration_hours && Number(c.est_duration_hours) > 0 ? `${c.est_duration_hours}h` : "—"}</td>
-              <td className="px-4 py-2.5 text-right text-neutral-700">{aed(c.est_material_cost)}</td>
+              <td className="px-4 py-2.5 text-right text-neutral-700">
+                {Number(bomByCat.get(c.id)?.total ?? 0) > 0
+                  ? <span title="From materials BOM">{aedt(bomByCat.get(c.id)!.total)} <span className="text-[10px] text-neutral-400">BOM</span></span>
+                  : aed(c.est_material_cost)}
+              </td>
               <td className="px-4 py-2.5 text-right font-medium">{aed(c.recommended_price)}</td>
               <td className="px-4 py-2.5">
                 {!c.is_active ? <Badge>archived</Badge>

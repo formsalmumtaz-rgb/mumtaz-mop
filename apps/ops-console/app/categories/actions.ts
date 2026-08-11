@@ -4,6 +4,23 @@ import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
 import { createCategory, updateCategory, archiveCategory, restoreCategory, type CategoryInput } from "@/lib/domain/categories";
+import { addBomLine, removeBomLine } from "@/lib/domain/categorybom";
+
+export async function addBomLineAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
+  const categoryId = String(fd.get("category_id") ?? "");
+  const itemId = String(fd.get("item_id") ?? "");
+  if (!categoryId || !itemId) return;
+  await addBomLine(await getTenantId(), categoryId, itemId, String(fd.get("quantity") ?? ""), String(fd.get("notes") ?? ""));
+  revalidatePath("/categories");
+}
+
+export async function removeBomLineAction(fd: FormData): Promise<void> {
+  await requirePermission("settings.manage");
+  const id = String(fd.get("id") ?? ""); if (!id) return;
+  await removeBomLine(await getTenantId(), id);
+  revalidatePath("/categories");
+}
 
 function inputFromForm(fd: FormData): CategoryInput {
   return {
