@@ -11,12 +11,15 @@ const ALLOW = new Set([
   "lib/rls.ts",     // withRequest / scopedRead
   "lib/auth.ts",    // identity bootstrap (resolves tenant + actor from the session)
   "lib/tenant.ts",  // tenant bootstrap (resolves the tenant itself)
-  // System / no-session entry points (webhook, cron sweeper, device sync). These
-  // run without a user session and are hardened for mop_app in the worker-context
-  // step (DECISIONS §11.6). New system routes must be reviewed and added here.
+  // Cross-tenant system entry points (webhook + cron sweeper). No user session by
+  // design; gated by OUTBOX_DRAIN_SECRET (fail-closed in prod). New system routes
+  // must be reviewed and added here.
   "app/api/outbox/drain/route.ts",
   "app/api/billing/run/route.ts",
-  "app/api/field/sync/route.ts",
+  // Field write routes: now require a session and authorise every event/item
+  // against the caller's own assignments (assignedJobIds -> scopedRead/RLS) before
+  // the idempotent worker/media write runs on the pool. (field/sync no longer
+  // touches the pool — it goes through scopedRead.)
   "app/api/field/upload/route.ts",
   "app/api/field/media/route.ts",
 ]);

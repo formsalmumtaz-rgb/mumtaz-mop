@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAllContractBilling } from "@mop/worker";
 import { pool } from "@/lib/db";
+import { authEnforced } from "@/lib/auth-flags";
 
 // Recurring contract billing sweep. Called by Vercel Cron daily (safety net) and
 // can be triggered manually. Deterministic + idempotent (fn_run_contract_billing),
@@ -10,7 +11,9 @@ export const runtime = "nodejs";
 
 function authorised(req: Request): boolean {
   const secret = process.env.OUTBOX_DRAIN_SECRET;
-  if (!secret) return true; // dev convenience; set the secret before deploy
+  // Fail closed in production: a missing secret must NOT grant access. Only the
+  // dev auth opt-out (authEnforced() === false) allows the secret-less shortcut.
+  if (!secret) return !authEnforced();
   const header = req.headers.get("x-drain-secret") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   return header === secret;
 }
