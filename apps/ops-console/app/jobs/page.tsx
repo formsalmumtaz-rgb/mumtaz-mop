@@ -73,10 +73,10 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             <tr><td colSpan={6} className="px-4 py-6 text-center text-neutral-500">{lp.q || status ? "No jobs match this filter." : "No jobs yet."}</td></tr>
           )}
           {jobs.map((j) => (
-            <tr key={j.id}>
-              <td className="px-4 py-2.5 whitespace-nowrap text-neutral-700">{j.scheduled_date ?? "—"}</td>
+            <tr key={j.id} className="hover:bg-neutral-50">
+              <td className="px-4 py-2.5 whitespace-nowrap text-neutral-700">{j.scheduled_date ?? "—"}{j.scheduled_start ? ` · ${j.scheduled_start}` : ""}</td>
               <td className="px-4 py-2.5">
-                <div className="font-medium">{j.customer ?? "—"}</div>
+                <Link href={`/jobs/${j.id}`} className="font-medium text-brand hover:underline">{j.customer ?? "—"}</Link>
                 {j.branch && <div className="text-xs text-neutral-500">{j.branch}</div>}
               </td>
               <td className="px-4 py-2.5 text-neutral-600">

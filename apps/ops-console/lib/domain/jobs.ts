@@ -9,24 +9,33 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 export interface JobRow {
   id: string;
   scheduled_date: string | null;
+  scheduled_start: string | null;      // HH:MM (nullable)
+  est_duration_minutes: number | null;
   status: string;
   customer: string | null;
   branch: string | null;
   service_line: string | null;
   job_type: string | null;
   team: string | null;
-  technicians: string | null;   // comma-joined assigned technician names
+  technicians: string | null;          // comma-joined assigned technician names
+  technician_ids: string[];            // for conflict detection
+  assigned_count: number;
+  has_location: boolean;
   is_contract: boolean;
   completed_at: string | null;
 }
 
 const SELECT_JOB = `
-  select j.id, j.scheduled_date::text as scheduled_date, j.status,
+  select j.id, j.scheduled_date::text as scheduled_date,
+         to_char(j.scheduled_start, 'HH24:MI') as scheduled_start, j.est_duration_minutes, j.status,
          cu.trade_name as customer, b.name as branch, sl.name as service_line,
          jt.name as job_type, tm.name as team,
          (select string_agg(coalesce(t.full_name, t.code), ', ')
             from job_assignments ja join technicians t on t.id = ja.technician_id
            where ja.job_id = j.id) as technicians,
+         coalesce((select array_agg(ja.technician_id) from job_assignments ja where ja.job_id = j.id), '{}') as technician_ids,
+         (select count(*)::int from job_assignments ja where ja.job_id = j.id) as assigned_count,
+         (j.location is not null) as has_location,
          (j.contract_id is not null) as is_contract,
          j.completed_at::text as completed_at
     from jobs j
@@ -39,7 +48,7 @@ const SELECT_JOB = `
 // Paged, filterable job list (customer search, status, date range).
 export async function listJobsPaged(
   tenantId: string,
-  opts: { q?: string; status?: string; from?: string; to?: string; limit: number; offset: number },
+  opts: { q?: string; status?: string; from?: string; to?: string; serviceLineId?: string; unassigned?: boolean; limit: number; offset: number },
 ): Promise<{ rows: JobRow[]; total: number }> {
   const where: string[] = ["j.tenant_id = $1"];
   const params: unknown[] = [tenantId];
@@ -48,6 +57,8 @@ export async function listJobsPaged(
   if (opts.status && (JOB_STATUSES as readonly string[]).includes(opts.status)) { params.push(opts.status); where.push(`j.status = $${params.length}`); }
   if (opts.from) { params.push(opts.from); where.push(`j.scheduled_date >= $${params.length}`); }
   if (opts.to) { params.push(opts.to); where.push(`j.scheduled_date <= $${params.length}`); }
+  if (opts.serviceLineId) { params.push(opts.serviceLineId); where.push(`j.service_line_id = $${params.length}`); }
+  if (opts.unassigned) { where.push(`not exists (select 1 from job_assignments ja where ja.job_id = j.id)`); }
   const w = where.join(" and ");
   const { rows: cnt } = await scopedRead(tenantId,
     `select count(*)::int as n from jobs j left join customers cu on cu.id = j.customer_id where ${w}`, params);
@@ -66,15 +77,51 @@ export async function getJobStatusCounts(tenantId: string): Promise<Record<strin
   return out;
 }
 
-// Schedule agenda: jobs within a date window, ordered for a day-by-day view.
-export async function listScheduleJobs(tenantId: string, from: string, to: string): Promise<JobRow[]> {
+// Schedule jobs within a date window (optionally scoped to a division / status /
+// unassigned), ordered by day then start time for the calendar.
+export async function listScheduleJobs(
+  tenantId: string, from: string, to: string,
+  opts: { serviceLineId?: string; status?: string; unassigned?: boolean } = {},
+): Promise<JobRow[]> {
+  const where = ["j.tenant_id=$1", "j.scheduled_date is not null", "j.scheduled_date >= $2", "j.scheduled_date <= $3"];
+  const params: unknown[] = [tenantId, from, to];
+  if (opts.serviceLineId) { params.push(opts.serviceLineId); where.push(`j.service_line_id = $${params.length}`); }
+  if (opts.status && (JOB_STATUSES as readonly string[]).includes(opts.status)) { params.push(opts.status); where.push(`j.status = $${params.length}`); }
+  if (opts.unassigned) where.push(`not exists (select 1 from job_assignments ja where ja.job_id = j.id)`);
   const { rows } = await scopedRead(tenantId,
-    `${SELECT_JOB}
-      where j.tenant_id=$1 and j.scheduled_date is not null
-        and j.scheduled_date >= $2 and j.scheduled_date <= $3
-      order by j.scheduled_date, cu.trade_name`,
-    [tenantId, from, to]);
+    `${SELECT_JOB} where ${where.join(" and ")}
+      order by j.scheduled_date, j.scheduled_start nulls last, cu.trade_name`, params);
   return rows as JobRow[];
+}
+
+// Flag scheduling conflicts: a technician double-booked across overlapping time
+// windows on the same day. Pure, deterministic — returns the set of conflicting
+// job ids. Jobs without a start time or duration can't conflict (unslotted).
+export function detectConflicts(jobs: JobRow[]): Set<string> {
+  const conflicts = new Set<string>();
+  const byTech = new Map<string, JobRow[]>();
+  for (const j of jobs) {
+    if (!j.scheduled_date || !j.scheduled_start || !j.est_duration_minutes) continue;
+    for (const tid of j.technician_ids) {
+      if (!byTech.has(tid)) byTech.set(tid, []);
+      byTech.get(tid)!.push(j);
+    }
+  }
+  const start = (j: JobRow) => {
+    const [h, m] = (j.scheduled_start as string).split(":").map(Number);
+    return h * 60 + m;
+  };
+  for (const list of byTech.values()) {
+    const sorted = [...list].sort((a, b) => (a.scheduled_date! + a.scheduled_start!).localeCompare(b.scheduled_date! + b.scheduled_start!));
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1], cur = sorted[i];
+      if (prev.scheduled_date !== cur.scheduled_date) continue;
+      if (start(prev) + (prev.est_duration_minutes ?? 0) > start(cur)) {
+        conflicts.add(prev.id); conflicts.add(cur.id);
+      }
+    }
+  }
+  return conflicts;
 }
 
 // Planned contract visits not yet turned into jobs — the forward pipeline.
@@ -146,5 +193,105 @@ export async function createJob(
       note: "ad-hoc job created in admin console",
     });
     return rows[0].id as string;
+  });
+}
+
+// ── Job detail + management (office scheduling; always manually editable) ────
+export interface JobDetail {
+  id: string;
+  status: string;
+  scheduled_date: string | null;
+  scheduled_start: string | null;
+  est_duration_minutes: number | null;
+  customer: string | null;
+  customer_id: string;
+  branch: string | null;
+  service_line: string | null;
+  service_line_id: string;
+  service_type: string | null;
+  job_type: string | null;
+  team_id: string | null;
+  team: string | null;
+  technician_ids: string[];
+  technicians: string | null;
+  contract_id: string | null;
+  contract_number: string | null;
+  lat: number | null;
+  lng: number | null;
+  instructions: string | null;
+}
+
+export async function getJob(tenantId: string, id: string): Promise<JobDetail | null> {
+  const { rows } = await scopedRead(tenantId,
+    `select j.id, j.status, j.scheduled_date::text as scheduled_date,
+            to_char(j.scheduled_start,'HH24:MI') as scheduled_start, j.est_duration_minutes,
+            cu.trade_name as customer, j.customer_id, b.name as branch,
+            sl.name as service_line, j.service_line_id, st.name as service_type, jt.name as job_type,
+            j.team_id, tm.name as team, ct.contract_number, j.contract_id,
+            ST_Y(j.location::geometry) as lat, ST_X(j.location::geometry) as lng,
+            j.attributes->>'instructions' as instructions,
+            coalesce((select array_agg(ja.technician_id) from job_assignments ja where ja.job_id=j.id),'{}') as technician_ids,
+            (select string_agg(coalesce(t.full_name,t.code), ', ') from job_assignments ja join technicians t on t.id=ja.technician_id where ja.job_id=j.id) as technicians
+       from jobs j
+       left join customers cu on cu.id=j.customer_id
+       left join customer_branches b on b.id=j.branch_id
+       left join service_lines sl on sl.id=j.service_line_id
+       left join service_types st on st.id=j.service_type_id
+       left join job_types jt on jt.id=j.job_type_id
+       left join teams tm on tm.id=j.team_id
+       left join contracts ct on ct.id=j.contract_id
+      where j.tenant_id=$1 and j.id=$2`,
+    [tenantId, id]);
+  return (rows[0] as JobDetail) ?? null;
+}
+
+// Assign a team + technicians (replaces the assignment set). Moves a 'scheduled'
+// job to 'assigned'. Always editable — office can reassign anytime.
+export async function assignJob(tenantId: string, id: string, teamId: string | null, technicianIds: string[]): Promise<void> {
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(`select status, team_id from jobs where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!before) throw new Error("Job not found");
+    await c.query(`update jobs set team_id=$1 where id=$2`, [clean(teamId), id]);
+    await c.query(`delete from job_assignments where job_id=$1 and tenant_id=$2`, [id, tenantId]);
+    const ids = [...new Set(technicianIds.filter(Boolean))];
+    for (const tid of ids) {
+      await c.query(`insert into job_assignments (tenant_id, job_id, technician_id, team_id) values ($1,$2,$3,$4)`, [tenantId, id, tid, clean(teamId)]);
+    }
+    if (before.status === "scheduled" && ids.length > 0) {
+      await c.query(`update jobs set status='assigned' where id=$1`, [id]);
+    }
+    await audit(c, tenantId, { table: "jobs", rowId: id, action: "update", oldValue: { team_id: before.team_id }, newValue: { team_id: teamId, technicians: ids }, note: "job assigned/reassigned" });
+  });
+}
+
+// Reschedule: set date, optional start time and duration. Never blocks — the
+// office overrides any suggestion.
+export async function rescheduleJob(tenantId: string, id: string, date: string, startTime: string | null, durationMinutes: string | null): Promise<void> {
+  const d = clean(date);
+  if (!d) throw new Error("A date is required");
+  const dur = (durationMinutes ?? "").trim();
+  const durN = dur === "" ? null : Number(dur);
+  if (durN !== null && (!Number.isInteger(durN) || durN < 0)) throw new Error("Duration must be a whole number of minutes ≥ 0");
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(`select scheduled_date::text, to_char(scheduled_start,'HH24:MI') as st, est_duration_minutes from jobs where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!before) throw new Error("Job not found");
+    await c.query(`update jobs set scheduled_date=$1::date, scheduled_start=$2::time, est_duration_minutes=$3 where id=$4`,
+      [d, clean(startTime), durN, id]);
+    await audit(c, tenantId, { table: "jobs", rowId: id, action: "update", oldValue: before, newValue: { scheduled_date: d, scheduled_start: startTime, est_duration_minutes: durN }, note: "job rescheduled" });
+  });
+}
+
+// Office status changes: cancel a job, or reopen a cancelled one. Completion
+// stays technician-driven (never fabricated from the office).
+export async function setJobStatus(tenantId: string, id: string, status: string): Promise<void> {
+  if (!["cancelled", "scheduled", "assigned"].includes(status)) throw new Error("Unsupported office status change");
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(`select status from jobs where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!before) throw new Error("Job not found");
+    if (["completed", "in_progress", "en_route", "arrived"].includes(before.status) && status === "cancelled") {
+      throw new Error(`Cannot cancel a job that is ${before.status}`);
+    }
+    await c.query(`update jobs set status=$1 where id=$2`, [status, id]);
+    await audit(c, tenantId, { table: "jobs", rowId: id, action: "update", oldValue: { status: before.status }, newValue: { status }, note: `job status set to ${status}` });
   });
 }
