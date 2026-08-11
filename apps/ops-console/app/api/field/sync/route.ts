@@ -1,29 +1,38 @@
 import { NextResponse } from "next/server";
-import { pool } from "@/lib/db";
-import { getTenantId } from "@/lib/tenant";
+import { scopedRead } from "@/lib/rls";
+import { fieldSession, fieldCors } from "@/lib/field-auth";
 
-// Field-app pre-sync: returns the technician's ACTIVE jobs (scheduled + assigned +
-// in-flight) with the details they need offline (customer, site, GPS, start time,
-// duration, service line/type, instructions, assigned crew, access notes). Runs
-// server-side (bypasses RLS) — per-technician scoping + auth/tenant-from-session
-// arrives with the console's auth (DEBT D6). Including 'assigned' is essential:
-// once the scheduler assigns a job it leaves 'scheduled', and must still sync.
+// Field-app pre-sync: returns the AUTHENTICATED technician's own ACTIVE jobs
+// (scheduled + assigned + in-flight) with the details they need offline (customer,
+// site, GPS, start time, duration, service line/type, instructions, assigned crew,
+// access notes). Including 'assigned' is essential: once the scheduler assigns a
+// job it leaves 'scheduled' and must still sync.
+//
+// Security (previously a tenant-wide anonymous read):
+//  - requires a Supabase session (401 otherwise);
+//  - scoped to jobs assigned to a technician the session user operates as
+//    (technicians.user_id) — a user with no linked technician sees nothing;
+//  - runs through scopedRead, so it executes as the non-privileged mop_app role
+//    with RLS live (no more privileged pool bypass);
+//  - no wildcard CORS (see fieldCors).
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const cors: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,OPTIONS",
-  "Access-Control-Allow-Headers": "*",
-};
+const METHODS = "GET,OPTIONS";
 
-export async function OPTIONS() {
-  return new NextResponse(null, { headers: cors });
+export async function OPTIONS(req: Request) {
+  return new NextResponse(null, { headers: fieldCors(req, METHODS) });
 }
 
-export async function GET() {
-  const tenantId = await getTenantId();
-  const { rows } = await pool.query(
+export async function GET(req: Request) {
+  const cors = fieldCors(req, METHODS);
+  const session = await fieldSession();
+  if (!session) {
+    return NextResponse.json({ error: "unauthenticated" }, { status: 401, headers: cors });
+  }
+
+  const { rows } = await scopedRead(
+    session.tenantId,
     `select j.id,
             c.trade_name as customer_name,
             b.name as branch_name,
@@ -48,9 +57,14 @@ export async function GET() {
        left join service_types st on st.id = j.service_type_id
       where j.tenant_id = $1
         and j.status in ('scheduled','assigned','en_route','arrived','in_progress')
+        and exists (
+          select 1 from job_assignments ja
+          join technicians t on t.id = ja.technician_id
+          where ja.job_id = j.id and t.tenant_id = j.tenant_id and t.user_id = $2
+        )
       order by j.scheduled_date, j.scheduled_start nulls last
       limit 500`,
-    [tenantId],
+    [session.tenantId, session.userId],
   );
   // recipe: null until treatment recipes are seeded; the frozen snapshot lives on
   // the job and will be surfaced here once recipes exist.

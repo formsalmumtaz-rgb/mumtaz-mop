@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/tenant";
+import { requireView } from "@/lib/auth";
 import { getCostRates, listCostAccounts, getReadiness } from "@/lib/domain/costconfig";
 import { listEmployeeCosts } from "@/lib/domain/employeecost";
 import { AssumedBadge } from "@/components/AssumedBadge";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CostConfigPage() {
   const tenantId = await getTenantId();
+  await requireView("settings.manage");
   const [rates, accounts, readiness, employees] = await Promise.all([
     getCostRates(tenantId),
     listCostAccounts(tenantId),

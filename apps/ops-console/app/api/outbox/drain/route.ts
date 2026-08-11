@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { drainOnce, consumers } from "@mop/worker";
 import { pool } from "@/lib/db";
+import { authEnforced } from "@/lib/auth-flags";
 
 // Outbox drain endpoint. Two callers hit it (DECISIONS §2.C):
 //   • Supabase database webhook on event insert  -> POST ?source=webhook  (primary)
@@ -23,7 +24,9 @@ async function handle(source: string) {
 
 function authorised(req: Request): boolean {
   const secret = process.env.OUTBOX_DRAIN_SECRET;
-  if (!secret) return true; // dev convenience; set the secret before deploy (DEBT: enforce in prod)
+  // Fail closed in production: a missing secret must NOT grant access. Only the
+  // dev auth opt-out (authEnforced() === false) allows the secret-less shortcut.
+  if (!secret) return !authEnforced();
   const header = req.headers.get("x-drain-secret") ?? req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   return header === secret;
 }

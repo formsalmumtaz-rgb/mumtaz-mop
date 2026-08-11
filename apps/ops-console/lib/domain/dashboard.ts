@@ -16,25 +16,27 @@ export interface Dashboard {
   currency: string;
 }
 
-// Live figures for the owner's dashboard (computed on load; a materialised-view
-// refresh for true real-time is a later phase).
-export async function getDashboard(tenantId: string): Promise<Dashboard> {
-  const { rows } = await scopedRead(tenantId, 
+// Live figures for the dashboard. Job + contract + service-report counts are
+// scoped to the ACTIVE division (so switching division changes the numbers);
+// finance figures (revenue/outstanding/pending expenses) are company-wide, since
+// money is tracked across divisions.
+export async function getDashboard(tenantId: string, serviceLineId: string): Promise<Dashboard> {
+  const { rows } = await scopedRead(tenantId,
     `select
-       (select count(*) from jobs where tenant_id=$1 and scheduled_date = current_date)::int as jobs_today,
-       (select count(*) from jobs where tenant_id=$1 and status='completed' and completed_at::date = current_date)::int as completed_today,
-       (select count(*) from jobs where tenant_id=$1 and status='completed')::int as completed_total,
-       (select count(*) from jobs where tenant_id=$1 and status='scheduled')::int as scheduled,
-       (select count(*) from contracts where tenant_id=$1 and lifecycle_status='active')::int as active_contracts,
+       (select count(*) from jobs where tenant_id=$1 and service_line_id=$2 and scheduled_date = current_date)::int as jobs_today,
+       (select count(*) from jobs where tenant_id=$1 and service_line_id=$2 and status='completed' and completed_at::date = current_date)::int as completed_today,
+       (select count(*) from jobs where tenant_id=$1 and service_line_id=$2 and status='completed')::int as completed_total,
+       (select count(*) from jobs where tenant_id=$1 and service_line_id=$2 and status='scheduled')::int as scheduled,
+       (select count(*) from contracts where tenant_id=$1 and service_line_id=$2 and lifecycle_status='active')::int as active_contracts,
        (select coalesce(sum(total),0) from invoices where tenant_id=$1 and status in ('queued','issued'))::float8 as revenue_queued,
        (select coalesce(sum(total),0) from invoices where tenant_id=$1 and status <> 'paid')::float8 as outstanding,
-       (select count(*) from jobs where tenant_id=$1 and scheduled_date > current_date
+       (select count(*) from jobs where tenant_id=$1 and service_line_id=$2 and scheduled_date > current_date
           and scheduled_date <= current_date + 7 and status not in ('completed','cancelled','failed'))::int as upcoming_week,
        (select count(*) from expenses where tenant_id=$1 and status='submitted')::int as pending_expenses,
        (select coalesce(sum(amount),0) from expenses where tenant_id=$1 and status='submitted')::float8 as pending_expense_amount,
-       (select count(*) from service_reports sr where sr.tenant_id=$1
+       (select count(*) from service_reports sr where sr.tenant_id=$1 and sr.service_line_id=$2
           and not exists (select 1 from service_report_reviews rv where rv.service_report_id=sr.id))::int as reports_pending`,
-    [tenantId],
+    [tenantId, serviceLineId],
   );
   const r = rows[0];
   return {

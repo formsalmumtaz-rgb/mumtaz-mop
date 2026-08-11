@@ -1,4 +1,5 @@
 import { getTenantId } from "@/lib/tenant";
+import { requireView } from "@/lib/auth";
 import { getServiceLineId, listPricingModels } from "@/lib/domain/reference";
 import { listCategories } from "@/lib/domain/categories";
 import { AssumedBadge } from "@/components/AssumedBadge";
@@ -15,6 +16,7 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const includeArchived = sp.archived === "1";
   const tenantId = await getTenantId();
+  await requireView("settings.manage");
   const sl = await getServiceLineId(tenantId);
   const [categories, pricingModels] = await Promise.all([
     listCategories(tenantId, sl, includeArchived),
