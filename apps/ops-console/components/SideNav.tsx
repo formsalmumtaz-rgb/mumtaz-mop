@@ -8,13 +8,16 @@ import type { ServiceLine } from "@/lib/domain/reference";
 
 // Active-division picker. Auto-submits on change so every server flow that calls
 // getServiceLineId() resolves to the chosen division (Art. XVIII — service-driven).
-function DivisionSwitcher({ divisions, active }: { divisions: ServiceLine[]; active: string | null }) {
+function DivisionSwitcher({ divisions, active, pathname }: { divisions: ServiceLine[]; active: string | null; pathname: string }) {
   if (divisions.length < 2) return null;
   const current = divisions.find((d) => d.code === active)?.code ?? divisions.find((d) => d.code === "pest_control")?.code ?? divisions[0].code;
   return (
     <form action={setActiveDivisionAction} className="px-5 pb-3">
       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-gold">Division</label>
-      <select name="division" defaultValue={current} onChange={(e) => e.currentTarget.form?.requestSubmit()}
+      <input type="hidden" name="redirect_to" value={pathname} />
+      {/* keyed by `current` so the control always reflects the server-resolved
+          division after each navigation — never shows a stale/reverted value */}
+      <select key={current} name="division" defaultValue={current} onChange={(e) => e.currentTarget.form?.requestSubmit()}
               className="w-full rounded-md border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-gold focus:outline-none">
         {divisions.map((d) => <option key={d.id} value={d.code} className="text-neutral-900">{d.name}</option>)}
       </select>
@@ -143,7 +146,7 @@ export function SideNav({ divisions = [], activeDivision = null }: { divisions?:
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 6l12 12M18 6L6 18" /></svg>
               </button>
             </div>
-            <div className="pt-3"><DivisionSwitcher divisions={divisions} active={activeDivision} /></div>
+            <div className="pt-3"><DivisionSwitcher divisions={divisions} active={activeDivision} pathname={pathname} /></div>
             <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
           </aside>
         </div>
@@ -151,7 +154,7 @@ export function SideNav({ divisions = [], activeDivision = null }: { divisions?:
 
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col bg-navy text-white lg:flex">
-        <div className="border-b border-white/10"><Brand /><div className="pt-2"><DivisionSwitcher divisions={divisions} active={activeDivision} /></div></div>
+        <div className="border-b border-white/10"><Brand /><div className="pt-2"><DivisionSwitcher divisions={divisions} active={activeDivision} pathname={pathname} /></div></div>
         <NavList pathname={pathname} />
         <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/40">Mumtaz Operations Platform</div>
       </aside>

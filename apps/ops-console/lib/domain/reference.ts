@@ -49,14 +49,21 @@ export async function getActiveServiceLineCode(): Promise<string | null> {
 // the first active line. Same signature as before, so every caller is now
 // division-aware with no change.
 export async function getServiceLineId(tenantId: string): Promise<string> {
+  return (await getActiveDivision(tenantId)).id;
+}
+
+// The full active division (id + code + name), resolved from the mop_division
+// cookie (falls back to pest_control, then first active). Used both to scope
+// division-aware queries and to show the operator which division is active.
+export async function getActiveDivision(tenantId: string): Promise<ServiceLine> {
   const code = await getActiveServiceLineCode();
   const { rows } = await scopedRead(tenantId,
-    `select id from service_lines
+    `select id, code, name from service_lines
       where tenant_id = $1 and is_active
       order by (code = $2) desc, (code = 'pest_control') desc, name
       limit 1`,
     [tenantId, code],
   );
   if (!rows[0]) throw new Error("No active service line found (apply 010_seed)");
-  return rows[0].id as string;
+  return rows[0] as ServiceLine;
 }

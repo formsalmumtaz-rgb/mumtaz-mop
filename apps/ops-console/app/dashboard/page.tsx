@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
+import { getActiveDivision } from "@/lib/domain/reference";
 import { getDashboard } from "@/lib/domain/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -22,14 +23,18 @@ function Tile({ label, value, sub, href }: { label: string; value: string; sub?:
 
 export default async function DashboardPage() {
   const tenantId = await getTenantId();
-  const d = await getDashboard(tenantId);
+  const division = await getActiveDivision(tenantId);
+  const d = await getDashboard(tenantId, division.id);
   const attention = d.pendingExpenses > 0 || d.reportsPending > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Today</h1>
-        <p className="mt-1 text-sm text-neutral-600">Live — refreshes on load.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold">Today</h1>
+          <p className="mt-1 text-sm text-neutral-600">Live — refreshes on load. Operations figures are for the active division; finance is company-wide.</p>
+        </div>
+        <span className="rounded-full bg-navy px-3 py-1 text-sm font-medium text-white">{division.name}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
