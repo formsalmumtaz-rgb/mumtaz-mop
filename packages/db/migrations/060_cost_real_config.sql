@@ -1,11 +1,11 @@
 -- 060_cost_real_config.sql
--- Costing engine — real configuration, part 1 of 3 (labour, vehicle, travel,
+-- Costing engine - real configuration, part 1 of 3 (labour, vehicle, travel,
 -- frequency, pricing reference). Replaces the ASSUMED placeholders seeded in
 -- migrations 019/022/025 with owner-provided real numbers (12 Aug 2026), and
 -- adds the parameters the pest-treatment costing engine (mig 062) reads.
 --
--- Governed by: DECISIONS §7 (labour rate was a placeholder 1700÷176; now real),
--- Art. X §4 (unknown values seeded ASSUMED + flagged + editable). Nothing here
+-- Governed by: DECISIONS 7 (labour rate was a placeholder 1700/176; now real),
+-- Art. X 4 (unknown values seeded ASSUMED + flagged + editable). Nothing here
 -- touches a structural invariant: `settings` is editable config, not append-only;
 -- no schema-immutable object is changed. Config-only; job_costs/journal untouched.
 --
@@ -14,8 +14,8 @@
 -- and editable without a deploy.
 
 -- ── Derivation helper: standard hourly labour rate from a cost basis ──────────
--- Fully-loaded monthly cost ÷ productive hours. Lets the owner edit the basis and
--- recompute deterministically (derived, not typed — Art. IV / §data-not-code).
+-- Fully-loaded monthly cost / productive hours. Lets the owner edit the basis and
+-- recompute deterministically (derived, not typed - Art. IV / data-not-code).
 create or replace function fn_labour_rate_from_basis(p_basis jsonb)
 returns numeric language sql immutable as $$
   select round((
@@ -60,21 +60,21 @@ begin
     set value = excluded.value, description = excluded.description, is_assumed = false,
         confirmed_at = now(), updated_at = now();
 
-  -- 2. Standard labour rate — real, derived (was ASSUMED 9.6591 = 1700÷176).
+  -- 2. Standard labour rate - real, derived (was ASSUMED 9.6591 = 1700/176).
   update settings set value = to_jsonb(v_rate), is_assumed = false, confirmed_at = now(), updated_at = now(),
     description = 'STANDARD labour absorption rate (AED/hr), DERIVED from cost.technician_cost_basis (monthly '
-      || (v_basis->>'monthly_total') || ' ÷ 176 productive hrs). Owner 2026-08-12. Replaces placeholder 9.6591 (1700÷176).'
+      || (v_basis->>'monthly_total') || ' / 176 productive hrs). Owner 2026-08-12. Replaces placeholder 9.6591 (1700/176).'
     where tenant_id = v_tenant and key = 'cost.standard_labour_rate_hourly';
 
-  -- 3. Overhead rate — track new labour (still ASSUMED 15%).
+  -- 3. Overhead rate - track new labour (still ASSUMED 15%).
   update settings set value = to_jsonb(round(v_rate * 0.15, 4)), is_assumed = true, updated_at = now(),
-    description = 'Overhead absorption rate per labour hour (AED/hr) = 15% of labour rate. The 15% is ASSUMED — confirm.'
+    description = 'Overhead absorption rate per labour hour (AED/hr) = 15% of labour rate. The 15% is ASSUMED - confirm.'
     where tenant_id = v_tenant and key = 'cost.overhead_rate_per_labour_hour';
 
-  -- 4. Vehicle rate — fuel-derived (was ASSUMED 0.5). fuel_price ÷ km_per_litre.
+  -- 4. Vehicle rate - fuel-derived (was ASSUMED 0.5). fuel_price / km_per_litre.
   insert into settings(tenant_id, service_line_id, key, value, description, is_assumed, confirmed_at) values
     (v_tenant, v_sl, 'cost.fuel_price_per_litre', to_jsonb(3.49::numeric),
-      'Diesel/petrol pump price (AED/L). August 2026. EDITABLE — UAE fuel price is reset monthly.', false, now()),
+      'Diesel/petrol pump price (AED/L). August 2026. EDITABLE - UAE fuel price is reset monthly.', false, now()),
     (v_tenant, v_sl, 'cost.vehicle_km_per_litre', to_jsonb(5::numeric),
       'Fleet fuel economy (km per litre) for pest service vehicles.', false, now())
   on conflict (tenant_id, service_line_id, key) do update
@@ -82,8 +82,8 @@ begin
         confirmed_at = now(), updated_at = now();
 
   update settings set value = to_jsonb(round(3.49 / 5.0, 4)), is_assumed = false, confirmed_at = now(), updated_at = now(),
-    description = 'STANDARD vehicle rate (AED/km), DERIVED = fuel_price_per_litre ÷ vehicle_km_per_litre (3.49÷5). '
-      || 'Fuel only; depreciation/lease is management-accounting (DECISIONS §7.3), never in job cost. Replaces placeholder 0.5.'
+    description = 'STANDARD vehicle rate (AED/km), DERIVED = fuel_price_per_litre / vehicle_km_per_litre (3.49/5). '
+      || 'Fuel only; depreciation/lease is management-accounting (DECISIONS 7.3), never in job cost. Replaces placeholder 0.5.'
     where tenant_id = v_tenant and key = 'cost.standard_vehicle_rate_per_km';
 
   -- 5. Travel-in-labour parameters. Job paid time = treatment + travel (round trip).
@@ -93,28 +93,28 @@ begin
     (v_tenant, v_sl, 'cost.travel_speed_kmh', to_jsonb(32::numeric),
       'ASSUMED: average door-to-door travel speed (km/h) to convert round-trip distance into paid travel hours.', true),
     (v_tenant, v_sl, 'cost.default_job_one_way_km', to_jsonb(16::numeric),
-      'ASSUMED: default one-way distance base→site (km) when a site has no measured route distance.', true)
+      'ASSUMED: default one-way distance base->site (km) when a site has no measured route distance.', true)
   on conflict (tenant_id, service_line_id, key) do update
     set value = excluded.value, description = excluded.description, is_assumed = excluded.is_assumed, updated_at = now();
 
-  -- 6. Frequency — municipality requirement (not negotiable, confirmed).
+  -- 6. Frequency - municipality requirement (not negotiable, confirmed).
   insert into settings(tenant_id, service_line_id, key, value, description, is_assumed, confirmed_at) values
     (v_tenant, v_sl, 'schedule.fnb_visits_per_year', to_jsonb(24::numeric),
-      'F&B pest-control visits per year in Sharjah & Dubai — MUNICIPALITY REQUIREMENT, not negotiable.', false, now())
+      'F&B pest-control visits per year in Sharjah & Dubai - MUNICIPALITY REQUIREMENT, not negotiable.', false, now())
   on conflict (tenant_id, service_line_id, key) do update
     set value = excluded.value, description = excluded.description, is_assumed = false, confirmed_at = now(), updated_at = now();
 
-  -- 7. Pricing reference — seed BOTH ad-hoc and AMC; the 2.5× gap is flagged for the owner.
+  -- 7. Pricing reference - seed BOTH ad-hoc and AMC; the 2.5x gap is flagged for the owner.
   insert into settings(tenant_id, service_line_id, key, value, description, is_assumed, confirmed_at) values
     (v_tenant, v_sl, 'pricing.pest_fnb_medium_adhoc_per_visit', to_jsonb(250::numeric),
       'Reference ad-hoc price for a medium restaurant single treatment (AED). Owner 2026-08-12.', false, now()),
     (v_tenant, v_sl, 'pricing.pest_fnb_medium_amc_per_visit', to_jsonb(100::numeric),
-      'Reference AMC per-visit price for a medium restaurant (AED) = contract 1330/25: 2400 ÷ 24 visits. '
-      || 'FLAG: 2.5× below the ad-hoc rate (250) for the SAME service — review whether the AMC rate is sustainable.', false, now())
+      'Reference AMC per-visit price for a medium restaurant (AED) = contract 1330/25: 2400 / 24 visits. '
+      || 'FLAG: 2.5x below the ad-hoc rate (250) for the SAME service - review whether the AMC rate is sustainable.', false, now())
   on conflict (tenant_id, service_line_id, key) do update
     set value = excluded.value, description = excluded.description, is_assumed = false, confirmed_at = now(), updated_at = now();
 
-  -- 8. Target margin — ASSUMED (owner to confirm); drives suggested minimum price.
+  -- 8. Target margin - ASSUMED (owner to confirm); drives suggested minimum price.
   insert into settings(tenant_id, service_line_id, key, value, description, is_assumed) values
     (v_tenant, v_sl, 'cost.target_margin_default', to_jsonb(0.35::numeric),
       'ASSUMED target gross margin (fraction) for suggested minimum price. Confirm the real target.', true)

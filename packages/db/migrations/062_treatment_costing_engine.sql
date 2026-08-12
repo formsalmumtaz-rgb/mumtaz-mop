@@ -1,20 +1,20 @@
 -- 062_treatment_costing_engine.sql
--- Costing engine — real configuration, part 3 of 3 (consumption, cycle, engine).
+-- Costing engine - real configuration, part 3 of 3 (consumption, cycle, engine).
 --
 -- Adds:
---   * fn_setting_num(tenant, service_line, key)      — scoped numeric setting reader
---   * treatment_visit_consumption                    — per-m² material consumption by visit type
---   * treatment.cycle_pattern / treatment.gel_visits_per_year  — the visit cycle (configurable)
---   * fn_pest_treatment_costing(...)                 — the survey→annual-plan costing engine
+--   * fn_setting_num(tenant, service_line, key)      - scoped numeric setting reader
+--   * treatment_visit_consumption                    - per-m2 material consumption by visit type
+--   * treatment.cycle_pattern / treatment.gel_visits_per_year  - the visit cycle (configurable)
+--   * fn_pest_treatment_costing(...)                 - the survey->annual-plan costing engine
 --
--- Consumption is DERIVED and flagged ASSUMED (Art. X §4):
+-- Consumption is DERIVED and flagged ASSUMED (Art. X 4):
 --   spray  Blitz 50 ml + Pro Surfactant 10 ml cover a medium restaurant (recipe
---          coverage 200 m²)  ->  Blitz 0.25 ml/m², Surfactant 0.05 ml/m²
---   gel    9 g covers a 2BHK apartment (~100 m²)  ->  0.09 g/m²
--- The 200 m² medium-restaurant area is itself an assumption (recipe-derived).
+--          coverage 200 m2)  ->  Blitz 0.25 ml/m2, Surfactant 0.05 ml/m2
+--   gel    9 g covers a 2BHK apartment (~100 m2)  ->  0.09 g/m2
+-- The 200 m2 medium-restaurant area is itself an assumption (recipe-derived).
 --
 -- New table follows the baseline convention (tenant_id, RLS tenant_isolation,
--- grant to mop_app). It is editable config, not a transaction record — not
+-- grant to mop_app). It is editable config, not a transaction record - not
 -- append-only. No structural invariant touched. The engine is STABLE (reads only).
 
 -- ── Scoped numeric setting reader ───────────────────────────────────────────
@@ -28,14 +28,14 @@ $$;
 grant execute on function fn_setting_num(uuid, uuid, text) to mop_app;
 grant execute on function fn_labour_rate_from_basis(jsonb) to mop_app;
 
--- ── Per-m² material consumption by visit type ───────────────────────────────
+-- ── Per-m2 material consumption by visit type ───────────────────────────────
 create table if not exists treatment_visit_consumption (
   id               uuid primary key default gen_random_uuid(),
   tenant_id        uuid not null references tenants(id),
   service_line_id  uuid references service_lines(id),
   visit_type       text not null check (visit_type in ('spray','gel','inspection')),
   item_id          uuid not null references items(id),
-  qty_per_m2       numeric not null check (qty_per_m2 >= 0),  -- in the item's base unit per m²
+  qty_per_m2       numeric not null check (qty_per_m2 >= 0),  -- in the item's base unit per m2
   is_assumed       boolean not null default false,
   assumed_note     text,
   is_active        boolean not null default true,
@@ -60,9 +60,9 @@ begin
   select id into i_gel   from items where tenant_id = v_tenant and code = 'CHEM_GEL_BAIT';
 
   insert into treatment_visit_consumption(tenant_id, service_line_id, visit_type, item_id, qty_per_m2, is_assumed, assumed_note) values
-    (v_tenant, v_sl, 'spray', i_blitz, 0.25, true, 'DERIVED: 50 ml Blitz over a medium restaurant (recipe coverage 200 m²). The 200 m² area is assumed.'),
-    (v_tenant, v_sl, 'spray', i_surf, 0.05, true, 'DERIVED: 10 ml Pro Surfactant over 200 m². Surfactant landed cost is itself ASSUMED (BLOCKED A13).'),
-    (v_tenant, v_sl, 'gel',   i_gel,  0.09, true, 'DERIVED: 9 g gel covers a 2BHK apartment (~100 m²). Estimate by area; actual grams are recorded per job and variance self-corrects the rate.')
+    (v_tenant, v_sl, 'spray', i_blitz, 0.25, true, 'DERIVED: 50 ml Blitz over a medium restaurant (recipe coverage 200 m2). The 200 m2 area is assumed.'),
+    (v_tenant, v_sl, 'spray', i_surf, 0.05, true, 'DERIVED: 10 ml Pro Surfactant over 200 m2. Surfactant landed cost is itself ASSUMED (BLOCKED A13).'),
+    (v_tenant, v_sl, 'gel',   i_gel,  0.09, true, 'DERIVED: 9 g gel covers a 2BHK apartment (~100 m2). Estimate by area; actual grams recorded per job and variance self-corrects.')
   on conflict (tenant_id, service_line_id, visit_type, item_id) do update
     set qty_per_m2 = excluded.qty_per_m2, is_assumed = excluded.is_assumed, assumed_note = excluded.assumed_note, updated_at = now();
 
@@ -84,10 +84,10 @@ create or replace function fn_pest_treatment_costing(
   p_tenant          uuid,
   p_service_line    uuid,
   p_area_m2         numeric,
-  p_one_way_km      numeric  default null,   -- null → cost.default_job_one_way_km
-  p_visits_per_year integer  default null,   -- null → schedule.fnb_visits_per_year
-  p_gel_visits      integer  default null,   -- null → treatment.gel_visits_per_year
-  p_target_margin   numeric  default null,   -- null → cost.target_margin_default
+  p_one_way_km      numeric  default null,   -- null -> cost.default_job_one_way_km
+  p_visits_per_year integer  default null,   -- null -> schedule.fnb_visits_per_year
+  p_gel_visits      integer  default null,   -- null -> treatment.gel_visits_per_year
+  p_target_margin   numeric  default null,   -- null -> cost.target_margin_default
   p_price_per_visit numeric  default null    -- optional: margin at this price
 ) returns jsonb language plpgsql stable as $$
 declare
@@ -123,7 +123,7 @@ begin
   fuel_pv      := case when s_km_per_l is null then 0 else round(round_trip / s_km_per_l * s_fuel_price, 2) end;
   overhead_pv  := case when s_overhead_enabled then round(s_overhead_rate * labour_hours, 2) else 0 end;
 
-  -- per-m² material cost by visit type (Σ qty_per_m2 × landed unit cost)
+  -- per-m2 material cost by visit type (Σ qty_per_m2 x landed unit cost)
   select coalesce(sum(c.qty_per_m2 * fn_item_standard_cost(p_tenant, c.item_id)), 0) into rate_spray
     from treatment_visit_consumption c
    where c.tenant_id = p_tenant and (c.service_line_id = p_service_line or c.service_line_id is null)

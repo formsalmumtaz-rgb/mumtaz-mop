@@ -1,5 +1,5 @@
 -- 061_material_landed_costs.sql
--- Costing engine — real configuration, part 2 of 3 (materials).
+-- Costing engine - real configuration, part 2 of 3 (materials).
 -- Creates the three pest chemicals the costing model uses and seeds each with a
 -- goods-receipt landed cost so fn_item_standard_cost derives a real per-unit cost
 -- (Constitution: material cost comes from landed cost, never a typed rate).
@@ -9,7 +9,7 @@
 --   Gel Bait              40 AED / 30 g   -> 1.3333 AED/g   (real, owner)
 --
 -- item_purchases carries only an append-only guard (no auto GL/stock posting), so
--- these are pure landed-cost reference receipts (no batch/journal/stock movement) —
+-- these are pure landed-cost reference receipts (no batch/journal/stock movement) -
 -- honest seed data, idempotent by reference_no. No structural invariant touched.
 
 do $$
@@ -69,6 +69,6 @@ begin
             jsonb_build_object('seed', true, 'basis', '40 AED per 30 g tube', 'note', 'owner 2026-08-12 landed-cost reference'));
   end if;
 
-  raise notice '061 applied: Blitz=% Surfactant=% Gel=% (unit costs via fn_item_standard_cost)',
+  raise notice '061 applied: Blitz=% Surfactant=% Gel=%',
     fn_item_standard_cost(v_tenant, i_blitz), fn_item_standard_cost(v_tenant, i_surf), fn_item_standard_cost(v_tenant, i_gel);
 end $$;
