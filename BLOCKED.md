@@ -72,6 +72,14 @@ add `client_uuid` to `vehicle_fuel_purchases` and post once. For now fuel is
 recorded on the pre-flight only.
 **Blocks:** the fuel→cost linkage only; pre-flight itself works.
 
+## 🟡 A8 — Inspection option lists are ASSUMED (T4)
+**What:** the button-driven post-inspection lists (mig 059, `inspection_options`,
+`is_assumed=true`): areas (kitchen, pantry, dining, wash, exterior), issue types
+(cockroach, rodent, ant, fly, hygiene, structural), infestation levels
+(none/low/medium/high).
+**Do:** confirm/replace per your operation; the form is driven entirely off these.
+**Blocks:** nothing — the form renders whatever is configured.
+
 ## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
 **What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
 **Why:** §11.5 wants the device to validate the access token's SIGNATURE offline
@@ -109,3 +117,11 @@ test them on a real phone, however green the build is.
       enter vehicle/odometer/fuel, Save → "Saved & synced".
 - [ ] Do the same offline → "Saved"; reconnect → it syncs (one record per day;
       re-saving the same day updates, not duplicates).
+
+### T4 — job flow + inspection (landed; verify on device)
+- [ ] In a job, tap "Navigate ↗" → Google Maps opens directions to the site pin.
+- [ ] Job carries its treatment recipe (dose calculates from area).
+- [ ] Post-inspection: pick area/issue/infestation + hygiene/structural scores,
+      "Add area" for several areas, complete the job → after sync the
+      inspection rows appear (append-only) linked to the job; re-sync doesn't
+      duplicate.

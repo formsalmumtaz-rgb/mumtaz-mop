@@ -15,6 +15,7 @@ export const EVENT_TYPES = [
   "job.started",
   "job.arrived",
   "job.completed",
+  "job.inspected",
   "job.failed",
   "stock.consumed",
   "stock.transferred",
@@ -68,6 +69,18 @@ export const payloadSchemas = {
     job_id: z.string().uuid(),
     technician_id: z.string().uuid().nullish(),
     device_started_at: z.string().nullish(),
+  }),
+  "job.inspected": z.object({
+    job_id: z.string().uuid(),
+    device_time: z.string().nullish(),
+    entries: z.array(z.object({
+      area: z.string(),
+      issue_type: z.string().nullish(),
+      hygiene_score: z.number().int().min(1).max(5).nullish(),
+      structural_score: z.number().int().min(1).max(5).nullish(),
+      infestation_level: z.string().nullish(),
+      notes: z.string().nullish(),
+    })),
   }),
   "job.completed": z.object({
     job_id: z.string().uuid(),

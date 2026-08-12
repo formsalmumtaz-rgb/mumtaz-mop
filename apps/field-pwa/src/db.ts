@@ -55,6 +55,9 @@ export interface MetaItem {
   value: unknown;
 }
 
+// Button-driven post-inspection option lists (T4), cached from sync.
+export interface InspectionOption { kind: "area" | "issue_type" | "infestation"; code: string; label: string }
+
 // Start-of-shift pre-flight (T3), queued offline; one per day, keyed by date.
 export interface PreflightItem {
   check_date: string; // yyyy-mm-dd (key)
@@ -101,13 +104,15 @@ export async function pendingCount(): Promise<number> {
 export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
   const res = await authedFetch(`${baseUrl}/api/field/sync`);
   if (!res.ok) throw new Error(`sync failed: ${res.status}`);
-  const data = (await res.json()) as { jobs: LocalJob[] };
+  const data = (await res.json()) as { jobs: LocalJob[]; inspection_options?: InspectionOption[] };
   await db.transaction("rw", db.jobs, db.meta, async () => {
     for (const j of data.jobs) {
       const existing = await db.jobs.get(j.id);
       if (existing && existing.local_status !== "scheduled") continue;
       await db.jobs.put({ ...j, local_status: existing?.local_status ?? "scheduled" });
     }
+    // Cache the button-driven inspection option lists for offline use (T4).
+    if (data.inspection_options) await db.meta.put({ key: "inspectionOptions", value: data.inspection_options });
     await db.meta.put({ key: "lastSync", value: new Date().toISOString() });
   });
   return { jobs: data.jobs.length };
