@@ -13,6 +13,14 @@ export const PH = 841.89;
 export const M = 42;
 export const CW = PW - M * 2;
 
+// The band available to a document body on EVERY page: below the letterhead and
+// above the legal footer. Generators start their body at BODY_TOP, break to a new
+// page before crossing BODY_BOTTOM, and the chrome is stamped on every page after
+// (stampAllPages) — so the legal entity name appears on every page, not just the
+// last. BODY_TOP matches what drawLetterhead() returns.
+export const BODY_TOP = 124;
+export const BODY_BOTTOM = 705;
+
 // Neutral ink used across documents (accent is per-division and passed in).
 export const INK = "#1A1A1A";
 export const NAVY = "#1C2540";
@@ -77,8 +85,9 @@ export function drawLetterhead(doc: jsPDF, skin: BrandSkin, logo: Asset | null):
 }
 
 // Draw the legal footer pinned to the bottom of the current page: legal entity +
-// group line + established + trade licence, the offices row, and the toll-free.
-export function drawLegalFooter(doc: jsPDF, skin: BrandSkin, org: DocOrg, tollFree: Asset | null): void {
+// group line + established + trade licence, the offices row, the toll-free, and
+// (on multi-page documents) a page indicator.
+export function drawLegalFooter(doc: jsPDF, skin: BrandSkin, org: DocOrg, tollFree: Asset | null, pageNo = 1, pageCount = 1): void {
   const accent = skin.accent || FALLBACK_ACCENT;
   const offices = org.offices.slice(0, 3);
   let fy = PH - M - 62;
@@ -103,4 +112,35 @@ export function drawLegalFooter(doc: jsPDF, skin: BrandSkin, org: DocOrg, tollFr
     if (o.line1) doc.text(o.line1, x, fy + 9);
     if (o.line2) doc.text(o.line2, x, fy + 17);
   });
+  if (pageCount > 1) {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(6.8); doc.setTextColor(LABEL); doc.setCharSpace(0);
+    doc.text(`${pageNo} / ${pageCount}`, PW - M, PH - M + 4, { align: "right" });
+  }
+}
+
+// Stamp the division letterhead + legal footer on EVERY page of a finished
+// document. Call this once, after the body is laid out (the body must have
+// reserved the top/bottom bands by using BODY_TOP/BODY_BOTTOM). This is what makes
+// the legal entity name appear on every page — a compliance requirement on
+// multi-page documents (statements, long service reports).
+export function stampAllPages(doc: jsPDF, skin: BrandSkin, org: DocOrg, logo: Asset | null, tollFree: Asset | null): void {
+  const pages = doc.getNumberOfPages();
+  for (let p = 1; p <= pages; p++) {
+    doc.setPage(p);
+    drawLetterhead(doc, skin, logo);
+    drawLegalFooter(doc, skin, org, tollFree, p, pages);
+  }
+}
+
+// Write pre-wrapped text lines with automatic pagination: when a line would cross
+// into the footer band it starts a fresh page at BODY_TOP. Returns the final y.
+// The caller stamps chrome afterwards (stampAllPages), so new pages get it too.
+export function flowLines(doc: jsPDF, lines: string[], x: number, startY: number, lineHeight: number): number {
+  let y = startY;
+  for (const ln of lines) {
+    if (y > BODY_BOTTOM) { doc.addPage(); y = BODY_TOP; }
+    doc.text(ln, x, y);
+    y += lineHeight;
+  }
+  return y;
 }

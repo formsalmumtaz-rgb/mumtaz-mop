@@ -1,8 +1,8 @@
 import { jsPDF } from "jspdf";
 import {
-  PW, M, CW, NAVY, INK, LABEL, HAIR,
+  PW, M, CW, NAVY, INK, LABEL, HAIR, BODY_TOP,
   type Asset, type DocOrg, type BrandSkin,
-  pngSize, drawLetterhead, drawLegalFooter,
+  pngSize, flowLines, stampAllPages,
 } from "./brandChrome";
 
 // Office-copy Service Completion Report (ops-console). Branding — the division
@@ -30,7 +30,7 @@ export interface ServiceReportPdfData {
 export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
   const accent = d.brand.accent;
-  let y = drawLetterhead(doc, d.brand, d.logo);
+  let y = BODY_TOP;
 
   // ── Title bar ──────────────────────────────────────────────────────────
   doc.setFillColor(accent); doc.rect(M, y, CW, 30, "F");
@@ -67,10 +67,10 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
   doc.text("SERVICE NOTES", M, y); doc.setCharSpace(0); y += 16;
   doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(INK);
   const lines = doc.splitTextToSize(d.notes || "—", CW);
-  doc.text(lines, M, y);
+  flowLines(doc, lines, M, y, 14); // paginates long notes; chrome stamped below
 
-  // ── Legal footer (shared brandChrome) ──────────────────────────────────
-  drawLegalFooter(doc, d.brand, d.org, d.tollFree);
+  // ── Chrome on every page (letterhead + legal footer) ───────────────────
+  stampAllPages(doc, d.brand, d.org, d.logo, d.tollFree);
 
   return new Uint8Array(doc.output("arraybuffer"));
 }
