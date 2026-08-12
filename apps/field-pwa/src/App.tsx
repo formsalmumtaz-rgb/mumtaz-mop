@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
-import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob } from "./db";
+import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
 import { calcDose } from "./dose";
 import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
 
@@ -143,6 +143,18 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const [checklist, setChecklist] = useState<Record<string, boolean>>((job.checklist as Record<string, boolean>) ?? {});
   const [area, setArea] = useState("");
   const sigRef = useRef<SignaturePadHandle>(null);
+  // Post-inspection (T4): options cached from sync; entries accumulated per area.
+  const options = useLiveQuery(async () => ((await db.meta.get("inspectionOptions"))?.value as InspectionOption[] | undefined) ?? [], [], []);
+  const [inspections, setInspections] = useState<InspectionEntry[]>([]);
+  const [insp, setInsp] = useState<InspectionEntry>({ area: "", issue_type: "", hygiene_score: 0, structural_score: 0, infestation_level: "" });
+  const opts = (kind: string) => options.filter((o) => o.kind === kind);
+  const addInspection = () => {
+    if (!insp.area) return;
+    setInspections((list) => [...list.filter((e) => e.area !== insp.area), insp]);
+    setInsp({ area: "", issue_type: "", hygiene_score: 0, structural_score: 0, infestation_level: "" });
+  };
+  const mapsUrl = job.lat != null && job.lng != null
+    ? `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}` : null;
 
   const start = async () => {
     const now = new Date().toISOString();
@@ -166,6 +178,11 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
     const signature = media.find((m) => m.kind === "signature")?.id ?? null;
     const dose = calcDose(job.recipe, Number(area));
     await db.jobs.update(job.id, { local_status: "completed", device_completed_at: now, checklist });
+    // Post-inspection is its own event so it lands in the append-only inspection
+    // record (T4); job.completed still carries the treatment dose/consumption.
+    if (inspections.length > 0) {
+      await enqueue("job.inspected", job.id, { job_id: job.id, device_time: now, entries: inspections });
+    }
     await enqueue("job.completed", job.id, {
       client_uuid: uuid(),
       device_completed_at: now,
@@ -203,6 +220,12 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
         <div className="muted">{job.branch_name}{job.address ? ` · ${job.address}` : ""}</div>
         {job.access_notes && <div className="muted">Access: {job.access_notes}</div>}
         {job.lat != null && <div className="muted">Pin: {job.lat.toFixed(5)}, {job.lng?.toFixed(5)}</div>}
+        {mapsUrl && (
+          <a className="ghost" href={mapsUrl} target="_blank" rel="noreferrer"
+             style={{ display: "inline-block", width: "auto", marginTop: ".5rem", textDecoration: "none" }}>
+            Navigate ↗
+          </a>
+        )}
       </div>
 
       {job.local_status === "scheduled" && <button onClick={start}>Start job</button>}
@@ -239,8 +262,24 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
             <p className="muted">
               {job.recipe
                 ? dose ? `${job.recipe.name}: ${dose.amount} ${dose.unit}` : "Enter an area to calculate."
-                : "No treatment recipe configured for this job (recipe table not yet seeded)."}
+                : "No treatment recipe attached to this job — record chemical use manually."}
             </p>
+          </div>
+
+          <div className="card">
+            <h3>Post-inspection ({inspections.length} area{inspections.length === 1 ? "" : "s"})</h3>
+            <Pick label="Area" value={insp.area} onPick={(v) => setInsp({ ...insp, area: v })} options={opts("area")} />
+            <Pick label="Issue" value={insp.issue_type} onPick={(v) => setInsp({ ...insp, issue_type: v })} options={opts("issue_type")} />
+            <Pick label="Infestation" value={insp.infestation_level} onPick={(v) => setInsp({ ...insp, infestation_level: v })} options={opts("infestation")} />
+            <Score label="Hygiene" value={insp.hygiene_score} onPick={(n) => setInsp({ ...insp, hygiene_score: n })} />
+            <Score label="Structural" value={insp.structural_score} onPick={(n) => setInsp({ ...insp, structural_score: n })} />
+            <button className="secondary" style={{ width: "auto", marginTop: ".5rem" }} onClick={addInspection} disabled={!insp.area}>Add area</button>
+            {inspections.length > 0 && (
+              <ul className="muted" style={{ marginTop: ".5rem", paddingLeft: "1.1rem" }}>
+                {inspections.map((e) => <li key={e.area}>{e.area}: {e.infestation_level || "—"} · hyg {e.hygiene_score || "—"}/5 · str {e.structural_score || "—"}/5</li>)}
+              </ul>
+            )}
+            {options.length === 0 && <p className="muted">Inspection options load on next online sync.</p>}
           </div>
 
           <div className="card">
@@ -422,6 +461,41 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         {msg && <p className="muted">{msg}</p>}
         <button onClick={save}>Save pre-flight</button>
+      </div>
+    </div>
+  );
+}
+
+// T4 post-inspection helpers.
+interface InspectionEntry { area: string; issue_type: string; hygiene_score: number; structural_score: number; infestation_level: string }
+
+function Pick({ label, value, onPick, options }: { label: string; value: string; onPick: (v: string) => void; options: InspectionOption[] }) {
+  return (
+    <div style={{ marginBottom: ".5rem" }}>
+      <div className="muted" style={{ fontSize: ".8rem", marginBottom: ".2rem" }}>{label}</div>
+      <div className="row" style={{ flexWrap: "wrap", gap: ".35rem" }}>
+        {options.map((o) => (
+          <button key={o.code} onClick={() => onPick(o.code === value ? "" : o.code)}
+                  className={o.code === value ? "secondary" : "ghost"} style={{ width: "auto", padding: ".3rem .6rem", fontSize: ".85rem" }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Score({ label, value, onPick }: { label: string; value: number; onPick: (n: number) => void }) {
+  return (
+    <div style={{ marginBottom: ".5rem" }}>
+      <div className="muted" style={{ fontSize: ".8rem", marginBottom: ".2rem" }}>{label} (1–5)</div>
+      <div className="row" style={{ gap: ".35rem" }}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button key={n} onClick={() => onPick(n === value ? 0 : n)}
+                  className={n === value ? "secondary" : "ghost"} style={{ width: "auto", padding: ".3rem .7rem" }}>
+            {n}
+          </button>
+        ))}
       </div>
     </div>
   );

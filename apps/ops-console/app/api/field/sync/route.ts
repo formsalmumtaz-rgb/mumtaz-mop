@@ -87,5 +87,11 @@ export async function GET(req: Request) {
     [session.tenantId, session.userId],
   );
   // recipe is the frozen treatment recipe on the job (or null) — built in SQL above.
-  return NextResponse.json({ jobs: rows }, { headers: cors });
+  // inspection_options drive the button-driven post-inspection form (T4).
+  const { rows: inspectionOptions } = await scopedRead(
+    session.tenantId,
+    `select kind, code, label from inspection_options where tenant_id = $1 and is_active order by kind, sort_order`,
+    [session.tenantId],
+  );
+  return NextResponse.json({ jobs: rows, inspection_options: inspectionOptions }, { headers: cors });
 }
