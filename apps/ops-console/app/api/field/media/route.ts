@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { putObject, r2Configured } from "@/lib/storage/r2";
 import { pool } from "@/lib/db";
-import { fieldSession, fieldCors, assignedJobIds } from "@/lib/field-auth";
+import { resolveFieldRequest, fieldCors, assignedJobIds } from "@/lib/field-auth";
 
 // Receives photos/signatures from the field app and stores them in R2. Idempotent
 // by media id (client UUID): R2 PUT is idempotent by key, and the job_photos/
@@ -29,10 +29,14 @@ interface MediaUpload {
 
 export async function POST(req: Request) {
   const cors = fieldCors(req, METHODS);
-  const session = await fieldSession();
-  if (!session) {
+  const auth = await resolveFieldRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401, headers: cors });
   }
+  if (auth.revoked) {
+    return NextResponse.json({ error: "revoked" }, { status: 401, headers: { ...cors, "x-mop-revoked": "1" } });
+  }
+  const session = auth.session;
   if (!r2Configured()) {
     return NextResponse.json({ error: "storage not configured" }, { status: 503, headers: cors });
   }

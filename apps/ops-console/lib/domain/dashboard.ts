@@ -13,6 +13,7 @@ export interface Dashboard {
   pendingExpenses: number; // expense claims awaiting approval
   pendingExpenseAmount: number;
   reportsPending: number; // service reports with no review yet
+  fieldReviewHeld: number; // field events from a revoked login, held for admin review (T1)
   currency: string;
 }
 
@@ -35,7 +36,8 @@ export async function getDashboard(tenantId: string, serviceLineId: string): Pro
        (select count(*) from expenses where tenant_id=$1 and status='submitted')::int as pending_expenses,
        (select coalesce(sum(amount),0) from expenses where tenant_id=$1 and status='submitted')::float8 as pending_expense_amount,
        (select count(*) from service_reports sr where sr.tenant_id=$1 and sr.service_line_id=$2
-          and not exists (select 1 from service_report_reviews rv where rv.service_report_id=sr.id))::int as reports_pending`,
+          and not exists (select 1 from service_report_reviews rv where rv.service_report_id=sr.id))::int as reports_pending,
+       (select count(*) from outbox_events where tenant_id=$1 and needs_review and processed_at is null)::int as field_review_held`,
     [tenantId, serviceLineId],
   );
   const r = rows[0];
@@ -51,6 +53,7 @@ export async function getDashboard(tenantId: string, serviceLineId: string): Pro
     pendingExpenses: r.pending_expenses,
     pendingExpenseAmount: r.pending_expense_amount,
     reportsPending: r.reports_pending,
+    fieldReviewHeld: r.field_review_held,
     currency: "AED",
   };
 }

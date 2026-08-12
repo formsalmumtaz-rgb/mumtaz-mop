@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { ingestDeviceEvents, type DeviceEvent } from "@mop/worker";
 import { pool } from "@/lib/db";
-import { fieldSession, fieldCors, assignedJobIds } from "@/lib/field-auth";
+import { resolveFieldRequest, fieldCors, assignedJobIds } from "@/lib/field-auth";
 
 // Receives the field app's queued events on reconnect. Idempotent by client_uuid
 // (ingestDeviceEvents) — safe to re-post after an interrupted sync.
 //
-// Security (previously an anonymous tenant-wide WRITE — anyone could post fake
-// completions/consumption): requires a session, and each event is accepted only if
-// its job is assigned to a technician the session user operates as. Events for
-// other jobs (or with no job) are rejected, not silently written.
+// Security: requires a valid Bearer/session (server re-authorizes, DECISIONS
+// §11.5); each event is accepted only if its job is assigned to a technician the
+// actor operates as — events for other jobs are rejected. Events from a REVOKED
+// login are still ingested but HELD needs_review (ingest stamps them), so offline
+// work already done reaches an admin flagged, never silently discarded (T1).
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -21,10 +22,11 @@ export async function OPTIONS(req: Request) {
 
 export async function POST(req: Request) {
   const cors = fieldCors(req, METHODS);
-  const session = await fieldSession();
-  if (!session) {
+  const auth = await resolveFieldRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401, headers: cors });
   }
+  const { session, revoked } = auth;
 
   const body = (await req.json().catch(() => ({ events: [] }))) as { events?: DeviceEvent[] };
   const events = body.events ?? [];
@@ -36,6 +38,12 @@ export async function POST(req: Request) {
   const authorised = events.filter((e) => mine.has((e as { job_id?: string }).job_id ?? ""));
   const rejected = events.length - authorised.length;
 
-  const { accepted } = await ingestDeviceEvents(pool, session.tenantId, authorised);
-  return NextResponse.json({ accepted, rejected }, { headers: cors });
+  // Revoked login: events are ingested but held needs_review (not discarded).
+  const { accepted, flagged, heldForReview } = await ingestDeviceEvents(
+    pool, session.tenantId, authorised, { actorId: session.userId, actorRevoked: revoked },
+  );
+  return NextResponse.json(
+    { accepted, rejected, flagged, heldForReview, revoked },
+    { headers: revoked ? { ...cors, "x-mop-revoked": "1" } : cors },
+  );
 }

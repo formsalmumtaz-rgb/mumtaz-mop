@@ -1,5 +1,6 @@
 import "server-only";
-import { getSession, type AppSession } from "./auth";
+import { createClient } from "@supabase/supabase-js";
+import { getSession, resolveActor, type AppSession } from "./auth";
 import { scopedRead } from "./rls";
 
 // Shared authentication + authorisation for the /api/field/* routes.
@@ -37,6 +38,36 @@ export function fieldCors(req: Request, methods: string): Record<string, string>
 // sense per-technician, so there is no meaningful "unauthenticated" mode for them.
 export async function fieldSession(): Promise<AppSession | null> {
   return getSession();
+}
+
+// Resolve the field-app request's actor. The PWA sends the Supabase access token
+// as `Authorization: Bearer <jwt>` (DECISIONS §11.5 — the device validated it
+// locally offline; the server re-authorizes here at sync). Falls back to the
+// cookie session for a same-origin caller.
+//
+// `revoked` is true when the token is cryptographically valid but the login was
+// deactivated (is_active=false) after the offline work was done — the caller then
+// HOLDS the events for review instead of discarding them (T1). Returns null when
+// there is no valid token / session at all (reject).
+export async function resolveFieldRequest(req: Request): Promise<{ session: AppSession; revoked: boolean } | null> {
+  const auth = req.headers.get("authorization");
+  const bearer = auth?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) {
+    let userId: string | undefined;
+    try {
+      const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
+      const { data, error } = await sb.auth.getUser(bearer);
+      if (error || !data.user) return null; // invalid / expired token -> reject
+      userId = data.user.id;
+    } catch {
+      return null;
+    }
+    const resolved = await resolveActor(userId);
+    if (!resolved) return null; // authenticated but not a provisioned app_user
+    return { session: resolved.session, revoked: !resolved.isActive };
+  }
+  const s = await getSession();
+  return s ? { session: s, revoked: false } : null;
 }
 
 // Of the given job ids, the subset assigned to a technician the authenticated user

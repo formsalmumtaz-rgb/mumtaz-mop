@@ -36,13 +36,14 @@ test("interrupted sync is exactly-once by client_uuid (mid-drop + lost ack)", as
   const onServer = async () => (await pool.query(`select count(*)::int n from outbox_events where client_uuid = any($1)`, [uuids])).rows[0].n;
 
   // Phase 1 — connection drops after the first 2 land.
-  const r1 = await ingestDeviceEvents(pool, tenantId, events.slice(0, 2));
+  const actor = { actorId: "00000000-0000-0000-0000-0000000000aa" };
+  const r1 = await ingestDeviceEvents(pool, tenantId, events.slice(0, 2), actor);
   assert.equal(r1.accepted.length, 2);
   assert.equal(await onServer(), 2, "2 landed before the drop");
 
   // Phase 2 — reconnect. The device re-posts ALL 4: it doesn't know which of the
   // first 2 the server committed (lost ack), so it re-sends them too.
-  const r2 = await ingestDeviceEvents(pool, tenantId, events);
+  const r2 = await ingestDeviceEvents(pool, tenantId, events, actor);
   assert.equal(r2.accepted.length, 4, "all 4 accepted (2 pre-existing + 2 new)");
   assert.equal(await onServer(), 4, "still exactly 4 — the re-posts did NOT duplicate");
 

@@ -34,30 +34,42 @@ export async function getSession(): Promise<AppSession | null> {
     return null; // auth not reachable/enabled yet — treat as unauthenticated (inert phase)
   }
   if (!user) return null;
+  const resolved = await resolveActor(user.id);
+  // getSession only returns a session for an ACTIVE login (deactivated users are
+  // revoked — see resolveActor for the revocation-aware variant the field app uses).
+  return resolved && resolved.isActive ? resolved.session : null;
+}
 
-  // Identity bootstrap: resolve app_user → tenant + roles + permissions. This is
-  // the ONE read that must precede tenant scoping (it establishes the tenant), so
-  // it uses the pool directly — a documented exception to the pool.query gate.
+// Resolve app_user → tenant + roles + permissions from an auth user id, WITHOUT
+// filtering on is_active — the caller learns whether the login is still active.
+// This is the identity bootstrap (the one read that precedes tenant scoping), so
+// it uses the pool directly — a documented exception to the pool.query gate. The
+// field app's Bearer path uses this to detect a revoked login and still attribute
+// its already-queued events (T1).
+export async function resolveActor(userId: string): Promise<{ session: AppSession; isActive: boolean } | null> {
   const { rows } = await pool.query(
-    `select u.tenant_id, u.full_name, u.email,
+    `select u.tenant_id, u.full_name, u.email, u.is_active,
             coalesce(array_agg(distinct r.code) filter (where r.code is not null), '{}') as roles,
             coalesce(array_agg(distinct rp.permission_code) filter (where rp.permission_code is not null), '{}') as perms
        from app_users u
        left join user_roles ur on ur.user_id = u.id
        left join roles r on r.id = ur.role_id
        left join role_permissions rp on rp.role_id = r.id
-      where u.id = $1 and u.is_active
-      group by u.tenant_id, u.full_name, u.email`,
-    [user.id],
+      where u.id = $1
+      group by u.tenant_id, u.full_name, u.email, u.is_active`,
+    [userId],
   );
   if (!rows[0]) return null;
   return {
-    userId: user.id,
-    tenantId: rows[0].tenant_id as string,
-    fullName: rows[0].full_name,
-    email: rows[0].email,
-    roles: rows[0].roles as string[],
-    permissions: new Set(rows[0].perms as string[]),
+    isActive: rows[0].is_active as boolean,
+    session: {
+      userId,
+      tenantId: rows[0].tenant_id as string,
+      fullName: rows[0].full_name,
+      email: rows[0].email,
+      roles: rows[0].roles as string[],
+      permissions: new Set(rows[0].perms as string[]),
+    },
   };
 }
 

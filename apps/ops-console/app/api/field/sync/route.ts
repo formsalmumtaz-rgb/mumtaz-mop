@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { scopedRead } from "@/lib/rls";
-import { fieldSession, fieldCors } from "@/lib/field-auth";
+import { resolveFieldRequest, fieldCors } from "@/lib/field-auth";
 
 // Field-app pre-sync: returns the AUTHENTICATED technician's own ACTIVE jobs
 // (scheduled + assigned + in-flight) with the details they need offline (customer,
@@ -26,10 +26,15 @@ export async function OPTIONS(req: Request) {
 
 export async function GET(req: Request) {
   const cors = fieldCors(req, METHODS);
-  const session = await fieldSession();
-  if (!session) {
+  const auth = await resolveFieldRequest(req);
+  if (!auth) {
     return NextResponse.json({ error: "unauthenticated" }, { status: 401, headers: cors });
   }
+  // A revoked login gets no fresh work — the device is locking out (T1).
+  if (auth.revoked) {
+    return NextResponse.json({ error: "revoked" }, { status: 401, headers: { ...cors, "x-mop-revoked": "1" } });
+  }
+  const session = auth.session;
 
   const { rows } = await scopedRead(
     session.tenantId,
