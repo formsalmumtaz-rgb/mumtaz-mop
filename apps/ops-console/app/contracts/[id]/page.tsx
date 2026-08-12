@@ -46,6 +46,10 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <a href={`/contracts/${ct.id}/agreement`}
+             className="rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+            Agreement (Word) ↓
+          </a>
           {!isActive && !archived && (
             <form action={activateContractAction}>
               <input type="hidden" name="contract_id" value={ct.id} />

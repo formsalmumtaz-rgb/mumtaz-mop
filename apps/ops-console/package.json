@@ -22,7 +22,8 @@
     "next": "^15.0.3",
     "pg": "^8.13.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "docx": "^9.0.0"
   },
   "devDependencies": {
     "@types/google.maps": "^3.58.1",
