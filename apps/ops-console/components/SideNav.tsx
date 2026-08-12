@@ -72,6 +72,7 @@ const GROUPS: Group[] = [
     { href: "/categories", label: "Service categories" },
     { href: "/pricing", label: "Pricing models" },
     { href: "/cost-config", label: "Cost setup" },
+    { href: "/settings/field-definitions", label: "Form questions" },
     { href: "/settings/master-data", label: "Master data" },
     { href: "/settings", label: "Settings" },
     { href: "/settings/users", label: "Users" },
