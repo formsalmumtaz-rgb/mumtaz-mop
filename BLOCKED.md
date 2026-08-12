@@ -277,6 +277,23 @@ which guarantees the freshly-set session cookies are sent on the next request. I
 deploy once you report the observed behaviour from step 2.
 **Blocks:** office staff can't get past the login screen. High priority.
 
+## 🟡 A16 — Owner-input ledger from the workflow specification (DOCUMENT 8, Part N)
+**What:** the One-Guided-Pipeline spec (ROADMAP-AMENDMENT §6, filed 13 Aug 2026) lists
+what only you can supply. Consolidated here; most already have their own entry:
+| Input | Where tracked |
+|---|---|
+| Pro Surfactant real price (ASSUMED 0.05/ml) | **A13** |
+| Target margin (ASSUMED 35%) | **A13** |
+| Treatment recipes / consumption / areas | **A5, A13** |
+| GL account codes, pricing models, service categories | **A13** / DECISIONS §7.4 |
+| PPE + equipment lists · inspection options | **A6, A8** |
+| Clock-drift thresholds | **A1** |
+| Ad-hoc 250 vs AMC 100 pricing decision | **A14** |
+| **Structured migration data for existing customers** | NEW — you prepare it; a placeholder Excel template (exact sheets, headers, one example row, notes column) is a deliverable of the migration track when it builds |
+| **Public QR page: technician full name?** | NEW — PDPL flag (ROADMAP §6.5): full name on a physically-public sticker page is personal data; recommendation is technician code + masked name ("Muh*** Ali"). **Full names will not be implemented without your explicit confirmation.** |
+**Blocks:** nothing today — the spec is filed, not building. These become blocking as
+their tiers are picked up in EXECUTION.md.
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)

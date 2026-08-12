@@ -723,5 +723,426 @@ quotation mode; manpower profitability recommendations.
 
 ---
 
+*End of §1–5 filing. Nothing above is authorised for build until a sprint in
+`EXECUTION.md` picks it up.*
+
+---
+
+## 6. Amendment — One Guided Pipeline / Operational Workflow (filed 13 Aug 2026)
+
+**Status: FILED AND ASSESSED. NOT BUILT. Nothing in this section is authorised
+for implementation until the owner reads this assessment and a sprint picks it up.**
+
+Source: the owner's complete operational workflow specification, filed verbatim as
+**DOCUMENT 8** (§6.6). Assessed against the system as it exists at migration `064`
+and ops-console main `82dec80` (post PR #71), with direct evidence: a full route-tree
+map of all 54 console pages, the domain layer, the field-app flow, and the schema.
+
+Each requirement is marked exactly one of:
+- **(a) BUILT** — exists and works, but is not exposed or reachable where the flow needs it
+- **(b) DISCONNECTED** — built, but not wired into the flow that needs it
+- **(c) NEW** — genuinely does not exist
+
+### 6.1 Hypothesis verdict — tested, and the answer is nuanced
+
+The owner's hypothesis: *"most of this is (a) and (b); the engines exist; what's
+missing is one guided flow and forms that ask enough."*
+
+**Verdict: right about the engines — more right than expected about the flow — but
+four pillars are genuinely (c).**
+
+1. **The engines are real and stronger than the spec assumes.** Pricing (`fn_price`),
+   estimate costing (`fn_estimate_cost`), the full annual treatment costing with
+   suggested-price-at-margin and margin-at-any-price (`fn_pest_treatment_costing`,
+   mig 062), FEFO batch allocation with frozen landed cost, invoicing/receipts/credit
+   notes/GL, recurring billing, document numbering, division-skinned PDF generation,
+   contract fan-out — all built, all tested.
+2. **The sales flow is MORE connected than the spec believes.** Survey → estimate →
+   quotation → contract is a wired chain with carry-forward buttons and redirects
+   (evidence in §6.2 Q1). The "twelve screens" feeling is real but comes from the
+   *edges*: dead-ends after contract activation, a customer profile that shows no
+   money or history, engines whose outputs aren't surfaced on the screens where the
+   decision happens, and no reachable Contracts list at all.
+3. **Four pillars are genuinely (c), and two are schema-level:**
+   **night shift** (no shift concept exists anywhere in the schema), **email**
+   (zero sending infrastructure in the entire repo), **monitoring points / RBS**
+   (nothing exists — confirmed "Prompt 4 not built"), and **calendar with drag-drop**
+   (the schedule is a hand-rolled day/week list; no calendar component anywhere).
+4. **The biggest single (b) is `field_definitions`:** the configurable-questions
+   substrate the whole "forms don't ask enough" complaint resolves to **exists and is
+   enforced in the database** (mig 001 validator literally says *"declare it in
+   field_definitions (admin console) first"*) — but **no console screen reads or
+   writes that table.** The admin UI the DB error message points at was never built.
+   The survey form is a fixed line/measure form. Wiring this one substrate to an
+   admin screen + the survey/registration forms is the highest-leverage item in the
+   entire specification.
+
+### 6.2 The four specific questions — answered plainly
+
+**Q1 — Does survey → estimate → quotation → contract work as a continuous flow?**
+**Mostly YES — the chain is wired; the edges dead-end.** Evidence:
+- Survey detail (`app/surveys/[id]`) has **"Create estimate →"** which creates the
+  estimate from the survey lines (idempotent, mig 032) and **redirects into it**.
+- Estimate detail shows revenue / est. cost / gross profit / margin per line
+  (fn_estimate_cost live), has Mark-quoted → Accept, **"View quotation"** (customer-
+  facing, revenue-only screen + division-skinned PDF), and **"Convert to contract →"**
+  which creates and **redirects into the contract** (mig 031).
+- Contract detail has **"Activate ▶"**, and activation fans out schedule + jobs +
+  renewal reminder (proven, K2).
+**The dead-ends:** (i) after activation the fan-out summary is **text only** — no link
+to the generated schedule or jobs; (ii) Accept and Convert are two separate clicks;
+(iii) there is **no /contracts list page** — contracts are reachable only via a
+customer, an estimate, or the billing table, and Contracts is absent from the nav;
+(iv) nothing carries a *new customer* forward into a survey. All (b) — days of work,
+not weeks.
+
+**Q2 — Can stock be issued warehouse → van today? Does pre-flight compare declared
+vs issued?** **NO and NO.**
+- The schema fully supports it — `stock_locations(location_type in warehouse/van/site)`,
+  vans linked to technicians and vehicles, `movement_type='transfer'` with from/to —
+  but `'transfer'` has **no producer in any layer above SQL**: no domain function, no
+  UI, and only the MAIN warehouse is seeded (no van locations exist as rows). The
+  entire inventory UI is the goods-receipt form + item master; **no on-hand screen
+  anywhere** (even though the `batch_stock_on_hand` view exists).
+- Pre-flight captures PPE/equipment **checkboxes** and vehicle/odometer/fuel-purchase.
+  It captures **no chemical quantities at all**, so there is nothing to compare.
+  Verdict: transfer flow **(b)** (schema built, producer missing); declared-stock
+  capture + variance **(c)**.
+
+**Q3 — Is there a calendar view anywhere?** **NO.** `/schedule` is a hand-rolled
+day/week **list** (cards of table rows, prev/today/next, division chips, a red
+"conflict" badge from `detectConflicts`). No month grid, no time grid, no drag-drop,
+no calendar library in any package.json. Rescheduling is a per-job form on the job
+page. Verdict: **(c)** at the UI layer — but the data feeds (jobs + planned visits +
+conflict detection) are **(a)**, so this is a pure UI build.
+
+**Q4 — Does night shift exist as a concept?** **NO.** No migration mentions shifts;
+jobs carry `scheduled_date + scheduled_start time` — one implicit daytime window.
+The midnight-crossing question (a 02:00 job belongs to which operating day?) touches
+schedule day-assignment, "today's jobs" sync, attendance, and routing windows —
+**schema-level, Tier 1**, exactly as the spec suspects. Verdict: **(c)**.
+
+### 6.3 Requirement-by-requirement assessment
+
+| Spec part | Requirement | Verdict | Evidence / note |
+|---|---|---|---|
+| B | Registration core fields (legal/trade name, TRN, type, contacts, emirate) | **(a)** | `customers`+`contacts` tables + customer screen |
+| B | Trade licence **number** | **(a)** | `customers.trade_license` (mig 005), in UI |
+| B | Licence **issue/expiry dates** + expiry engine | **(c)** cols / **(b)** engine | no date columns; reminder pattern proven (K2 renewal) |
+| B | Alias name; billing vs service address | **(c)** | trivial columns |
+| B | "Find on Google Maps" (search-paste geocode) | **(a)** | server-side geocode + PinPicker live |
+| B | Maps share-link paste, device GPS, `location_source` | **(c)** | no `location_source` column; capture modes new |
+| B | Site profiling questions per category | **(b)** ⭐ | `field_definitions` substrate BUILT+enforced in DB; **no admin UI, forms don't render it** |
+| B | Migration Excel template | **(c)** | cheap deliverable; K5 staging pipeline still filed-only (only provenance cols exist, mig 015) |
+| C | Estimate computed not typed (cost, margin) | **(a)** | live on estimate screen |
+| C | Suggested price at target margin; margin at typed price | **(b)** | engines BUILT (mig 062 + category `recommended_price`); **not surfaced on the estimate screen** |
+| C | Route-density slot suggestions | **(c)** | new deterministic engine; all inputs exist (schedule, branch GPS, cost rates) |
+| C | Frequency pre-fill 24/yr + override reason | **(b)** | setting exists (mig 060); contract form doesn't pre-fill/reason |
+| C | Quotation document, division-skinned, internal vs customer views | **(a)** | screen + PDF + skins live; body fidelity vs the brand-folder template unverified → refine |
+| C | Contract seeded from accepted quotation, frozen pricing; activation fan-out | **(a)** | mig 031 + proven fan-out |
+| D | Calendar view + drag-drop | **(c)** UI | data feeds (a) |
+| D | Night shift as schema concept | **(c)** Tier 1 | nothing exists |
+| D | Next-day approval queue (+ payment holds) | **(c)** | queue *pattern* proven ×3 (field-review, report approval, expenses) — this queue new |
+| D | Customer emails (approval, schedule change) + phone-call task | **(c)** | **zero email infrastructure repo-wide**; DOCUMENT 3 architecture filed, unbuilt |
+| E | Three stock locations | **(a)** schema | only MAIN seeded; van rows = config |
+| E | Issue/transfer flow | **(b)** | schema yes, producer/UI none |
+| E | FEFO, batch traceability, valued consumption | **(a)** | proven (mig 016–018, worker tests) |
+| E | Predictive issue from schedule+recipes | **(c)** | deterministic; inputs all exist (BOM mig 050, consumption mig 062) |
+| E | Declared stock at pre-flight + variance (non-blocking) | **(c)** | pre-flight has no quantities today |
+| F | Attendance | **(b)** | per-tech `present` exists (mig 058); team roster + auto-absent = extension |
+| F | Uniform/hygiene flags, vehicle condition, fuel **band** | **(c)** | small pre-flight fields; see fuel note §6.5 |
+| F | Job execution offline (navigate→photos→sign→complete) | **(a)** | built and device-verified 12–13 Aug |
+| F | Actual mix recording; estimated-vs-actual per job/contract | **(b)** capture / **(c)** report | est. carried on job (recipe frozen); actuals captured; comparison view new |
+| F | Pre-treatment inspection | **(b)** | post-inspection substrate (mig 059) extends |
+| F | Payment-not-received (reason, non-blocking) | **(c)** | field flow has cash-collected only |
+| G | Monitoring points / RBS (all of Part G) | **(c)** | module does not exist; generation-on-activation pattern (a); PDPL name flag → §6.5 |
+| H | Payment at point of service (cash) + receipt numbering | **(a)** | T5 + receipts module |
+| H | Field cheque/card/transfer; receipt emailed | **(b)** / **(c)** | methods exist office-side; email infra none |
+| H | Non-payment dashboard flag + next-visit hold | **(c)** | AR data exists; workflow new |
+| I | Customer service profile (one screen, everything) | **(b)** ⭐ | page exists w/ details/branches/contacts/surveys/estimates/contracts; **missing invoices/balance, receipts, visit history, reports, photos** — all data already in DB, pure joins |
+| I | Per-visit on-site representative lookup | **(b)** | service reports capture signatory; surface it |
+| I | Complaints module; health score/trend | **(c)** | only a `complaint_followup` job source exists |
+| J | Service report (2-page, inspections-driven, trends, omit-empty) | **(a)** | on-device renderer w/ trend chart + console module + approval; gaps (visit N of total, time in/out, badge numbers) = plumbing **(b)** |
+| K | Dashboard (today tiles + needs-attention) | **(a)** basic | 6 KPIs + 3 attention tiles live |
+| K | Drill-down-to-formula; richer attention set | **(b)/(c)** | overdue AR/renewals/low-stock tiles = existing data; licence expiry needs Part B first |
+| L | Research question sets, seeded ASSUMED | **(c)** content | substrate (b) — `field_definitions`, checklists, `inspection_options` all exist to receive it |
+| M | UI direction (field-first, guided, grouped nav) | **(c)** | UI layer is explicitly disposable (Two-Speed Rule); authority granted |
+
+⭐ = highest-leverage items.
+
+### 6.4 The smallest set of changes that makes it ONE system
+
+**Release 1 — "Connective tissue" (all (a)/(b) wiring; no schema change, no invariant
+anywhere near; days not weeks):**
+1. **Contracts list page + nav entry**, and make the post-activation fan-out summary
+   **link** to the generated schedule and jobs. *(Kills the worst dead-end.)*
+2. **Estimate screen: surface the engines** — suggested price at target margin and a
+   "margin at this price" input (both already computed by mig 062 functions), and
+   collapse Accept + Convert into **"Accept & create contract →"**.
+3. **Customer profile completion** — add invoices + outstanding balance, receipts,
+   job/visit history, and service reports to the existing page. All pure joins of
+   data already in the DB. *(Delivers most of Part I in one screen.)*
+4. **New customer → "Start survey →"** carry-forward button after first branch is
+   saved. *(Closes the front of the funnel.)*
+5. **Stock minimum viable:** seed Team A/B van locations (config), one
+   `transfer` domain function + a small issue screen, and an **on-hand view** (the
+   `batch_stock_on_hand` view already exists — it has never been shown).
+6. **AR row → "Record payment"** deep-link (`/receipts/new?customer=…`). One href.
+7. **Nav hygiene:** group as Sales / Operations / Finance / Admin (already close),
+   add Field review to the nav, fold the orphan master-data landing into the dashboard.
+
+**Release 2 — the four genuinely-new pillars (sequenced, each its own scope):**
+Tier 1 (schema): **night shift / operating-day** · licence expiry dates +
+`location_source` · declared-stock capture · payment-not-received event ·
+monitoring-point model (Part G schema only).
+Tier 2 (modules): **calendar + drag-drop** · **next-day approval queue** (payment
+holds ride it) · **email architecture** (DOCUMENT 3 — one outbound channel, then
+approval/change/receipt mails ride it) · predictive issue · estimated-vs-actual
+report · route-density suggestions · complaints · RBS full flow (QR, stickers,
+public page) · `field_definitions` admin UI + Part L content seeding.
+Tier 3: customer portal · health score · full UI reskin program (Part M) as its own
+track across both apps.
+
+**The one-sentence answer:** the system already runs as a pipeline in its bones —
+finish the handoffs (Release 1), then build the four pillars that genuinely don't
+exist (night shift, email, calendar, monitoring points), and wire the
+question-substrate that has been sitting unused in the database since mig 001.
+
+### 6.5 Flags and owner decisions (recorded, not decided)
+
+1. **Public QR technician name (Part G) — PDPL flag, owner must decide.** Publishing
+   an employee's full name on a physically-public sticker page is personal data under
+   UAE PDPL. Recommendation: technician **code + masked name** ("Muh*** Ali").
+   **Full name will not be implemented without explicit owner confirmation.**
+2. **Fuel banded selector (Part F) — recommendation:** keep the existing precise
+   litres/AED capture for fuel **purchases** (it feeds cost-per-km and the ledger,
+   mig 063) and add the 0/25/50/75/100% band **only as a tank-level check**. Do NOT
+   add free entry between bands — the profitability precision already comes from
+   purchases; a tank band is a consistency signal, and extra friction at 06:00 costs
+   more than the decimal is worth.
+3. **Non-blocking philosophy** (declared stock, implausible figures, non-payment) —
+   matches the platform's existing capture-and-flag design; adopted as the standard
+   for every Part E/F/H capture.
+4. **Part N owner-input ledger** → BLOCKED.md A16.
+
+### 6.6 Source document (filed verbatim)
+
+#### DOCUMENT 8 — Operational Workflow Specification / One Guided Pipeline (13 Aug 2026)
+
+> Filed exactly as received. Assessment above; tiering in §6.4.
+
+**PART A — THE GOVERNING PROBLEM.** The modules exist but they are not a flow.
+Survey, estimate, quotation, contract, schedule are all separate destinations.
+Nothing carries the user forward, so nothing knows what to ask next, so the forms
+ask too little. The fix is ONE GUIDED PIPELINE: completing a survey drops the user
+into the estimate with survey answers already populated; approving a quotation drops
+them into contract terms with frequency pre-filled; activating a contract drops them
+into scheduling with nearby-route suggestions already computed. The user should
+never have to go find the next module. Second governing constraint: THE USERS ARE
+NOT OFFICE PROFESSIONALS. Technicians may not have finished high school. Every
+screen must be operable without training: large touch targets, buttons over free
+text, pictures and colour over dense labels, one decision per screen where possible.
+This is a product requirement, not a styling preference.
+
+**PART B — CUSTOMER ACQUISITION AND REGISTRATION.** Entry points: public website
+enquiry form; "New Customer" button on any staff dashboard; existing customers by
+bulk migration (owner supplies structured data; provide a placeholder Excel template
+with exact sheet names, column headers, one example row per sheet, and a notes
+column). Registration form required fields: legal entity name (tax invoices), trade
+name, alias name (only if different — never force duplicate entry), trade licence
+number, trade licence ISSUE and EXPIRY dates (expiry feeds the document expiry
+engine and renewal reminders), TRN/VAT, customer type B2B/B2G/B2C, contact person
+(name, designation, mobile, secondary/WhatsApp, email), billing and service
+addresses (may differ). Address/location capture: a "Find on Google Maps" action —
+search the company name, paste the result, system extracts coordinates + formatted
+address (owner-verified working). Also: paste a Google Maps share link, use device
+location, or drop a pin. Every location records `location_source`
+(google_maps_search / google_maps_link / device_gps / manual_pin) so an office
+estimate is never mistaken for a doorstep capture. Site profiling questions feed the
+estimation engine directly and must be per-business-category, configurable as
+reference data, never hardcoded. Restaurant minimum: seats, kitchen area, kitchen
+staff, pantries, washing areas, storage areas, floors, total area, existing pest
+activity (type + severity), access constraints and operating hours (drives
+night-shift flagging). Other categories (villa, warehouse, office, school, labour
+camp, factory, retail, hotel, clinic) each get their own configurable set — research
+standard practice, propose starters, seed ASSUMED and editable.
+
+**PART C — SURVEY → ESTIMATE → QUOTATION → CONTRACT (ONE CONTINUOUS FLOW).**
+Estimate is computed, not typed: direct cost breakdown (material, labour including
+travel, fuel, overhead), suggested price at configurable target margin, margin at
+any typed price. ROUTE-DENSITY INTELLIGENCE (the differentiator, owner-requested
+explicitly): the estimate must consider the EXISTING schedule and surface options —
+"Team A already services this area Tuesday mornings; scheduling this customer there
+reduces allocated travel cost from AED 22 to AED 8 per visit, raising margin by 14
+points." Fuel+labour are ~77% of annual cost vs ~24% chemicals; route density is the
+profit lever. Offer alternative slots as selectable options with margin impact.
+FREQUENCY: F&B in Sharjah/Dubai defaults to 24 visits/year (municipality
+requirement) — pre-fill, show why, allow override with recorded reason. QUOTATION
+DOCUMENT: introduction; scope of work in prose; line table (S/N, description, qty,
+rate, amount); sub-total, VAT, grand total, amount in words; terms; signatories.
+Division-skinned (pest control / cleaning crew / facilities management logos, labels,
+accents; legal entity + trade licence in footer; templates in the brand folder are
+the specification). Two views of one record: internal (cost + margin) and
+customer-facing (revenue only — the customer must never see margin). CONTRACT:
+accepted quotation seeds the contract with quoted pricing frozen; captures billing
+frequency, payment terms, guarantee months, start/end dates, service frequency.
+Activation fans out to schedule generation (already works).
+
+**PART D — SCHEDULING, SHIFTS AND THE OPERATIONS COCKPIT.** CALENDAR VIEW (missing,
+required): both Supreme Admin console and Operations dashboard need a calendar of
+scheduled work; drag-and-drop reschedule; filter by team, technician, division,
+emirate, shift. NIGHT SHIFT (first-class, currently absent): restaurants are mostly
+serviced at night (spray); gel typically daytime. Support day and night shifts as
+distinct shifts with their own windows, assignments, routes. Handle work crossing
+midnight — a 02:00 job belongs to which operating day? Affects schedule day
+assignment, attendance, route windows, and the today's-jobs query; schema-level, not
+cosmetic. Auto-flag F&B as night-shift candidates, pre-fill, editable per customer.
+NEXT-DAY APPROVAL WORKFLOW: at day-complete or a configured cutoff, operations
+reviews tomorrow's schedule — drag-and-drop adjust, then approve; on approval an
+automatic email confirms the visit to each customer; the queue also surfaces
+exceptions requiring a decision, including payment holds (Part H). SCHEDULE CHANGE
+NOTIFICATION: any change to an approved schedule triggers a customer email AND an
+internal task to phone the customer, per the annual schedule document's clause.
+
+**PART E — INVENTORY: THREE LOCATIONS, ISSUE AND RECONCILE.** Locations: main
+warehouse, Team A van, Team B van — extensible by configuration. ISSUE FLOW: stock
+transfers warehouse → van; the van is the operational inventory consumption deducts
+from; every movement is an append-only stock_movement carrying batch identity (FEFO
+and traceability hold). PREDICTIVE ISSUE: from the day's/week's scheduled jobs and
+their recipes, estimate required quantities ("Team A has 10 jobs tomorrow — ~1.8L
+Blitz, 4 gel tubes, 20 glue boards") and issue accordingly. DECLARED STOCK AT
+PRE-FLIGHT (control through knowledge, not restriction): technician declares what
+they physically hold — chemical name, bottles, litres per bottle, gel tubes, glue
+boards, equipment. System compares declared vs issued and records the variance; it
+does NOT block or refuse the job. Visibility, not enforcement; persistent variance
+is a management conversation. Human-entered quantities are approximate — never crash
+or reject an implausible figure; record and flag it.
+
+**PART F — TECHNICIAN DAILY WORKFLOW.** PRE-FLIGHT (per team, per shift, per day):
+ATTENDANCE — searchable technician list with checkboxes; anyone unchecked is
+automatically absent. UNIFORM/HYGIENE — per technician pass/fail with per-person
+flag + note (uniform, ID card, grooming); flags feed HR reporting. VEHICLE —
+selection, odometer, condition (good / needs cleaning / needs maintenance), notes.
+FUEL LEVEL — banded selector 0/25/50/75/100%, bands configurable; owner wants
+precision without technician friction; propose whether intermediate free entry is
+worth it. EQUIPMENT AND CHEMICAL DECLARATION per Part E. READY CONFIRMATION — only
+then do today's jobs become available. JOB EXECUTION: navigate (Maps deep-link) →
+arrive → PRE-TREATMENT INSPECTION → treatment → chemical usage recording (technician
+states actual mixes — "50ml in 10 litres", two mixes recorded as two; engine carries
+the survey estimate forward so estimated vs actual compare per job) → before/after
+photos → POST-TREATMENT INSPECTION (button-driven: area, issue type, hygiene score,
+structural score, infestation level, species) → RODENT BAIT STATIONS when present
+(Part G) → SIGNATURES (customer representative AND technician/supervisor) → cash
+collection or payment recording → expense entry with receipt photo → complete.
+Everything works with zero connectivity for a full working day. ESTIMATED vs ACTUAL:
+estimate carried the expected quantity; technician recorded actual; pre-flight
+recorded declared stock — report estimated vs actual direct cost per job, per
+contract, per customer. That comparison is the point of the whole capture chain.
+
+**PART G — RODENT BAIT STATIONS (RBS) AND MONITORING POINTS.** Build a GENERIC
+monitoring point model — RBS first; insect light traps, glue boards, termite
+stations, pheromone traps must work identically later with no schema change. Hangs
+off customer_branches. NO "Service Account" layer, NO second customer numbering.
+GENERATION: when a contract with physical monitoring points in scope (e.g. 40 RBS)
+is approved, generate them on contract.activated (same fan-out that creates
+schedules/jobs). IDs permanent, never recycled (retire RBS-0023; never reassign).
+IDENTITY: internal UUID + random public token for the QR URL — never a sequential
+public ID (nobody browses /0023 → /0024). QR STICKERS: generic asset sticker
+generator (asset_type, logo, label, public ID): division logo top, QR centre, public
+ID below, toll-free foot; bulk generate a site, regenerate one, printable sheet;
+recommend physical size and weather/UV stock. TECHNICIAN FLOW (fast): a "Clean &
+Refill Bait Stations" button when the site has points → lists every station → two or
+three photos as evidence → evidence unlocks "Select All — Cleaned & Refilled" → one
+submission creates one inspection record per station linked to the visit. QR
+scanning is OPTIONAL (verify/correct an individual station). PUBLIC QR PAGE shows:
+customer name, customer ACCOUNT NUMBER (CUST-XXXX — never a phone number), station
+ID, status, last inspection date + action, next scheduled service, technician full
+name and code. [OWNER NOTE + ASSESSOR FLAG: full name on a physically-public page is
+personal data under UAE PDPL — recommendation is technician ID + masked name; owner
+decides; full names not implemented without explicit confirmation.] NEVER EXPOSE:
+customer phone/email, internal DB IDs, notes, cost, pricing, photographs, anything
+financial. LIFECYCLE: planned → installed → active → damaged/missing/relocated →
+replaced → retired; history never overwritten; replacement links to the retired
+station. RECONCILIATION: contract says 40, 37 active → flag the gap. INVENTORY: bait
+consumed per station feeds stock_movements and the costing engine.
+
+**PART H — PAYMENT, INVOICING AND COLLECTION.** Payment terms captured at contract;
+small restaurants norm is cash on completion; category engine pre-fills sensible
+defaults. PAYMENT AT POINT OF SERVICE: technician records cash, cheque, card, bank
+transfer; a numbered receipt is issued on the spot and emailed to the customer's
+registered address. NON-PAYMENT (the real-world case): a pays-on-completion customer
+sometimes doesn't pay. Technician records "payment not received" + reason — must NOT
+block completion. Then: payment dashboard flags it ("pays on completion per contract
+but did not pay on [date]"); office phones and records the outcome; a later payment
+records against the same invoice; if still outstanding, the customer's NEXT
+scheduled visit surfaces a payment hold in the operations approval queue ("Payment
+outstanding — approve visit anyway, or hold?"). The hold is a prompt for a human
+decision, never an automatic refusal to service. INVOICING: invoice number on issue;
+receipt number against payment; both emailed to the customer representative. All of
+this exists in the back office — the gap is exposing it in the field flow and app.
+
+**PART I — CUSTOMER SERVICE PROFILE.** One screen showing everything: identity,
+documents, trade licence with expiry status; contracts, quotations, estimates,
+surveys; full service history — every visit with the on-site representative recorded
+that day; all service reports and photographs; monitoring points and their
+histories; invoices, receipts, outstanding balance, ageing; complaints and
+recommendations with status; chemical usage history; customer health score and pest
+trend; complete chronological timeline. Owner requirement: look up who the
+customer's representative was on a specific service day, years later — every visit
+record carries it. Later a customer-facing authenticated portal — not now.
+
+**PART J — SERVICE REPORT.** Generated from pre- and post-treatment inspection
+data; two pages maximum. PAGE 1 — identity + today's service: full customer identity
+(legal name, trade name, alias, account number, trade licence, branch, group, full
+address, TRN, contacts, on-site representative), job reference, contract number,
+visit N of total, service date, time in/out, service team with badge numbers,
+premises type, treatment areas, method, chemicals with batch and dosage, findings.
+PAGE 2 — trends, recommendations, signatures: bar charts over the last 3–4 visits
+(infestation, hygiene, structural), most frequent issue, direction indicator
+(improving/stable/deteriorating), findings with photo references, recommendations
+carried forward with status, regulatory notes, guarantee clause, post-treatment
+instructions, signatures and stamp or QR. Charts render client-side, offline, zero
+inference cost — 3,000 reports/year must cost nothing. Visits 1–2 show "Baseline
+assessment — trend data available from visit 3", never an empty chart. Empty fields
+are omitted, never printed blank. No AI anywhere; recommendation sentences assembled
+from structured input by template.
+
+**PART K — DASHBOARD.** Every metric drills down to raw data — no number without a
+path to its inputs and formula. Today: jobs scheduled/completed/pending, revenue,
+cash collected, payments outstanding, expenses, fuel, approximate profitability,
+technicians on duty, vehicles active, live job status. Attention required: overdue
+payments, expiring trade licences, expiring municipality licences, low stock,
+contracts due for renewal, repeat complaints, schedule exceptions awaiting approval,
+unusual estimated-vs-actual variance. Research and propose what else belongs — all
+deterministic, no AI in the numbers.
+
+**PART L — RESEARCH TASK.** Research current pest-control / facilities-management
+software practice and propose complete question sets for: customer registration per
+business category; site survey per service type (pest, cleaning, AC duct, water
+tank, FM); pre-treatment inspection; post-treatment inspection; pre-flight
+checklist; complaint intake. Every set is reference data, configurable from admin,
+seeded ASSUMED; ground proposals in real practice, cite sources; where UAE
+municipality requirements dictate a field, say so explicitly.
+
+**PART M — UI DIRECTION.** Current UI functional and joyless. Users include
+technicians who may not have completed high school, working one-handed, with gloves,
+in poor light. Requirements: large touch targets, generous spacing (field app);
+buttons/chips/pickers over free text; icons and colour carrying meaning; one primary
+decision per screen where the flow allows; progress indication in multi-step flows;
+immediate visual confirmation; office console denser, field app not; navigation
+grouped Sales / Operations / Finance / Admin; brand Mumtaz red #A31E22, navy, gold,
+division skins per Part C. Use the shadcn and frontend-design skills for
+implementation but adopt no catalogue style — a professional instrument built for
+this business.
+
+**PART N — WHAT THE OWNER OWES.** (→ BLOCKED.md A16): Pro Surfactant price
+(ASSUMED 0.05/ml); target margin (ASSUMED 35%); confirmation of ASSUMED reference
+data (recipes, GL codes, pricing models, service categories, PPE/equipment,
+inspection options, clock-drift thresholds); the ad-hoc 250 vs AMC 100 decision;
+structured migration data (owner prepares; template to be provided); the public QR
+technician-name decision (Part G).
+
+---
+
 *End of filing. Nothing above is authorised for build until a sprint in `EXECUTION.md`
 picks it up.*
