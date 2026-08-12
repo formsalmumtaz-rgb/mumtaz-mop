@@ -84,17 +84,22 @@ manual reversing fuel entry. Acceptable; noted.
 **Do:** confirm/replace per your operation; the form is driven entirely off these.
 **Blocks:** nothing — the form renders whatever is configured.
 
-## 🟡 A9 — Field expense category + receipt-photo link (T5, refinements)
-**What:** (a) the field expense form doesn't pick an expense category — the claim
-posts with `category_id = null` and the "what for" text; (b) the receipt photo is
-attached via the job Photos, not a dedicated expense-receipt link.
-**Why:** kept the field flow minimal; categories aren't synced to the device yet
-and receipt-media needs a small join table.
-**Do:** if you want field expenses categorised, I'll sync `expense_categories`
-to the app and add a picker; and add an `expense_receipts` link if the receipt
-photo must attach to the specific claim.
-**Blocks:** nothing — cash posts a receipt, expense posts a submitted claim
-(visible in Expenses to approve on the dashboard).
+## 🟠 A9 — Field expense category + receipt-photo link (T5) — PARTIAL (schema done, UI remains)
+**Done this session:**
+- (b) receipt link — **`expense_receipts` table added (mig 064)** linking an expense claim
+  to its receipt photo (`job_photos`), RLS-isolated. The durable schema is ready.
+- (a) category — the **backend already records `category_id`**: `expense.recorded` carries
+  it and `services/worker/src/fieldfinance.ts` inserts it into `expenses.category_id`. No
+  backend gap; the field claim just doesn't *send* a category yet.
+**Remains (field-app UI — disposable, device-verified, per Two-Speed Rule):**
+1. sync `expense_categories` to the device and add a category picker to the expense form
+   (so it sends `category_id`);
+2. let the technician tag the receipt photo to the claim (write an `expense_receipts`
+   row on sync).
+**Do:** confirm you want the field-app picker + receipt-tagging built; it's a field-PWA
+change I can only *build*, not verify — you verify on a phone.
+**Blocks:** nothing — cash posts a receipt, expense posts a submitted claim; categorising
+and photo-linking are refinements.
 
 ## 🟠 A10 — On-device report: brandChrome + division logo (T6, PARTIAL — needs device verify)
 **What:** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
