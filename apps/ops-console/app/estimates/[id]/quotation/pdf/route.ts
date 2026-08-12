@@ -6,7 +6,7 @@ import { authEnforced } from "@/lib/auth-flags";
 import { getTenantId } from "@/lib/tenant";
 import { getQuotation } from "@/lib/domain/estimation";
 import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
-import { renderQuotationPdf, pngSize, type Asset } from "@/lib/documents/quotationPdf";
+import { renderQuotationPdf, pngSize, type Asset } from "@mop/documents";
 
 export const dynamic = "force-dynamic";
 
