@@ -55,11 +55,21 @@ export interface MetaItem {
   value: unknown;
 }
 
+// Start-of-shift pre-flight (T3), queued offline; one per day, keyed by date.
+export interface PreflightItem {
+  check_date: string; // yyyy-mm-dd (key)
+  payload: Record<string, unknown>;
+  device_time: string;
+  synced: 0 | 1;
+  created_at: string;
+}
+
 class FieldDB extends Dexie {
   jobs!: Table<LocalJob, string>;
   outbox!: Table<OutboxItem, string>;
   media!: Table<MediaItem, string>;
   meta!: Table<MetaItem, string>;
+  preflight!: Table<PreflightItem, string>;
   constructor() {
     super("mop-field");
     this.version(1).stores({
@@ -75,6 +85,7 @@ class FieldDB extends Dexie {
           if (m.synced === undefined) m.synced = 0;
         });
       });
+    this.version(3).stores({ preflight: "check_date, synced" });
   }
 }
 
@@ -185,4 +196,30 @@ export async function enqueue(event_type: string, job_id: string, payload: unkno
   };
   await db.outbox.add(item);
   return item.client_uuid;
+}
+
+// Save today's pre-flight locally (offline-first) and try to push it. Keyed by
+// date so re-saving the same day overwrites (correctable). Server upserts.
+export async function savePreflightLocal(payload: Record<string, unknown>): Promise<void> {
+  const check_date = new Date().toISOString().slice(0, 10);
+  await db.preflight.put({
+    check_date, payload: { ...payload, check_date }, device_time: new Date().toISOString(), synced: 0, created_at: new Date().toISOString(),
+  });
+}
+
+export async function syncPreflight(baseUrl: string): Promise<{ uploaded: number }> {
+  const pending = await db.preflight.where("synced").equals(0).toArray();
+  let uploaded = 0;
+  for (const p of pending) {
+    const res = await authedFetch(`${baseUrl}/api/field/preflight`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...p.payload, device_time: p.device_time }),
+    });
+    if (res.ok) { await db.preflight.update(p.check_date, { synced: 1 }); uploaded++; }
+  }
+  return { uploaded };
+}
+
+export async function getLocalPreflight(): Promise<PreflightItem | undefined> {
+  return db.preflight.get(new Date().toISOString().slice(0, 10));
 }

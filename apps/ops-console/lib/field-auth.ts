@@ -70,6 +70,17 @@ export async function resolveFieldRequest(req: Request): Promise<{ session: AppS
   return s ? { session: s, revoked: false } : null;
 }
 
+// The technician the authenticated user operates as (technicians.user_id, mig 051),
+// or null. Used by per-technician endpoints (pre-flight, etc.).
+export async function technicianForUser(session: AppSession): Promise<{ id: string; service_line_id: string | null } | null> {
+  const { rows } = await scopedRead(
+    session.tenantId,
+    `select id, service_line_id from technicians where tenant_id = $1 and user_id = $2 limit 1`,
+    [session.tenantId, session.userId],
+  );
+  return rows[0] ? { id: rows[0].id as string, service_line_id: rows[0].service_line_id as string | null } : null;
+}
+
 // Of the given job ids, the subset assigned to a technician the authenticated user
 // operates as. Used to scope writes (upload/media) to the caller's own jobs.
 // Empty set when the user has no linked technician — fail closed.

@@ -60,9 +60,10 @@ export async function GET(req: Request) {
             -- manual chemical entry (T4).
             case when rv.id is not null then
               jsonb_build_object(
-                'name', tr.name, 'code', tr.code,
-                'dose_rate', rv.dose_rate, 'dilution', rv.dilution_ratio,
-                'coverage_per_unit', rv.coverage_per_unit,
+                'name', tr.name,
+                'dose_rate', rv.dose_rate, 'dose_unit', du.code,
+                'dilution_ratio', rv.dilution_ratio,
+                'coverage_per_unit', rv.coverage_per_unit, 'coverage_unit', cu.code,
                 'notes', rv.notes, 'is_assumed', rv.is_assumed
               ) end as recipe
        from jobs j
@@ -72,6 +73,8 @@ export async function GET(req: Request) {
        left join service_types st on st.id = j.service_type_id
        left join treatment_recipe_versions rv on rv.id = j.recipe_version_id
        left join treatment_recipes tr on tr.id = rv.recipe_id
+       left join units du on du.id = rv.dose_unit_id
+       left join units cu on cu.id = rv.coverage_unit_id
       where j.tenant_id = $1
         and j.status in ('scheduled','assigned','en_route','arrived','in_progress')
         and exists (
