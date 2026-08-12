@@ -1,4 +1,5 @@
 import Dexie, { type Table } from "dexie";
+import { authedFetch } from "./auth";
 
 // Offline data store (Constitution Art. III P1). All reads/writes are local;
 // the outbox carries client-generated UUIDs (Art. VII §4). Nothing blocks on
@@ -87,7 +88,7 @@ export async function pendingCount(): Promise<number> {
 // Pull today's work from the sync endpoint (online only). Never overwrites a job
 // the technician has already started/completed offline.
 export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
-  const res = await fetch(`${baseUrl}/api/field/sync`);
+  const res = await authedFetch(`${baseUrl}/api/field/sync`);
   if (!res.ok) throw new Error(`sync failed: ${res.status}`);
   const data = (await res.json()) as { jobs: LocalJob[] };
   await db.transaction("rw", db.jobs, db.meta, async () => {
@@ -107,7 +108,7 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
 export async function syncUp(baseUrl: string): Promise<{ uploaded: number; remaining: number }> {
   const pending = await db.outbox.where("synced").equals(0).toArray();
   if (pending.length === 0) return { uploaded: 0, remaining: 0 };
-  const res = await fetch(`${baseUrl}/api/field/upload`, {
+  const res = await authedFetch(`${baseUrl}/api/field/upload`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -153,7 +154,7 @@ export async function syncMedia(baseUrl: string): Promise<{ uploaded: number }> 
       data_base64: await blobToBase64(m.blob),
     })),
   );
-  const res = await fetch(`${baseUrl}/api/field/media`, {
+  const res = await authedFetch(`${baseUrl}/api/field/media`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ media }),
   });
   if (!res.ok) throw new Error(`media upload failed: ${res.status}`);
