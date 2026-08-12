@@ -52,15 +52,23 @@ export default async function ArPage() {
                 <th className="px-3 py-2 font-medium">Customer</th>
                 {AGING_BUCKETS.map((b) => <th key={b} className="px-3 py-2 font-medium text-right">{BUCKET_LABEL[b]}</th>)}
                 <th className="px-3 py-2 font-medium text-right">Total</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100">
-              {byCustomer.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-500">No outstanding balances.</td></tr>}
+              {byCustomer.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-500">No outstanding balances.</td></tr>}
               {byCustomer.map((c) => (
                 <tr key={c.customer_id}>
                   <td className="px-3 py-2"><Link href={`/customers/${c.customer_id}`} className="text-brand underline">{c.customer ?? "—"}</Link></td>
                   {AGING_BUCKETS.map((b) => <td key={b} className={`px-3 py-2 text-right ${b !== "current" && c.buckets[b] > 0 ? "text-amber-700" : "text-neutral-600"}`}>{c.buckets[b] > 0 ? aed(c.buckets[b]) : "—"}</td>)}
                   <td className="px-3 py-2 text-right font-medium">{aed(c.total)}</td>
+                  {/* Release 1 item 6 — collecting used to mean /receipts and re-picking the customer */}
+                  <td className="px-3 py-2 text-right">
+                    <Link href={`/receipts/new?customer=${c.customer_id}`}
+                          className="whitespace-nowrap rounded bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700">
+                      Record payment
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
