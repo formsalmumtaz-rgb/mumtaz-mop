@@ -1,14 +1,18 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+// Only same-origin absolute paths are honoured (open-redirect guard): "/foo" yes,
+// "//host" or "https://…" no.
+function safeNext(raw: string | null): string {
+  return raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/";
+}
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const router = useRouter();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -16,13 +20,17 @@ export function LoginForm() {
     setError(null);
     const supabase = createSupabaseBrowserClient();
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
     if (error) {
+      setBusy(false);
       setError(error.message);
       return;
     }
-    router.push("/");
-    router.refresh();
+    // Full-page navigation (not router.push) so the freshly-set Supabase session
+    // cookies are guaranteed to be sent on the next request — the middleware then
+    // sees the session instead of bouncing back to /login. A client-side router
+    // navigation can race the cookie write. Honour ?next= from the auth gate.
+    const next = safeNext(new URLSearchParams(window.location.search).get("next"));
+    window.location.assign(next);
   }
 
   return (
