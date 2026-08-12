@@ -17,9 +17,10 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const lp = parseListParams(sp);
   const status = sp.status && (JOB_STATUSES as readonly string[]).includes(sp.status) ? sp.status : undefined;
+  const contractId = (sp.contract ?? "").trim() || undefined; // deep-link from a contract's fan-out summary
   const tenantId = await getTenantId();
   const [{ rows: jobs, total }, counts] = await Promise.all([
-    listJobsPaged(tenantId, { q: lp.q, status, from: sp.from, to: sp.to, limit: lp.pageSize, offset: lp.offset }),
+    listJobsPaged(tenantId, { q: lp.q, status, from: sp.from, to: sp.to, contractId, limit: lp.pageSize, offset: lp.offset }),
     getJobStatusCounts(tenantId),
   ]);
   const totalAll = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -40,6 +41,14 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         description="Every scheduled, in-progress, and completed job across all divisions. Filter by status or search by customer."
         actions={<ButtonLink href="/jobs/new" variant="primary">+ New job</ButtonLink>}
       />
+
+      {contractId && (
+        <div className="flex items-center gap-2 rounded border border-brand/30 bg-brand/5 px-3 py-2 text-sm text-brand">
+          Showing jobs for one contract.
+          <Link href={`/contracts/${contractId}`} className="underline">View contract</Link>
+          <Link href="/jobs" className="ml-auto text-neutral-500 underline">Clear filter</Link>
+        </div>
+      )}
 
       {/* Status filter chips */}
       <div className="flex flex-wrap gap-2">

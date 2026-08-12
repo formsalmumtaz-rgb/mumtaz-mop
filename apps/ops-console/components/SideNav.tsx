@@ -37,6 +37,7 @@ const GROUPS: Group[] = [
     { href: "/customers", label: "Customers" },
     { href: "/surveys", label: "Surveys" },
     { href: "/estimates", label: "Estimates" },
+    { href: "/contracts", label: "Contracts" },
     { href: "/pipeline", label: "Pipeline" },
   ] },
   { label: "Operations", items: [
@@ -44,6 +45,7 @@ const GROUPS: Group[] = [
     { href: "/jobs", label: "Jobs" },
     { href: "/jobs/new", label: "New job" },
     { href: "/service-reports", label: "Service reports" },
+    { href: "/field-review", label: "Field review" },
     { href: "/manpower", label: "Manpower" },
     { href: "/technicians", label: "Technicians" },
     { href: "/teams", label: "Teams" },

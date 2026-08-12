@@ -147,11 +147,17 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
         </table>
       </div>
 
-      {/* Fan-out summary */}
+      {/* Fan-out summary — links into the generated work, not just a count
+          (Release 1 item 1: this used to be a text-only dead-end). */}
       {isActive && sum.scheduleCount > 0 ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Auto-generated on activation: <b>{sum.scheduleCount}</b> scheduled visits
-          {sum.firstDate && <> ({sum.firstDate} → {sum.lastDate})</>} · <b>{sum.jobsCount}</b> jobs · <b>{sum.remindersCount}</b> renewal reminder.
+          Auto-generated on activation:{" "}
+          <Link href={`/schedule?view=week${sum.firstDate ? `&from=${sum.firstDate}` : ""}`} className="font-semibold underline">
+            {sum.scheduleCount} scheduled visits
+          </Link>
+          {sum.firstDate && <> ({sum.firstDate} → {sum.lastDate})</>} ·{" "}
+          <Link href={`/jobs?contract=${ct.id}`} className="font-semibold underline">{sum.jobsCount} jobs</Link>
+          {" "}· <b>{sum.remindersCount}</b> renewal reminder.
         </div>
       ) : (
         <p className="text-sm text-neutral-500">

@@ -48,6 +48,33 @@ export async function listContracts(tenantId: string, customerId: string): Promi
   return rows as Contract[];
 }
 
+// Tenant-wide contract list (Release 1 item 1 — contracts previously had no list
+// page and were unreachable except via a customer, an estimate, or billing).
+export interface AllContractRow extends Contract {
+  customer_id: string;
+  customer_name: string | null;
+  jobs_count: number;
+}
+
+export async function listAllContracts(tenantId: string): Promise<AllContractRow[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select ct.id, ct.contract_number, ct.lifecycle_status, ct.contract_value::text as contract_value,
+            ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
+            ct.frequency_id, f.name as frequency_name,
+            ct.pricing_model_id, p.name as pricing_model_name,
+            ct.customer_id, cu.trade_name as customer_name,
+            (select count(*)::int from jobs j where j.contract_id = ct.id) as jobs_count
+       from contracts ct
+       left join customers cu on cu.id = ct.customer_id
+       left join frequencies f on f.id = ct.frequency_id
+       left join pricing_models p on p.id = ct.pricing_model_id
+      where ct.tenant_id = $1 and ct.archived_at is null
+      order by (ct.lifecycle_status = 'active') desc, ct.end_date nulls last, ct.created_at desc`,
+    [tenantId],
+  );
+  return rows as AllContractRow[];
+}
+
 export interface ContractLine {
   id: string;
   service_type_name: string | null;
