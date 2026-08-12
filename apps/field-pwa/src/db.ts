@@ -228,3 +228,15 @@ export async function syncPreflight(baseUrl: string): Promise<{ uploaded: number
 export async function getLocalPreflight(): Promise<PreflightItem | undefined> {
   return db.preflight.get(new Date().toISOString().slice(0, 10));
 }
+
+// Honest sync status (T6): everything still waiting to reach the server, plus the
+// last successful sync. Drives the status indicator; nothing is hidden.
+export async function syncStatus(): Promise<{ events: number; media: number; preflight: number; total: number; lastSync?: string }> {
+  const [events, media, preflight, last] = await Promise.all([
+    db.outbox.where("synced").equals(0).count(),
+    db.media.where("synced").equals(0).count(),
+    db.preflight.where("synced").equals(0).count(),
+    db.meta.get("lastSync"),
+  ]);
+  return { events, media, preflight, total: events + media + preflight, lastSync: last?.value as string | undefined };
+}
