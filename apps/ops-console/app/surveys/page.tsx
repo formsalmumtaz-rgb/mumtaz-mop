@@ -12,7 +12,11 @@ const STATUS_CLASS: Record<string, string> = {
   draft: "bg-neutral-100 text-neutral-700", completed: "bg-emerald-100 text-emerald-800", cancelled: "bg-red-100 text-red-700",
 };
 
-export default async function SurveysPage() {
+export default async function SurveysPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
+  // Release 1 item 4 — "Start survey →" from a customer profile preselects the
+  // customer and opens the form, so the funnel carries forward.
+  const preselect = (sp.customer ?? "").trim() || undefined;
   const tenantId = await getTenantId();
   const [surveys, customers, technicians] = await Promise.all([
     listSurveys(tenantId), listCustomers(tenantId), listTechnicians(tenantId),
@@ -25,11 +29,11 @@ export default async function SurveysPage() {
         <p className="mt-1 text-sm text-neutral-600">Site visit → measurements → profit preview → seed an estimate. Prices with the same engine as estimates (deterministic).</p>
       </div>
 
-      <details className="rounded-lg border border-neutral-200 bg-white p-4" open={surveys.length === 0}>
+      <details className="rounded-lg border border-neutral-200 bg-white p-4" open={surveys.length === 0 || !!preselect}>
         <summary className="cursor-pointer font-medium">New survey</summary>
         <form action={createSurveyAction} className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm"><span className="text-neutral-600">Customer</span>
-            <select name="customer_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+            <select name="customer_id" defaultValue={preselect ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
               <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.trade_name ?? c.code}</option>)}
             </select></label>
           <label className="text-sm"><span className="text-neutral-600">Surveyor</span>
