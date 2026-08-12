@@ -155,6 +155,22 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   };
   const mapsUrl = job.lat != null && job.lng != null
     ? `https://www.google.com/maps/dir/?api=1&destination=${job.lat},${job.lng}` : null;
+  // Cash collection + expense entry (T5). Queued offline as events; the server
+  // posts a cash receipt / a submitted expense claim.
+  const [cashAmt, setCashAmt] = useState("");
+  const [expAmt, setExpAmt] = useState("");
+  const [expDesc, setExpDesc] = useState("");
+  const [moneyMsg, setMoneyMsg] = useState("");
+  const collectCash = async () => {
+    if (!cashAmt || Number(cashAmt) <= 0) return;
+    await enqueue("cash.collected", job.id, { job_id: job.id, amount: Number(cashAmt) });
+    setCashAmt(""); setMoneyMsg("Cash queued.");
+  };
+  const logExpense = async () => {
+    if (!expAmt || Number(expAmt) <= 0) return;
+    await enqueue("expense.recorded", job.id, { job_id: job.id, client_uuid: uuid(), amount: Number(expAmt), description: expDesc || null });
+    setExpAmt(""); setExpDesc(""); setMoneyMsg("Expense queued (needs approval).");
+  };
 
   const start = async () => {
     const now = new Date().toISOString();
@@ -280,6 +296,23 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
               </ul>
             )}
             {options.length === 0 && <p className="muted">Inspection options load on next online sync.</p>}
+          </div>
+
+          <div className="card">
+            <h3>Cash &amp; expenses</h3>
+            <div className="row" style={{ gap: ".5rem", alignItems: "flex-end" }}>
+              <label className="muted" style={{ flex: 1 }}>Cash collected (AED)
+                <input type="number" inputMode="decimal" value={cashAmt} onChange={(e) => setCashAmt(e.target.value)} /></label>
+              <button className="secondary" style={{ width: "auto" }} onClick={collectCash} disabled={!cashAmt}>Collect</button>
+            </div>
+            <div className="row" style={{ gap: ".5rem", alignItems: "flex-end", marginTop: ".5rem" }}>
+              <label className="muted" style={{ flex: 1 }}>Expense (AED)
+                <input type="number" inputMode="decimal" value={expAmt} onChange={(e) => setExpAmt(e.target.value)} /></label>
+              <label className="muted" style={{ flex: 2 }}>What for
+                <input value={expDesc} onChange={(e) => setExpDesc(e.target.value)} placeholder="e.g. fuel" /></label>
+              <button className="secondary" style={{ width: "auto" }} onClick={logExpense} disabled={!expAmt}>Log</button>
+            </div>
+            <p className="muted" style={{ fontSize: ".8rem" }}>Attach a receipt via Photos above. {moneyMsg}</p>
           </div>
 
           <div className="card">
