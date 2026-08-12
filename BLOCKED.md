@@ -40,6 +40,20 @@ isn't configured" and cannot authenticate. They are the public URL + anon key
 **Do:** set both in the field-pwa build environment (Vercel project / `.env`).
 **Blocks:** the technician can't sign in until set — so the whole app is gated.
 
+## 🟡 A5 — Treatment recipes are ASSUMED starter values (T2)
+**What:** the dosing/dilution/coverage on the two seeded pest-control recipes
+(mig 057: "Residual Spray — General" 50 ml/10 L, ~200 m²; "Gel Bait — General"
+~9 g/100 m²).
+**Why:** the field app needs a treatment reference offline; real dosing is your
+domain knowledge (and firms up in the costing phase).
+**Do:** confirm/replace the dose, dilution and coverage per recipe. All rows are
+`is_assumed=true` and editable. NOTE: a rich recipe editor UI isn't built yet —
+today they're edited via SQL/settings; a recipe admin screen is a later increment
+(logged so it isn't forgotten). Also: jobs only carry a recipe when the scheduler
+attaches one (`jobs.recipe_version_id`); un-attached jobs sync `recipe: null` and
+the field app allows manual chemical entry.
+**Blocks:** nothing — sync returns the recipe when present, null otherwise.
+
 ## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
 **What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
 **Why:** §11.5 wants the device to validate the access token's SIGNATURE offline

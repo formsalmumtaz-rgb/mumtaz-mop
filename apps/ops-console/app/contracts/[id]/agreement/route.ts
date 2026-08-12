@@ -7,7 +7,7 @@ import { getTenantId } from "@/lib/tenant";
 import { scopedRead } from "@/lib/rls";
 import { getContract } from "@/lib/domain/contracts";
 import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
-import { pngSize } from "@/lib/documents/brandChrome";
+import { pngSize } from "@mop/documents";
 import { buildAgreementDocx, type DocxImage } from "@/lib/documents/agreementDocx";
 
 export const dynamic = "force-dynamic";

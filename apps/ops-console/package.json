@@ -23,7 +23,8 @@
     "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "docx": "^9.0.0"
+    "docx": "^9.0.0",
+    "@mop/documents": "workspace:*"
   },
   "devDependencies": {
     "@types/google.maps": "^3.58.1",

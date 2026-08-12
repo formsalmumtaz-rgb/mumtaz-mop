@@ -6,7 +6,7 @@ import { authEnforced } from "@/lib/auth-flags";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceReport } from "@/lib/domain/servicereports";
 import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
-import { renderServiceReportPdf, pngSize, type Asset } from "@/lib/documents/serviceReportPdf";
+import { renderServiceReportPdf, pngSize, type Asset } from "@mop/documents";
 
 export const dynamic = "force-dynamic";
 

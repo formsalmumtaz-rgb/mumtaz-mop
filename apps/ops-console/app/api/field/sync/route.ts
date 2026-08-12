@@ -54,12 +54,24 @@ export async function GET(req: Request) {
             b.access_notes,
             (select string_agg(coalesce(t.full_name, t.code), ', ')
                from job_assignments ja join technicians t on t.id = ja.technician_id
-              where ja.job_id = j.id) as assigned_technicians
+              where ja.job_id = j.id) as assigned_technicians,
+            -- Frozen treatment recipe on the job (jobs.recipe_version_id, mig 012).
+            -- Null when the job has no recipe attached; the field app then allows
+            -- manual chemical entry (T4).
+            case when rv.id is not null then
+              jsonb_build_object(
+                'name', tr.name, 'code', tr.code,
+                'dose_rate', rv.dose_rate, 'dilution', rv.dilution_ratio,
+                'coverage_per_unit', rv.coverage_per_unit,
+                'notes', rv.notes, 'is_assumed', rv.is_assumed
+              ) end as recipe
        from jobs j
        join customers c on c.id = j.customer_id
        left join customer_branches b on b.id = j.branch_id
        left join service_lines sl on sl.id = j.service_line_id
        left join service_types st on st.id = j.service_type_id
+       left join treatment_recipe_versions rv on rv.id = j.recipe_version_id
+       left join treatment_recipes tr on tr.id = rv.recipe_id
       where j.tenant_id = $1
         and j.status in ('scheduled','assigned','en_route','arrived','in_progress')
         and exists (
@@ -71,8 +83,6 @@ export async function GET(req: Request) {
       limit 500`,
     [session.tenantId, session.userId],
   );
-  // recipe: null until treatment recipes are seeded; the frozen snapshot lives on
-  // the job and will be surfaced here once recipes exist.
-  const jobs = rows.map((r) => ({ ...r, recipe: null }));
-  return NextResponse.json({ jobs }, { headers: cors });
+  // recipe is the frozen treatment recipe on the job (or null) — built in SQL above.
+  return NextResponse.json({ jobs: rows }, { headers: cors });
 }
