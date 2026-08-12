@@ -92,6 +92,26 @@ photo must attach to the specific claim.
 **Blocks:** nothing — cash posts a receipt, expense posts a submitted claim
 (visible in Expenses to approve on the dashboard).
 
+## 🟠 A10 — On-device report: brandChrome + division logo (T6, PARTIAL — needs device verify)
+**What:** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
+still uses its own hardcoded pest-control identity + red/gold accents
+(`model.ts` `COMPANY`, `render.ts` `MAROON`/`GOLD`), not `@mop/documents`
+brandChrome or the per-division logo/accent from reference data.
+**Why not done autonomously:** that renderer is ~660 lines and was verified on a
+real phone in K3 (airplane-mode PDF rendering). Rewiring its accent/logo/footer
+to brandChrome + syncing per-division logo images for offline use is a change I
+**cannot re-verify without a device**, and shipping a blind rewrite of a
+device-verified artifact risks regressing it. Deliberately left for a device-in-
+hand pass rather than done blind.
+**Plan when you're ready (I'll do it with you verifying):** (1) sync the division
+brand block (name, accent, legal block, logo_key) + bundle the 4 division logos in
+`field-pwa/public/brand` (service-worker precached); (2) thread the division accent
++ logo through `render.ts`; (3) draw the letterhead/legal footer via
+`@mop/documents` so it matches the console's documents; (4) you render a pest AND
+a cleaning report on a phone to confirm.
+**Blocks:** nothing operationally — the existing report renders correctly (pest
+branding). This is the branding-unification refinement.
+
 ## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
 **What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
 **Why:** §11.5 wants the device to validate the access token's SIGNATURE offline
@@ -129,6 +149,12 @@ test them on a real phone, however green the build is.
       enter vehicle/odometer/fuel, Save → "Saved & synced".
 - [ ] Do the same offline → "Saved"; reconnect → it syncs (one record per day;
       re-saving the same day updates, not duplicates).
+
+### T6 — honest sync indicator (landed; verify on device)
+- [ ] The top bar shows Online/Offline and either "All synced" / "N to sync";
+      the strip below breaks it down (events / media / pre-flight) with the last
+      sync time, and says work will send automatically when back online.
+- [ ] (Report brandChrome/division-logo unification is A10 — not yet done.)
 
 ### T5 — cash + expense (landed; verify on device)
 - [ ] In a job, enter cash collected → Collect (offline) → reconnect → a cash

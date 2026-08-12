@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
-import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
+import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
 import { calcDose } from "./dose";
 import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
 
@@ -24,7 +24,7 @@ function useOnline() {
 
 export function App() {
   const online = useOnline();
-  const pending = useLiveQuery(() => pendingCount(), [], 0);
+  const status = useLiveQuery(() => syncStatus(), [], { events: 0, media: 0, preflight: 0, total: 0 } as Awaited<ReturnType<typeof syncStatus>>);
   const jobs = useLiveQuery(() => db.jobs.orderBy("scheduled_date").toArray(), [], []);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState("");
@@ -62,7 +62,7 @@ export function App() {
         setSyncErr(`Sync failed — will retry when connection is stable. (${(e as Error).message})`);
       }
     })();
-  }, [online, pending, authed]);
+  }, [online, status.total, authed]);
 
   const doSync = async () => {
     setSyncMsg("Syncing…");
@@ -89,8 +89,17 @@ export function App() {
           <span className={`dot ${online ? "on" : "off"}`} />
           {online ? "Online" : "Offline"}
         </span>
-        <span className="pending">{pending} to sync</span>
+        <span className="pending" title={`events ${status.events} · media ${status.media} · pre-flight ${status.preflight}`}>
+          {status.total === 0 ? (online ? "All synced" : "Nothing pending") : `${status.total} to sync`}
+        </span>
       </div>
+      {status.total > 0 && (
+        <div style={{ background: online ? "#eff6ff" : "#fffbeb", color: "#334155", padding: ".35rem .9rem", fontSize: ".78rem" }}>
+          Waiting to sync: {status.events} event(s), {status.media} media, {status.preflight} pre-flight.
+          {status.lastSync ? ` Last sync ${new Date(status.lastSync).toLocaleTimeString()}.` : " Not synced yet."}
+          {!online && " Will send automatically when back online."}
+        </div>
+      )}
 
       {syncErr && (
         <div style={{ background: "#fef2f2", color: "#991b1b", padding: ".5rem .9rem", fontSize: ".85rem" }}>
