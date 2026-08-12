@@ -102,7 +102,21 @@ change I can only *build*, not verify — you verify on a phone.
 and photo-linking are refinements.
 
 ## 🟠 A10 — On-device report: brandChrome + division logo (T6, PARTIAL — needs device verify)
-**What:** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
+**Update (this session): a flag-gated PARALLEL PATH is now built, so you can compare on a
+phone before switching — the verified renderer is untouched.**
+- `apps/field-pwa/src/report/sharedChrome.ts` renders the report via the shared
+  `@mop/documents` brandChrome (letterhead + legal footer + accent). Gated behind
+  `VITE_REPORT_SHARED_CHROME="1"` in `pdf.ts`; **default OFF** → the device-verified
+  `render.ts` runs byte-for-byte as before. Field-pwa `tsc + vite build` pass.
+- **To compare on a phone:** build the field app with `VITE_REPORT_SHARED_CHROME=1`, open a
+  completed job → Generate report, and compare against a normal build. You verify; I can't.
+- **Deliberately still STAGED (do NOT switch the default yet):** (1) it renders the **pest**
+  division only — true per-division needs the division brand block in the field **sync
+  payload** + the division logos precached in `field-pwa/public/brand`; (2) the shared body
+  is **thinner** than the verified report (no QR, trend chart, signatures grid, photos,
+  chemicals table) — it proves the chrome, not the full body. Switching fully is the
+  device-in-hand follow-up below.
+**What (original):** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
 still uses its own hardcoded pest-control identity + red/gold accents
 (`model.ts` `COMPANY`, `render.ts` `MAROON`/`GOLD`), not `@mop/documents`
 brandChrome or the per-division logo/accent from reference data.
