@@ -1,8 +1,8 @@
 import { jsPDF } from "jspdf";
 import {
-  PW, PH, M, CW, NAVY, INK, HAIR, LABEL,
+  PW, M, CW, NAVY, INK, HAIR, LABEL, BODY_TOP, BODY_BOTTOM,
   type Asset, type DocOrg, type BrandSkin,
-  pngSize, drawLetterhead, drawLegalFooter,
+  pngSize, stampAllPages,
 } from "./brandChrome";
 
 // Division-aware Quotation PDF. Branding — the division letterhead (logo + label +
@@ -37,7 +37,7 @@ const money = (n: number, ccy: string) => `${ccy} ${(n ?? 0).toLocaleString("en-
 export function renderQuotationPdf(d: QuotationPdfData): Uint8Array {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
   const accent = d.brand.accent;
-  let y = drawLetterhead(doc, d.brand, d.logo);
+  let y = BODY_TOP;
 
   // Title bar
   doc.setFillColor(accent); doc.rect(M, y, CW, 30, "F");
@@ -67,26 +67,33 @@ export function renderQuotationPdf(d: QuotationPdfData): Uint8Array {
   }
   y += 4;
 
-  // Line-items table
+  // Line-items table — header repeats on each page; rows break before the footer.
   const amtX = PW - M;
-  doc.setFillColor(NAVY); doc.rect(M, y, CW, 22, "F");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor("#FFFFFF"); doc.setCharSpace(0.3);
-  doc.text("DESCRIPTION", M + 10, y + 15);
-  doc.text("AMOUNT", amtX - 10, y + 15, { align: "right" });
-  doc.setCharSpace(0);
-  y += 22;
-  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(INK);
+  const tableHead = (yy: number): number => {
+    doc.setFillColor(NAVY); doc.rect(M, yy, CW, 22, "F");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor("#FFFFFF"); doc.setCharSpace(0.3);
+    doc.text("DESCRIPTION", M + 10, yy + 15);
+    doc.text("AMOUNT", amtX - 10, yy + 15, { align: "right" });
+    doc.setCharSpace(0);
+    return yy + 22;
+  };
+  const bodyFont = () => { doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(INK); };
+  y = tableHead(y);
+  bodyFont();
   const bodyLines = d.lines.length ? d.lines : [{ description: "(no lines)", amount: 0 }];
   for (const l of bodyLines) {
     const desc = doc.splitTextToSize(l.description || "Service", CW - 130);
     const rowH = Math.max(20, desc.length * 12 + 8);
+    if (y + rowH > BODY_BOTTOM) { doc.addPage(); y = tableHead(BODY_TOP); bodyFont(); }
     doc.text(desc, M + 10, y + 14);
     doc.text(money(l.amount, d.currency), amtX - 10, y + 14, { align: "right" });
     doc.setDrawColor(HAIR); doc.setLineWidth(0.5); doc.line(M, y + rowH, PW - M, y + rowH);
     y += rowH;
-    if (y > PH - 200) { doc.addPage(); y = M; }
   }
   y += 12;
+
+  // Keep the totals block together, off the footer.
+  if (y + 72 > BODY_BOTTOM) { doc.addPage(); y = BODY_TOP; }
 
   // Totals block (right-aligned) — accent for the emphasis + divider.
   const tx = PW - M - 200;
@@ -102,8 +109,8 @@ export function renderQuotationPdf(d: QuotationPdfData): Uint8Array {
   doc.setDrawColor(accent); doc.setLineWidth(1); doc.line(tx, y - 4, amtX, y - 4); y += 8;
   tot("Total", money(d.total, d.currency), true);
 
-  // Legal footer (shared brandChrome)
-  drawLegalFooter(doc, d.brand, d.org, d.tollFree);
+  // Chrome on every page (letterhead + legal footer) — shared brandChrome.
+  stampAllPages(doc, d.brand, d.org, d.logo, d.tollFree);
 
   return new Uint8Array(doc.output("arraybuffer"));
 }
