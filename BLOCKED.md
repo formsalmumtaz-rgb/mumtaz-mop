@@ -247,7 +247,13 @@ but the **ad-hoc price is 2.5× the AMC price for identical work**.
 or underpriced. Both reference rates are seeded and editable.
 **Blocks:** nothing — informational, surfaced so it isn't invisible.
 
-## 🟠 A15 — Login does not proceed after a SUCCESSFUL sign-in (separate from the 500)
+## ✅ A15 — Login does not proceed after sign-in — CLEARED (fixed + verified on production)
+**Cleared 13 Aug 2026.** Root cause: the `@supabase/ssr` race where the login form's
+client-side `router.push("/") + router.refresh()` ran the middleware before the freshly-set
+session cookies committed, so `getUser()` saw no session and bounced back to `/login`. Fix
+(PR #71, `LoginForm.tsx`): a full-page `window.location.assign(next)` after a successful
+sign-in, so the cookies are sent on the next request; open-redirect-guarded `?next=`. **Owner
+confirmed login works on production.** Original evidence retained below.
 **What (evidence, 12 Aug 2026):** the deployed sign-in **works** — `auth.users` shows 2
 confirmed accounts, both with recent successful sign-ins (one at 18:53 today), and a probe of
 the auth endpoint returns a normal `400 invalid_credentials` for bad creds. So credentials are
