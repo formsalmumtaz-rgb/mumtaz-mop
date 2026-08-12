@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
 import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, uuid, type LocalJob } from "./db";
 import { calcDose } from "./dose";
+import { signIn, signOutLocal, getSession, RevokedError, authConfigured } from "./auth";
 
 // Default to same-origin ("") so API calls go to /api/... on whatever host is serving
 // the app (localhost, or a tunnel) and the dev/preview proxy forwards them to the local
@@ -28,12 +29,26 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState("");
   const [syncErr, setSyncErr] = useState("");
+  // Auth gate (T1, §11.5). authed: null = checking, false = need login, true = ok.
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [revoked, setRevoked] = useState(false);
+
+  useEffect(() => {
+    (async () => setAuthed(!!(await getSession())))();
+  }, []);
+
+  // A revoked device: flush what we can (best effort), then lock and require login.
+  const onRevoked = async () => {
+    setRevoked(true);
+    await signOutLocal();
+    setAuthed(false);
+  };
 
   // Drain the outbox to the server whenever we're online (and when new items are
   // queued). Interrupted uploads just leave items pending and retry — the server
   // dedups by client UUID. Failures are surfaced, never silent.
   useEffect(() => {
-    if (!online) return;
+    if (!online || !authed) return;
     (async () => {
       try {
         const ev = await syncUp(SYNC_BASE);
@@ -41,20 +56,25 @@ export function App() {
         if (ev.uploaded + md.uploaded > 0) setSyncMsg(`Uploaded ${ev.uploaded} events, ${md.uploaded} media`);
         setSyncErr("");
       } catch (e) {
+        if (e instanceof RevokedError) { await onRevoked(); return; }
         setSyncErr(`Sync failed — will retry when connection is stable. (${(e as Error).message})`);
       }
     })();
-  }, [online, pending]);
+  }, [online, pending, authed]);
 
   const doSync = async () => {
     setSyncMsg("Syncing…");
     try {
       const r = await syncPull(SYNC_BASE);
       setSyncMsg(`Pulled ${r.jobs} job(s)`);
-    } catch {
+    } catch (e) {
+      if (e instanceof RevokedError) { await onRevoked(); return; }
       setSyncMsg("Sync failed (offline?)");
     }
   };
+
+  if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
+  if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
 
   const selected = jobs.find((j) => j.id === selectedId) ?? null;
 
@@ -263,3 +283,54 @@ const SignaturePad = forwardRef<SignaturePadHandle>((_, ref) => {
     />
   );
 });
+
+// Login gate (T1, DECISIONS §11.5). Online sign-in caches the session (access +
+// long refresh token); after that the app works offline until the refresh token
+// itself expires. `revoked` shows when the device was locked out at sync.
+function LoginScreen({ revoked, onDone }: { revoked: boolean; onDone: () => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const online = useOnline();
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    const { error } = await signIn(email.trim(), password);
+    setBusy(false);
+    if (error) { setErr(error); return; }
+    onDone();
+  };
+
+  return (
+    <div className="app">
+      <div className="bar"><strong>Mumtaz Field</strong></div>
+      <div className="content">
+        {!authConfigured && (
+          <div style={{ background: "#fef2f2", color: "#991b1b", padding: ".6rem .9rem", fontSize: ".85rem", borderRadius: 8, marginBottom: ".8rem" }}>
+            Sign-in isn’t configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. (See BLOCKED.md.)
+          </div>
+        )}
+        {revoked && (
+          <div style={{ background: "#fffbeb", color: "#92400e", padding: ".6rem .9rem", fontSize: ".85rem", borderRadius: 8, marginBottom: ".8rem" }}>
+            This device’s access was revoked. Any completed work already queued was sent for review. Sign in again to continue.
+          </div>
+        )}
+        <h2 style={{ margin: "0 0 .8rem" }}>Technician sign-in</h2>
+        <form onSubmit={submit}>
+          <label className="muted">Email
+            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+          <label className="muted">Password
+            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          </label>
+          {err && <p style={{ color: "#991b1b", fontSize: ".85rem" }}>{err}</p>}
+          {!online && <p className="muted" style={{ fontSize: ".8rem" }}>You appear offline — sign-in needs a connection the first time.</p>}
+          <button type="submit" disabled={busy || !authConfigured}>{busy ? "Signing in…" : "Sign in"}</button>
+        </form>
+      </div>
+    </div>
+  );
+}

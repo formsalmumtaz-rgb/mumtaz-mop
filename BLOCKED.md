@@ -32,10 +32,42 @@ the `is_active` gate (effective at next sync) rather than immediate token kill.
 **Blocks:** the "immediate" part of revocation only; the review-queue + lockout
 path works now.
 
+## 🔴 A3 — Field PWA Supabase env vars (T1 client, blocks sign-in)
+**What:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the field app build.
+**Why:** the PWA now has a real login (T1). Without these it renders "sign-in
+isn't configured" and cannot authenticate. They are the public URL + anon key
+(same values already used by the ops-console `NEXT_PUBLIC_*`), safe to embed.
+**Do:** set both in the field-pwa build environment (Vercel project / `.env`).
+**Blocks:** the technician can't sign in until set — so the whole app is gated.
+
+## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
+**What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
+**Why:** §11.5 wants the device to validate the access token's SIGNATURE offline
+against a cached JWKS. Supabase's default HS256 tokens have no public key, so the
+client can only validate `exp` offline and relies on the server to verify the
+signature at sync (still safe — the server is the authority). With asymmetric
+keys, the client also verifies the signature offline (defense-in-depth); the code
+already does this when a JWKS is present.
+**Do:** Supabase → Auth → JWT keys → migrate to asymmetric signing keys (when you
+choose). No code change needed.
+**Blocks:** nothing — exp validation + server re-auth work now.
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)
-Kept current as phases land. Airplane mode, camera/WebP capture, on-device PDF
-rendering, GPS and Maps deep-links, and full offline-day + reconnect sync are
-**unverified** until you test them on a real phone, however green the build is.
-(Full checklist maintained at the bottom of this file as phases complete.)
+Airplane mode, camera/WebP capture, on-device PDF rendering, GPS and Maps
+deep-links, and full offline-day + reconnect sync are **unverified** until you
+test them on a real phone, however green the build is.
+
+### T1 — offline auth (landed; verify on device)
+- [ ] With A3 set, sign in online once; kill the app, reopen offline → still
+      signed in (session cached), jobs list loads from cache.
+- [ ] Work offline past the access-token lifetime (~1h) → NOT logged out.
+- [ ] Reconnect → queued events upload; server attributes them to the login
+      actor (check the audit log / a completed job's actor).
+- [ ] Admin deactivates the technician's login (Settings → Users) while the
+      device is offline; device reconnects → it flushes queued work, then locks
+      and shows the "revoked" screen; those events appear on the dashboard's
+      "Field events held for review" and can be approved/rejected.
+- [ ] Set the phone clock wildly wrong, complete a job offline, sync → the event
+      shows a "clock suspect" flag in review (not silently accepted).
