@@ -62,11 +62,13 @@ export async function drainOnce(
   // touch real events). The production endpoint passes no tenant — drains all.
   const { rows: events } = opts.tenantId
     ? await pool.query(
-        `select * from outbox_events where processed_at is null and tenant_id = $1 order by occurred_at asc limit 500`,
+        // not needs_review: events from a revoked login are HELD until an admin
+        // approves (clears needs_review), so they never auto-post (T1).
+        `select * from outbox_events where processed_at is null and not needs_review and tenant_id = $1 order by occurred_at asc limit 500`,
         [opts.tenantId],
       )
     : await pool.query(
-        `select * from outbox_events where processed_at is null order by occurred_at asc limit 500`,
+        `select * from outbox_events where processed_at is null and not needs_review order by occurred_at asc limit 500`,
       );
   let dispatched = 0;
 

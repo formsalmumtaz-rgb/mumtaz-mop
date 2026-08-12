@@ -67,7 +67,7 @@ const one = async (sql: string, p: unknown[] = []) => (await pool.query(sql, p))
 
   // 3b. sync job.completed (idempotent by client_uuid)
   const clientUuid = randomUUID();
-  await ingestDeviceEvents(pool, tenantId, [{ client_uuid: clientUuid, event_type: "job.completed", job_id: jobId, payload: { job_id: jobId, client_uuid: clientUuid }, device_time: new Date().toISOString() }]);
+  await ingestDeviceEvents(pool, tenantId, [{ client_uuid: clientUuid, event_type: "job.completed", job_id: jobId, payload: { job_id: jobId, client_uuid: clientUuid }, device_time: new Date().toISOString() }], { actorId: "00000000-0000-0000-0000-0000000000aa" });
   const jobDone = await one(`select status from jobs where id=$1`, [jobId]);
   check("Job.completed synced (job marked completed)", jobDone.status === "completed", jobDone.status);
 

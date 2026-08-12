@@ -25,7 +25,7 @@ export default async function DashboardPage() {
   const tenantId = await getTenantId();
   const division = await getActiveDivision(tenantId);
   const d = await getDashboard(tenantId, division.id);
-  const attention = d.pendingExpenses > 0 || d.reportsPending > 0;
+  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -55,6 +55,9 @@ export default async function DashboardPage() {
             )}
             {d.reportsPending > 0 && (
               <Tile label="Service reports to review" value={String(d.reportsPending)} sub="awaiting approval" href="/service-reports" />
+            )}
+            {d.fieldReviewHeld > 0 && (
+              <Tile label="Field events held for review" value={String(d.fieldReviewHeld)} sub="from a revoked device — approve or reject" href="/field-review" />
             )}
           </div>
         </div>
