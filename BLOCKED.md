@@ -80,6 +80,18 @@ recorded on the pre-flight only.
 **Do:** confirm/replace per your operation; the form is driven entirely off these.
 **Blocks:** nothing — the form renders whatever is configured.
 
+## 🟡 A9 — Field expense category + receipt-photo link (T5, refinements)
+**What:** (a) the field expense form doesn't pick an expense category — the claim
+posts with `category_id = null` and the "what for" text; (b) the receipt photo is
+attached via the job Photos, not a dedicated expense-receipt link.
+**Why:** kept the field flow minimal; categories aren't synced to the device yet
+and receipt-media needs a small join table.
+**Do:** if you want field expenses categorised, I'll sync `expense_categories`
+to the app and add a picker; and add an `expense_receipts` link if the receipt
+photo must attach to the specific claim.
+**Blocks:** nothing — cash posts a receipt, expense posts a submitted claim
+(visible in Expenses to approve on the dashboard).
+
 ## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
 **What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
 **Why:** §11.5 wants the device to validate the access token's SIGNATURE offline
@@ -117,6 +129,13 @@ test them on a real phone, however green the build is.
       enter vehicle/odometer/fuel, Save → "Saved & synced".
 - [ ] Do the same offline → "Saved"; reconnect → it syncs (one record per day;
       re-saving the same day updates, not duplicates).
+
+### T5 — cash + expense (landed; verify on device)
+- [ ] In a job, enter cash collected → Collect (offline) → reconnect → a cash
+      receipt appears against the customer.
+- [ ] Enter an expense + "what for" → Log → reconnect → a submitted expense
+      claim appears in "Expense claims to approve" on the dashboard; re-sync
+      does not double-book (client_uuid).
 
 ### T4 — job flow + inspection (landed; verify on device)
 - [ ] In a job, tap "Navigate ↗" → Google Maps opens directions to the site pin.
