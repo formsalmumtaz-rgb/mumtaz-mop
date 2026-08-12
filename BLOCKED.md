@@ -54,6 +54,24 @@ attaches one (`jobs.recipe_version_id`); un-attached jobs sync `recipe: null` an
 the field app allows manual chemical entry.
 **Blocks:** nothing — sync returns the recipe when present, null otherwise.
 
+## 🟡 A6 — Pre-flight PPE + equipment lists are ASSUMED (T3)
+**What:** the seeded PPE list (gloves, mask, goggles, coverall, boots) and
+equipment list (sprayer, bait gun, torch, ladder, first-aid) — mig 058,
+`preflight_checklist_items`, `is_assumed=true`, editable.
+**Do:** confirm/replace the items the technician must tick at start of shift.
+**Blocks:** nothing — the pre-flight screen reads whatever is configured.
+
+## 🟡 A7 — Pre-flight fuel/odometer not yet posted to fuel ledger (T3)
+**What:** pre-flight captures odometer + fuel (litres/AED) in `preflight_checks`,
+but does NOT yet insert `vehicle_fuel_purchases`.
+**Why:** that table (mig 022) has no `client_uuid`, so posting on every offline
+re-sync would duplicate. Safe idempotent posting needs a `client_uuid` column
+there first.
+**Do:** decide whether pre-flight fuel should feed the fuel/cost ledger; if so I
+add `client_uuid` to `vehicle_fuel_purchases` and post once. For now fuel is
+recorded on the pre-flight only.
+**Blocks:** the fuel→cost linkage only; pre-flight itself works.
+
 ## 🟡 A4 — Asymmetric JWT signing keys for offline signature validation (T1)
 **What:** enable **asymmetric** JWT signing keys (a JWKS) on the Supabase project.
 **Why:** §11.5 wants the device to validate the access token's SIGNATURE offline
@@ -85,3 +103,9 @@ test them on a real phone, however green the build is.
       "Field events held for review" and can be approved/rejected.
 - [ ] Set the phone clock wildly wrong, complete a job offline, sync → the event
       shows a "clock suspect" flag in review (not silently accepted).
+
+### T3 — pre-flight (landed; verify on device)
+- [ ] Open Pre-flight online → PPE + equipment checklist loads; tick items,
+      enter vehicle/odometer/fuel, Save → "Saved & synced".
+- [ ] Do the same offline → "Saved"; reconnect → it syncs (one record per day;
+      re-saving the same day updates, not duplicates).

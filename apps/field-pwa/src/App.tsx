@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
-import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, uuid, type LocalJob } from "./db";
+import { db, enqueue, pendingCount, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob } from "./db";
 import { calcDose } from "./dose";
-import { signIn, signOutLocal, getSession, RevokedError, authConfigured } from "./auth";
+import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
 
 // Default to same-origin ("") so API calls go to /api/... on whatever host is serving
 // the app (localhost, or a tunnel) and the dev/preview proxy forwards them to the local
@@ -32,6 +32,7 @@ export function App() {
   // Auth gate (T1, §11.5). authed: null = checking, false = need login, true = ok.
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [revoked, setRevoked] = useState(false);
+  const [showPreflight, setShowPreflight] = useState(false);
 
   useEffect(() => {
     (async () => setAuthed(!!(await getSession())))();
@@ -53,6 +54,7 @@ export function App() {
       try {
         const ev = await syncUp(SYNC_BASE);
         const md = await syncMedia(SYNC_BASE);
+        await syncPreflight(SYNC_BASE);
         if (ev.uploaded + md.uploaded > 0) setSyncMsg(`Uploaded ${ev.uploaded} events, ${md.uploaded} media`);
         setSyncErr("");
       } catch (e) {
@@ -75,6 +77,7 @@ export function App() {
 
   if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
   if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
+  if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;
 
   const selected = jobs.find((j) => j.id === selectedId) ?? null;
 
@@ -98,9 +101,12 @@ export function App() {
       <div className="content">
         {!selected && (
           <>
-            <div className="row" style={{ marginBottom: ".7rem" }}>
+            <div className="row" style={{ marginBottom: ".7rem", gap: ".5rem" }}>
               <button className="ghost" onClick={doSync} disabled={!online} style={{ width: "auto" }}>
                 Sync today's jobs
+              </button>
+              <button className="ghost" onClick={() => setShowPreflight(true)} style={{ width: "auto" }}>
+                Pre-flight
               </button>
               {syncMsg && <span className="muted">{syncMsg}</span>}
             </div>
@@ -330,6 +336,92 @@ function LoginScreen({ revoked, onDone }: { revoked: boolean; onDone: () => void
           {!online && <p className="muted" style={{ fontSize: ".8rem" }}>You appear offline — sign-in needs a connection the first time.</p>}
           <button type="submit" disabled={busy || !authConfigured}>{busy ? "Signing in…" : "Sign in"}</button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Start-of-shift pre-flight (T3). Loads the configurable PPE/equipment checklist
+// (online), lets the technician tick items and record vehicle/odometer/fuel, and
+// saves offline-first (queued, synced on reconnect; server upserts one per day).
+interface ChecklistItem { kind: "ppe" | "equipment"; code: string; label: string }
+function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => void }) {
+  const [items, setItems] = useState<ChecklistItem[]>([]);
+  const [ticks, setTicks] = useState<Record<string, boolean>>({});
+  const [vehicle, setVehicle] = useState("");
+  const [odometer, setOdometer] = useState("");
+  const [fuelL, setFuelL] = useState("");
+  const [fuelAed, setFuelAed] = useState("");
+  const [notes, setNotes] = useState("");
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      // Prefer the server checklist (online); otherwise fall back to any locally
+      // saved pre-flight so the screen still works offline.
+      try {
+        const res = await authedFetch(`${SYNC_BASE}/api/field/preflight`);
+        if (res.ok) {
+          const data = (await res.json()) as { checklist: ChecklistItem[] };
+          setItems(data.checklist ?? []);
+        }
+      } catch { /* offline */ }
+      const local = await getLocalPreflight();
+      if (local?.payload) {
+        const p = local.payload as Record<string, unknown>;
+        setTicks({ ...((p.ppe as Record<string, boolean>) ?? {}), ...((p.equipment as Record<string, boolean>) ?? {}) });
+        if (p.odometer_km != null) setOdometer(String(p.odometer_km));
+      }
+    })();
+  }, []);
+
+  const ppe = items.filter((i) => i.kind === "ppe");
+  const equip = items.filter((i) => i.kind === "equipment");
+
+  const save = async () => {
+    const pick = (list: ChecklistItem[]) => Object.fromEntries(list.map((i) => [i.code, !!ticks[i.code]]));
+    await savePreflightLocal({
+      present: true,
+      vehicle_id: vehicle || null,
+      odometer_km: odometer ? Number(odometer) : null,
+      fuel_litres: fuelL ? Number(fuelL) : null,
+      fuel_amount: fuelAed ? Number(fuelAed) : null,
+      ppe: pick(ppe),
+      equipment: pick(equip),
+      notes: notes || null,
+    });
+    setMsg("Saved.");
+    if (online) { try { await syncPreflight(SYNC_BASE); setMsg("Saved & synced."); } catch { /* retries later */ } }
+    setTimeout(onBack, 500);
+  };
+
+  const Toggle = ({ i }: { i: ChecklistItem }) => (
+    <label className="row" style={{ justifyContent: "space-between", padding: ".35rem 0" }}>
+      <span>{i.label}</span>
+      <input type="checkbox" checked={!!ticks[i.code]} onChange={(e) => setTicks((t) => ({ ...t, [i.code]: e.target.checked }))} />
+    </label>
+  );
+
+  return (
+    <div className="app">
+      <div className="bar"><strong>Pre-flight</strong></div>
+      <div className="content">
+        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
+        <h3>PPE</h3>
+        {ppe.length === 0 && <p className="muted">Checklist loads when online.</p>}
+        {ppe.map((i) => <Toggle key={i.code} i={i} />)}
+        <h3 style={{ marginTop: "1rem" }}>Equipment</h3>
+        {equip.map((i) => <Toggle key={i.code} i={i} />)}
+        <h3 style={{ marginTop: "1rem" }}>Vehicle</h3>
+        <label className="muted">Vehicle (code/plate)<input value={vehicle} onChange={(e) => setVehicle(e.target.value)} /></label>
+        <label className="muted">Odometer (km)<input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} /></label>
+        <div className="row" style={{ gap: ".5rem" }}>
+          <label className="muted" style={{ flex: 1 }}>Fuel (L)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
+          <label className="muted" style={{ flex: 1 }}>Fuel (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
+        </div>
+        <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+        {msg && <p className="muted">{msg}</p>}
+        <button onClick={save}>Save pre-flight</button>
       </div>
     </div>
   );
