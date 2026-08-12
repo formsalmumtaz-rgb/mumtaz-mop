@@ -20,6 +20,9 @@ importers:
 
   apps/field-pwa:
     dependencies:
+      '@mop/documents':
+        specifier: workspace:*
+        version: link:../../packages/documents
       '@mop/domain':
         specifier: workspace:*
         version: link:../../packages/domain

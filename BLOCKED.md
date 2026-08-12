@@ -32,13 +32,16 @@ the `is_active` gate (effective at next sync) rather than immediate token kill.
 **Blocks:** the "immediate" part of revocation only; the review-queue + lockout
 path works now.
 
-## 🔴 A3 — Field PWA Supabase env vars (T1 client, blocks sign-in)
+## ✅ A3 — Field PWA Supabase env vars (T1 client) — CLEARED
+**Cleared:** the owner set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` in
+`apps/field-pwa/.env`; both are present and non-empty (verified 12 Aug 2026).
+The field app can now reach sign-in. Historical detail retained below.
 **What:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the field app build.
 **Why:** the PWA now has a real login (T1). Without these it renders "sign-in
 isn't configured" and cannot authenticate. They are the public URL + anon key
 (same values already used by the ops-console `NEXT_PUBLIC_*`), safe to embed.
-**Do:** set both in the field-pwa build environment (Vercel project / `.env`).
-**Blocks:** the technician can't sign in until set — so the whole app is gated.
+**Do:** set both in the field-pwa build environment (Vercel project / `.env`). — done.
+**Blocks:** nothing — cleared. (Was: the technician couldn't sign in until set.)
 
 ## 🟡 A5 — Treatment recipes are ASSUMED starter values (T2)
 **What:** the dosing/dilution/coverage on the two seeded pest-control recipes
@@ -61,16 +64,17 @@ equipment list (sprayer, bait gun, torch, ladder, first-aid) — mig 058,
 **Do:** confirm/replace the items the technician must tick at start of shift.
 **Blocks:** nothing — the pre-flight screen reads whatever is configured.
 
-## 🟡 A7 — Pre-flight fuel/odometer not yet posted to fuel ledger (T3)
-**What:** pre-flight captures odometer + fuel (litres/AED) in `preflight_checks`,
-but does NOT yet insert `vehicle_fuel_purchases`.
-**Why:** that table (mig 022) has no `client_uuid`, so posting on every offline
-re-sync would duplicate. Safe idempotent posting needs a `client_uuid` column
-there first.
-**Do:** decide whether pre-flight fuel should feed the fuel/cost ledger; if so I
-add `client_uuid` to `vehicle_fuel_purchases` and post once. For now fuel is
-recorded on the pre-flight only.
-**Blocks:** the fuel→cost linkage only; pre-flight itself works.
+## ✅ A7 — Pre-flight fuel now posts to the fuel ledger (T3) — DONE (mig 063)
+**Cleared:** `vehicle_fuel_purchases` gained `client_uuid` + `preflight_check_id` +
+`source` and a partial UNIQUE index on `preflight_check_id` (mig 063). `upsertPreflight`
+now posts one fuel purchase per pre-flight when a vehicle + positive litres are present
+(`ON CONFLICT (preflight_check_id) DO NOTHING` — re-sync-safe, table stays append-only).
+Proven: `packages/db/tests/preflight_fuel_idempotent.sql` (double-post → 1 row; two
+pre-flights → 2 rows). Fuel now feeds `vehicle_cost_per_km`.
+**Residual (minor):** a same-day fuel *correction* on the pre-flight updates the
+pre-flight but not the already-posted purchase (append-only) — a correction would be a
+manual reversing fuel entry. Acceptable; noted.
+**Unverified:** the on-device offline→sync path itself (as with all field-app paths).
 
 ## 🟡 A8 — Inspection option lists are ASSUMED (T4)
 **What:** the button-driven post-inspection lists (mig 059, `inspection_options`,
@@ -80,20 +84,39 @@ recorded on the pre-flight only.
 **Do:** confirm/replace per your operation; the form is driven entirely off these.
 **Blocks:** nothing — the form renders whatever is configured.
 
-## 🟡 A9 — Field expense category + receipt-photo link (T5, refinements)
-**What:** (a) the field expense form doesn't pick an expense category — the claim
-posts with `category_id = null` and the "what for" text; (b) the receipt photo is
-attached via the job Photos, not a dedicated expense-receipt link.
-**Why:** kept the field flow minimal; categories aren't synced to the device yet
-and receipt-media needs a small join table.
-**Do:** if you want field expenses categorised, I'll sync `expense_categories`
-to the app and add a picker; and add an `expense_receipts` link if the receipt
-photo must attach to the specific claim.
-**Blocks:** nothing — cash posts a receipt, expense posts a submitted claim
-(visible in Expenses to approve on the dashboard).
+## 🟠 A9 — Field expense category + receipt-photo link (T5) — PARTIAL (schema done, UI remains)
+**Done this session:**
+- (b) receipt link — **`expense_receipts` table added (mig 064)** linking an expense claim
+  to its receipt photo (`job_photos`), RLS-isolated. The durable schema is ready.
+- (a) category — the **backend already records `category_id`**: `expense.recorded` carries
+  it and `services/worker/src/fieldfinance.ts` inserts it into `expenses.category_id`. No
+  backend gap; the field claim just doesn't *send* a category yet.
+**Remains (field-app UI — disposable, device-verified, per Two-Speed Rule):**
+1. sync `expense_categories` to the device and add a category picker to the expense form
+   (so it sends `category_id`);
+2. let the technician tag the receipt photo to the claim (write an `expense_receipts`
+   row on sync).
+**Do:** confirm you want the field-app picker + receipt-tagging built; it's a field-PWA
+change I can only *build*, not verify — you verify on a phone.
+**Blocks:** nothing — cash posts a receipt, expense posts a submitted claim; categorising
+and photo-linking are refinements.
 
 ## 🟠 A10 — On-device report: brandChrome + division logo (T6, PARTIAL — needs device verify)
-**What:** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
+**Update (this session): a flag-gated PARALLEL PATH is now built, so you can compare on a
+phone before switching — the verified renderer is untouched.**
+- `apps/field-pwa/src/report/sharedChrome.ts` renders the report via the shared
+  `@mop/documents` brandChrome (letterhead + legal footer + accent). Gated behind
+  `VITE_REPORT_SHARED_CHROME="1"` in `pdf.ts`; **default OFF** → the device-verified
+  `render.ts` runs byte-for-byte as before. Field-pwa `tsc + vite build` pass.
+- **To compare on a phone:** build the field app with `VITE_REPORT_SHARED_CHROME=1`, open a
+  completed job → Generate report, and compare against a normal build. You verify; I can't.
+- **Deliberately still STAGED (do NOT switch the default yet):** (1) it renders the **pest**
+  division only — true per-division needs the division brand block in the field **sync
+  payload** + the division logos precached in `field-pwa/public/brand`; (2) the shared body
+  is **thinner** than the verified report (no QR, trend chart, signatures grid, photos,
+  chemicals table) — it proves the chrome, not the full body. Switching fully is the
+  device-in-hand follow-up below.
+**What (original):** the field app's on-device service-report PDF (`apps/field-pwa/src/report/`)
 still uses its own hardcoded pest-control identity + red/gold accents
 (`model.ts` `COMPANY`, `render.ts` `MAROON`/`GOLD`), not `@mop/documents`
 brandChrome or the per-division logo/accent from reference data.
@@ -123,6 +146,115 @@ already does this when a JWKS is present.
 **Do:** Supabase → Auth → JWT keys → migrate to asymmetric signing keys (when you
 choose). No code change needed.
 **Blocks:** nothing — exp validation + server re-auth work now.
+
+---
+
+## 🟠 A11 — Push/PR/merge — gh now installed, but push still blocked (token scope + session gate)
+**Update (this session):** `gh` is installed and authenticated (`formsalmumtaz-rgb`), and git
+is configured to use gh's credential (`gh auth setup-git`). **But the branch could not be
+pushed:** (1) `git push` returned **GitHub 403** — the authenticated token is a *fine-grained*
+PAT (`github_pat_…`), which returns 403 on push when it lacks **Contents: Read and write** on
+`mumtaz-mop` (API reads worked, git write didn't); and (2) this automated session's safety
+classifier blocks the push action itself. **You need to run the push/PR/merge, or grant the
+token write.**
+**Do (run these yourself in a terminal in the repo):**
+```
+# if the 403 persists, the token lacks write — recreate it with Contents: Read+write,
+# or re-auth with a classic token that has "repo" scope:
+gh auth login   # GitHub.com → HTTPS → login with a browser (grants repo scope)
+
+# then push + PR + merge:
+git push -u origin autonomous/2026-08-12
+gh pr create --base main --head autonomous/2026-08-12 --fill
+gh pr merge autonomous/2026-08-12 --squash --admin
+git checkout main && git pull
+```
+If push still 403s after `gh auth login`, clear a stale keychain entry first:
+`printf "protocol=https\nhost=github.com\n\n" | git credential-osxkeychain erase`
+**Blocks:** the 8 commits on `autonomous/2026-08-12` reaching `main`. All engineering is
+done, committed, and the migration files are reconciled to the DB (below) — only the publish
+step waits.
+**(original entry:)**
+## 🔴 (was) No GitHub write credentials / `gh` CLI on this machine (blocks push, PR, merge)
+**What:** this machine (copied from another Mac) has **no Git write credential** for
+`github.com` and **no `gh` CLI**. `git fetch`/`git pull` work (read), but
+`git push` fails with `could not read Username for 'https://github.com'`, and there
+is no `gh` to open or merge PRs.
+**Why it matters:** the standing workflow is *branch → push → PR → merge → verify
+main green* (HANDOVER §8). With no push and no `gh`, I can build, test, prove and
+**commit locally**, but I **cannot push, cannot open a PR, cannot merge, and cannot
+update `main` on GitHub.** All autonomous work this session is committed to the
+local branch **`autonomous/2026-08-12`** (one commit per task, full Proof-of-Work in
+each message) and is waiting to be pushed.
+**Do (either path):**
+1. Install GitHub CLI and authenticate: it will store a write credential in the macOS
+   keychain and let me push+PR+merge. In a terminal:
+   `brew install gh` (installs Homebrew first if needed — needs your Mac password),
+   then `gh auth login` (choose GitHub.com → HTTPS → login with a browser).
+   **OR**
+2. Create a GitHub **Personal Access Token** (repo scope) and let git store it:
+   run `git push` once and paste your GitHub username + the token when prompted; the
+   keychain remembers it thereafter.
+Then tell me, and I'll push `autonomous/2026-08-12`, open a PR per task (or one PR),
+and merge after main goes green.
+**Blocks:** the push/PR/merge/verify-main-green half of **every** task below. The
+engineering itself is done and committed locally; only the publish step waits on you.
+
+## 🔴 A12 — Production 500 (digest 6663152226): Supabase env vars missing on Vercel
+**What:** the deployed ops-console returns HTTP 500 ("Application error", digest
+`6663152226`) on every signed-in page. **Diagnosed and reproduced locally this
+session:** with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` absent,
+`middleware.ts` threw *"Your project's URL and Key are required to create a Supabase
+client!"* → 500 on `/`, while `/login` stayed 200. That is exactly this digest.
+**Code half — DONE this session:** `middleware.ts` now fails **closed and legibly** —
+a missing var returns a plain **503** naming the missing variable instead of an opaque
+500 crash. Verified: vars absent → 503 with message; vars present → normal 307 redirect
+to `/login`. This makes the misconfiguration self-explaining but does **not** make the
+site work — the app genuinely needs the keys.
+**Do (the real fix — only you can, I have no Vercel access):** in **Vercel → the
+ops-console project → Settings → Environment Variables**, confirm both
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist **and are enabled
+for the _Production_ environment** (not only Preview/Development). The values are the
+same public URL + anon key already in `apps/ops-console/.env.local`. Then **redeploy**
+Production. After redeploy, opening the site should show `/login`, not the 500.
+**If it still 500s after that:** open Vercel → the deployment → **Runtime Logs**, find
+the line for digest `6663152226`, and paste it to me — with the middleware guard in
+place the message will now name what's wrong.
+**Blocks:** the deployed office console is unusable until the Production env vars are
+set and redeployed. Local build runs clean.
+
+## 🟡 A13 — Costing engine: ASSUMED inputs to confirm (mig 060–062)
+**What:** the costing engine is built and computing real numbers, but a handful of
+inputs are seeded **ASSUMED** (flagged in every engine result under `assumptions`,
+and editable from settings without a deploy — Art. X §4). Confirm each real value:
+| Setting / row | Seeded ASSUMED value | Why assumed |
+|---|---|---|
+| `item: Pro Surfactant` landed cost | **0.05 AED/ml (50 AED/L)** | price was unknown — **placeholder**, replace with the real purchase price |
+| `cost.target_margin_default` | 0.35 (35%) | your real target margin was not given |
+| `cost.treatment_hours_per_visit` | 1.0 h | on-site time estimate |
+| `cost.travel_speed_kmh` | 32 km/h | turns distance into paid travel hours (gives ~2 h paid for a 16 km job, matching your example) |
+| `cost.default_job_one_way_km` | 16 km | used when a site has no measured route distance |
+| `treatment.gel_visits_per_year` | 6 of 24 | annual spray/gel mix |
+| `consumption:spray` per-m² | Blitz 0.25 ml/m², Surfactant 0.05 ml/m² | derived from "50 ml covers a medium restaurant", assuming that restaurant = **200 m²** (the recipe's coverage). Confirm the real medium-restaurant area. |
+| `consumption:gel` per-m² | 0.09 g/m² | derived from "9 g covers a ~100 m² 2BHK" |
+| `cost.overhead_rate_per_labour_hour` | 15% of labour | the 15% is assumed |
+**Confirmed as real (no action):** labour rate 10.62 AED/hr (from the 1,869/mo basis),
+vehicle 0.698 AED/km (fuel 3.49 ÷ 5 km/L), Blitz 0.10/ml, Gel 1.3333/g, 24 visits/yr
+(municipality), pricing refs 250 ad-hoc / 100 AMC.
+**Do:** tell me the real numbers (especially the **Pro Surfactant price** and your
+**target margin**) and I'll set them — or edit them yourself in Cost setup once that
+screen exposes these keys. Until then every costed figure is correctly flagged assumed.
+**Blocks:** nothing operationally — the engine runs and flags. Only the *accuracy* of
+margin/dosing figures depends on these; do not quote them to a customer as final yet.
+
+## 🟡 A14 — Pricing discrepancy surfaced: ad-hoc 250 vs AMC 100 for the same service
+**What:** the engine costs a medium restaurant (200 m², 24 visits/yr) at **1,365 AED/yr
+direct cost, ≈57/visit**. At the ad-hoc rate (250/visit) that is a **77% margin**; at the
+AMC rate (100/visit = contract 1330/25's 2,400 ÷ 24) it is **43%**. Both are profitable,
+but the **ad-hoc price is 2.5× the AMC price for identical work**.
+**Do:** decide whether the AMC per-visit rate is a deliberate annual-commitment discount
+or underpriced. Both reference rates are seeded and editable.
+**Blocks:** nothing — informational, surfaced so it isn't invisible.
 
 ---
 

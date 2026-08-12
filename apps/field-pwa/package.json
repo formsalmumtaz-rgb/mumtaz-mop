@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mop/documents": "workspace:*",
     "@mop/domain": "workspace:*",
     "browser-image-compression": "^2.0.2",
     "dexie": "^4.0.10",

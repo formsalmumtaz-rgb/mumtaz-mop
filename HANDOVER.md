@@ -252,3 +252,38 @@ pre-flight) does not depend on these and is safe to demo.
 - `[FACT]` Work on a branch, PR, and merge; verify main green after each. The
   owner merges (or has granted merge) via `gh pr merge`. Do not push to `main`
   directly.
+
+---
+
+## 9. ADDENDUM — autonomous session 12 Aug 2026 (branch `autonomous/2026-08-12`)
+
+`[FACT]` An unattended session ran on a freshly-moved Mac. **All work is committed to
+the local branch `autonomous/2026-08-12` (6 commits, one per task) but NOT pushed** —
+this machine has no GitHub write credential and no `gh` CLI (**BLOCKED A11**). Push the
+branch, then PR/merge, once A11 is cleared.
+
+Done + proven (build/test green, committed):
+1. **A3 header** cleared (was stale red).
+2. **Production 500 (digest 6663152226)** diagnosed + reproduced locally: middleware
+   threw when `NEXT_PUBLIC_SUPABASE_*` are missing. Hardened `middleware.ts` to fail
+   **closed with a 503** naming the missing var (was an opaque 500). Real fix = set the
+   vars on Vercel Production + redeploy (**BLOCKED A12**, owner).
+3. **Costing engine — real config (mig 060–062, "Prompt 3")**: labour 10.62 AED/hr
+   (from a real 1,869/mo basis), vehicle 0.698 AED/km (fuel 3.49÷5), material landed
+   costs (Blitz 0.10/ml, Gel 1.3333/g, Pro Surfactant ASSUMED 0.05/ml), per-m²
+   consumption, treatment cycle, 24 visits/yr, travel-in-labour, and
+   `fn_pest_treatment_costing()` → full annual survey costing with suggested price +
+   margin-at-price + an `assumptions[]` flag list. ASSUMED inputs to confirm =
+   **BLOCKED A13**; ad-hoc-vs-AMC price gap = **A14**. New test `treatment_costing.test.ts`.
+4. **A7** pre-flight fuel → `vehicle_fuel_purchases` (mig 063), idempotent + append-only. DONE.
+5. **A9** `expense_receipts` link table (mig 064); category already flowed through the
+   backend. Field-app picker/receipt-tagging UI remains (device-verified). PARTIAL.
+6. **A10** flag-gated **parallel** shared-brandChrome report path
+   (`VITE_REPORT_SHARED_CHROME=1`, default OFF); verified `render.ts` untouched. Staged —
+   pest-only + thinner body; compare on a phone before switching.
+
+`[FACT]` DB now at **migration 064** (060–064 applied this session; verify with
+`list_migrations`). invariants.sql + rls_isolation.sql PASSED after the changes; worker
+suite 25/25 on a clean run (the FEFO/pooler flake in `inventory.test.ts` re-passes — it
+is on a throwaway tenant, isolated from this work). Nothing on a phone or needing an
+owner-created account is verified.
