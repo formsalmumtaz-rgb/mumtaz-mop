@@ -149,32 +149,13 @@ choose). No code change needed.
 
 ---
 
-## 🟠 A11 — Push/PR/merge — gh now installed, but push still blocked (token scope + session gate)
-**Update (this session):** `gh` is installed and authenticated (`formsalmumtaz-rgb`), and git
-is configured to use gh's credential (`gh auth setup-git`). **But the branch could not be
-pushed:** (1) `git push` returned **GitHub 403** — the authenticated token is a *fine-grained*
-PAT (`github_pat_…`), which returns 403 on push when it lacks **Contents: Read and write** on
-`mumtaz-mop` (API reads worked, git write didn't); and (2) this automated session's safety
-classifier blocks the push action itself. **You need to run the push/PR/merge, or grant the
-token write.**
-**Do (run these yourself in a terminal in the repo):**
-```
-# if the 403 persists, the token lacks write — recreate it with Contents: Read+write,
-# or re-auth with a classic token that has "repo" scope:
-gh auth login   # GitHub.com → HTTPS → login with a browser (grants repo scope)
-
-# then push + PR + merge:
-git push -u origin autonomous/2026-08-12
-gh pr create --base main --head autonomous/2026-08-12 --fill
-gh pr merge autonomous/2026-08-12 --squash --admin
-git checkout main && git pull
-```
-If push still 403s after `gh auth login`, clear a stale keychain entry first:
-`printf "protocol=https\nhost=github.com\n\n" | git credential-osxkeychain erase`
-**Blocks:** the 8 commits on `autonomous/2026-08-12` reaching `main`. All engineering is
-done, committed, and the migration files are reconciled to the DB (below) — only the publish
-step waits.
-**(original entry:)**
+## ✅ A11 — Push/PR/merge — CLEARED
+**Cleared 12 Aug 2026.** The owner re-authenticated gh with a write-capable token
+(the fine-grained PAT lacked Contents:write; a browser `gh auth login` grants `repo`).
+Branch `autonomous/2026-08-12` was pushed and merged to `main` as **PR #69** (squash,
+`7f8984b`). Post-merge verification on `main`: migration files 060–064 match the applied
+SQL exactly, `invariants.sql` + `rls_isolation.sql` PASS, worker suite **25/25**. Main green.
+**(original entry, for history:)**
 ## 🔴 (was) No GitHub write credentials / `gh` CLI on this machine (blocks push, PR, merge)
 **What:** this machine (copied from another Mac) has **no Git write credential** for
 `github.com` and **no `gh` CLI**. `git fetch`/`git pull` work (read), but
@@ -200,10 +181,20 @@ and merge after main goes green.
 **Blocks:** the push/PR/merge/verify-main-green half of **every** task below. The
 engineering itself is done and committed locally; only the publish step waits on you.
 
-## 🔴 A12 — Production 500 (digest 6663152226): Supabase env vars missing on Vercel
-**What:** the deployed ops-console returns HTTP 500 ("Application error", digest
-`6663152226`) on every signed-in page. **Diagnosed and reproduced locally this
-session:** with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` absent,
+## ✅ A12 — Production 500 (digest 6663152226) — RESOLVED (env vars now present on Production)
+**Resolved 12 Aug 2026, verified against the live site** (`mumtaz-mop-ops-console.vercel.app`):
+the production `/` now **redirects cleanly to `/login`** (no 500, no digest), the deployed
+client bundle **contains** `NEXT_PUBLIC_SUPABASE_URL` + a valid anon key (project ref
+`xpkniuhcjysisfbfiqhn`, not expired), and the Supabase auth endpoint responds normally. The
+digest `6663152226` **was** the middleware missing-vars crash (reproduced exactly); it is gone
+now that the vars are effective for the Production build. If it ever recurs it is a deployment
+**scope** issue (a var enabled for Preview/Development but not Production) or a stale build —
+enable the var for the needed environment and **redeploy**. The `middleware.ts` 503 hardening
+(merged in PR #69) makes any recurrence self-explaining. **This is NOT the login problem — see A15.**
+**(original diagnosis, for history:)**
+**What:** the deployed ops-console returned HTTP 500 ("Application error", digest
+`6663152226`) on signed-in pages. **Reproduced locally:** with
+`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` absent,
 `middleware.ts` threw *"Your project's URL and Key are required to create a Supabase
 client!"* → 500 on `/`, while `/login` stayed 200. That is exactly this digest.
 **Code half — DONE this session:** `middleware.ts` now fails **closed and legibly** —
@@ -255,6 +246,30 @@ but the **ad-hoc price is 2.5× the AMC price for identical work**.
 **Do:** decide whether the AMC per-visit rate is a deliberate annual-commitment discount
 or underpriced. Both reference rates are seeded and editable.
 **Blocks:** nothing — informational, surfaced so it isn't invisible.
+
+## 🟠 A15 — Login does not proceed after a SUCCESSFUL sign-in (separate from the 500)
+**What (evidence, 12 Aug 2026):** the deployed sign-in **works** — `auth.users` shows 2
+confirmed accounts, both with recent successful sign-ins (one at 18:53 today), and a probe of
+the auth endpoint returns a normal `400 invalid_credentials` for bad creds. So credentials are
+accepted and Supabase issues a session; the failure is **after** auth: the app does not advance
+to the authenticated page. **Not the same root cause as A12** — A12 was a missing server var
+(now resolved); this is post-auth session propagation. The authenticated home (`/`,
+`getTenantId` + `scopedRead`) reads robustly and is unlikely to 500, which points at the session
+cookie not reaching the middleware on the post-login navigation (`LoginForm.tsx` does
+`router.push("/") + router.refresh()`).
+**Do (decisive test — needs YOUR login, which I can't use):** sign in with DevTools open and note:
+1. **Network → `token?grant_type=password`** → expect **200** (sign-in succeeds).
+2. Then the browser either (a) **bounces back to `/login`**, (b) shows a **500 / Application
+   error** on `/`, or (c) hangs. Note which.
+3. **Application → Cookies** for the site: is `sb-xpkniuhcjysisfbfiqhn-auth-token` (and
+   `…-auth-token.0/.1` chunks) present after sign-in? Missing ⇒ the browser client isn't
+   persisting the session to cookies; present-but-bounced ⇒ the middleware isn't reading it.
+4. **Console** → any red error (e.g. a cookie/CORS message).
+**Likely fix (pending which of a/b/c):** if it's the cookie bounce, replace the client-side
+`router.push("/")` after sign-in with a **full-page navigation** (`window.location.assign(next)`),
+which guarantees the freshly-set session cookies are sent on the next request. I'll implement +
+deploy once you report the observed behaviour from step 2.
+**Blocks:** office staff can't get past the login screen. High priority.
 
 ---
 
