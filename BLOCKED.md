@@ -129,6 +129,56 @@ choose). No code change needed.
 
 ---
 
+## 🔴 A11 — No GitHub write credentials / `gh` CLI on this machine (blocks push, PR, merge)
+**What:** this machine (copied from another Mac) has **no Git write credential** for
+`github.com` and **no `gh` CLI**. `git fetch`/`git pull` work (read), but
+`git push` fails with `could not read Username for 'https://github.com'`, and there
+is no `gh` to open or merge PRs.
+**Why it matters:** the standing workflow is *branch → push → PR → merge → verify
+main green* (HANDOVER §8). With no push and no `gh`, I can build, test, prove and
+**commit locally**, but I **cannot push, cannot open a PR, cannot merge, and cannot
+update `main` on GitHub.** All autonomous work this session is committed to the
+local branch **`autonomous/2026-08-12`** (one commit per task, full Proof-of-Work in
+each message) and is waiting to be pushed.
+**Do (either path):**
+1. Install GitHub CLI and authenticate: it will store a write credential in the macOS
+   keychain and let me push+PR+merge. In a terminal:
+   `brew install gh` (installs Homebrew first if needed — needs your Mac password),
+   then `gh auth login` (choose GitHub.com → HTTPS → login with a browser).
+   **OR**
+2. Create a GitHub **Personal Access Token** (repo scope) and let git store it:
+   run `git push` once and paste your GitHub username + the token when prompted; the
+   keychain remembers it thereafter.
+Then tell me, and I'll push `autonomous/2026-08-12`, open a PR per task (or one PR),
+and merge after main goes green.
+**Blocks:** the push/PR/merge/verify-main-green half of **every** task below. The
+engineering itself is done and committed locally; only the publish step waits on you.
+
+## 🔴 A12 — Production 500 (digest 6663152226): Supabase env vars missing on Vercel
+**What:** the deployed ops-console returns HTTP 500 ("Application error", digest
+`6663152226`) on every signed-in page. **Diagnosed and reproduced locally this
+session:** with `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` absent,
+`middleware.ts` threw *"Your project's URL and Key are required to create a Supabase
+client!"* → 500 on `/`, while `/login` stayed 200. That is exactly this digest.
+**Code half — DONE this session:** `middleware.ts` now fails **closed and legibly** —
+a missing var returns a plain **503** naming the missing variable instead of an opaque
+500 crash. Verified: vars absent → 503 with message; vars present → normal 307 redirect
+to `/login`. This makes the misconfiguration self-explaining but does **not** make the
+site work — the app genuinely needs the keys.
+**Do (the real fix — only you can, I have no Vercel access):** in **Vercel → the
+ops-console project → Settings → Environment Variables**, confirm both
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` exist **and are enabled
+for the _Production_ environment** (not only Preview/Development). The values are the
+same public URL + anon key already in `apps/ops-console/.env.local`. Then **redeploy**
+Production. After redeploy, opening the site should show `/login`, not the 500.
+**If it still 500s after that:** open Vercel → the deployment → **Runtime Logs**, find
+the line for digest `6663152226`, and paste it to me — with the middleware guard in
+place the message will now name what's wrong.
+**Blocks:** the deployed office console is unusable until the Production env vars are
+set and redeployed. Local build runs clean.
+
+---
+
 ## Real-device checklist (🟢 — you run these; I cannot)
 Airplane mode, camera/WebP capture, on-device PDF rendering, GPS and Maps
 deep-links, and full offline-day + reconnect sync are **unverified** until you

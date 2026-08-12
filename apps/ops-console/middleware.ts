@@ -16,9 +16,32 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(p + "/"))) return res;
 
+  // Fail closed, legibly, if the Supabase client can't be built. When these public
+  // (NEXT_PUBLIC_) vars are missing on a deployment, createServerClient throws
+  // "Your project's URL and Key are required", surfacing as an opaque 500 with a
+  // digest on EVERY protected page (the production 500, digest 6663152226). We
+  // must not fail open (that would bypass the auth gate), so return a clear 503
+  // naming the missing var instead of crashing. The var NAMES are not secrets.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnon) {
+    const missing = [
+      !supabaseUrl && "NEXT_PUBLIC_SUPABASE_URL",
+      !supabaseAnon && "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    return new NextResponse(
+      `Server configuration error: ${missing} is not set for this deployment.\n` +
+        `Set it in the hosting environment (Vercel → Project → Settings → Environment ` +
+        `Variables, scope: Production) and redeploy.`,
+      { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } },
+    );
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnon,
     {
       cookies: {
         getAll() {
