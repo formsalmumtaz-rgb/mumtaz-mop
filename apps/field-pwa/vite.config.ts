@@ -35,13 +35,13 @@ export default defineConfig({
   // When tunnelling the field app, the admin console stays on localhost only.
   server: {
     port: 3200,
-    proxy: { "/api": { target: "http://localhost:3100", changeOrigin: true } },
+    proxy: { "/api/field": { target: "http://localhost:3100", changeOrigin: true } },
     // allow the ephemeral cloudflared/ngrok hostname to reach the dev server
     allowedHosts: true,
   },
   preview: {
     port: 3200,
-    proxy: { "/api": { target: "http://localhost:3100", changeOrigin: true } },
+    proxy: { "/api/field": { target: "http://localhost:3100", changeOrigin: true } },
     allowedHosts: true,
   },
 });
