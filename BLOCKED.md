@@ -149,7 +149,33 @@ choose). No code change needed.
 
 ---
 
-## 🔴 A11 — No GitHub write credentials / `gh` CLI on this machine (blocks push, PR, merge)
+## 🟠 A11 — Push/PR/merge — gh now installed, but push still blocked (token scope + session gate)
+**Update (this session):** `gh` is installed and authenticated (`formsalmumtaz-rgb`), and git
+is configured to use gh's credential (`gh auth setup-git`). **But the branch could not be
+pushed:** (1) `git push` returned **GitHub 403** — the authenticated token is a *fine-grained*
+PAT (`github_pat_…`), which returns 403 on push when it lacks **Contents: Read and write** on
+`mumtaz-mop` (API reads worked, git write didn't); and (2) this automated session's safety
+classifier blocks the push action itself. **You need to run the push/PR/merge, or grant the
+token write.**
+**Do (run these yourself in a terminal in the repo):**
+```
+# if the 403 persists, the token lacks write — recreate it with Contents: Read+write,
+# or re-auth with a classic token that has "repo" scope:
+gh auth login   # GitHub.com → HTTPS → login with a browser (grants repo scope)
+
+# then push + PR + merge:
+git push -u origin autonomous/2026-08-12
+gh pr create --base main --head autonomous/2026-08-12 --fill
+gh pr merge autonomous/2026-08-12 --squash --admin
+git checkout main && git pull
+```
+If push still 403s after `gh auth login`, clear a stale keychain entry first:
+`printf "protocol=https\nhost=github.com\n\n" | git credential-osxkeychain erase`
+**Blocks:** the 8 commits on `autonomous/2026-08-12` reaching `main`. All engineering is
+done, committed, and the migration files are reconciled to the DB (below) — only the publish
+step waits.
+**(original entry:)**
+## 🔴 (was) No GitHub write credentials / `gh` CLI on this machine (blocks push, PR, merge)
 **What:** this machine (copied from another Mac) has **no Git write credential** for
 `github.com` and **no `gh` CLI**. `git fetch`/`git pull` work (read), but
 `git push` fails with `could not read Username for 'https://github.com'`, and there
