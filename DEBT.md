@@ -54,7 +54,14 @@ refuses to stage unexpected top-level files.
 
 ## D2 — Database password contains URL-reserved characters
 
-**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN (mitigated)
+**Logged:** 23 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** ✅ RESOLVED (11 Aug 2026)
+
+**Resolution.** The owner rotated the database password to an **alphanumeric**
+value (repayment path (b) below) and updated it in both `.env.local` files and
+Vercel. No URL-encoding is required anywhere now; a raw paste into a
+`postgresql://…` string is safe. Verified: `npm run test:worker` (15/15) and
+`rls_isolation.sql` (20 checks) both green against the new credential. The
+historical detail below is retained for context only.
 
 **The issue.** The Supabase database password contains characters that are
 reserved in a URI (`$ / ? &`). Placed raw into a `postgresql://user:pass@host/db`
