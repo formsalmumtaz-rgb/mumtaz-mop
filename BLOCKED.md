@@ -32,13 +32,16 @@ the `is_active` gate (effective at next sync) rather than immediate token kill.
 **Blocks:** the "immediate" part of revocation only; the review-queue + lockout
 path works now.
 
-## 🔴 A3 — Field PWA Supabase env vars (T1 client, blocks sign-in)
+## ✅ A3 — Field PWA Supabase env vars (T1 client) — CLEARED
+**Cleared:** the owner set `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` in
+`apps/field-pwa/.env`; both are present and non-empty (verified 12 Aug 2026).
+The field app can now reach sign-in. Historical detail retained below.
 **What:** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for the field app build.
 **Why:** the PWA now has a real login (T1). Without these it renders "sign-in
 isn't configured" and cannot authenticate. They are the public URL + anon key
 (same values already used by the ops-console `NEXT_PUBLIC_*`), safe to embed.
-**Do:** set both in the field-pwa build environment (Vercel project / `.env`).
-**Blocks:** the technician can't sign in until set — so the whole app is gated.
+**Do:** set both in the field-pwa build environment (Vercel project / `.env`). — done.
+**Blocks:** nothing — cleared. (Was: the technician couldn't sign in until set.)
 
 ## 🟡 A5 — Treatment recipes are ASSUMED starter values (T2)
 **What:** the dosing/dilution/coverage on the two seeded pest-control recipes
