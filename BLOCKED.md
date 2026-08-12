@@ -64,16 +64,17 @@ equipment list (sprayer, bait gun, torch, ladder, first-aid) — mig 058,
 **Do:** confirm/replace the items the technician must tick at start of shift.
 **Blocks:** nothing — the pre-flight screen reads whatever is configured.
 
-## 🟡 A7 — Pre-flight fuel/odometer not yet posted to fuel ledger (T3)
-**What:** pre-flight captures odometer + fuel (litres/AED) in `preflight_checks`,
-but does NOT yet insert `vehicle_fuel_purchases`.
-**Why:** that table (mig 022) has no `client_uuid`, so posting on every offline
-re-sync would duplicate. Safe idempotent posting needs a `client_uuid` column
-there first.
-**Do:** decide whether pre-flight fuel should feed the fuel/cost ledger; if so I
-add `client_uuid` to `vehicle_fuel_purchases` and post once. For now fuel is
-recorded on the pre-flight only.
-**Blocks:** the fuel→cost linkage only; pre-flight itself works.
+## ✅ A7 — Pre-flight fuel now posts to the fuel ledger (T3) — DONE (mig 063)
+**Cleared:** `vehicle_fuel_purchases` gained `client_uuid` + `preflight_check_id` +
+`source` and a partial UNIQUE index on `preflight_check_id` (mig 063). `upsertPreflight`
+now posts one fuel purchase per pre-flight when a vehicle + positive litres are present
+(`ON CONFLICT (preflight_check_id) DO NOTHING` — re-sync-safe, table stays append-only).
+Proven: `packages/db/tests/preflight_fuel_idempotent.sql` (double-post → 1 row; two
+pre-flights → 2 rows). Fuel now feeds `vehicle_cost_per_km`.
+**Residual (minor):** a same-day fuel *correction* on the pre-flight updates the
+pre-flight but not the already-posted purchase (append-only) — a correction would be a
+manual reversing fuel entry. Acceptable; noted.
+**Unverified:** the on-device offline→sync path itself (as with all field-app paths).
 
 ## 🟡 A8 — Inspection option lists are ASSUMED (T4)
 **What:** the button-driven post-inspection lists (mig 059, `inspection_options`,
