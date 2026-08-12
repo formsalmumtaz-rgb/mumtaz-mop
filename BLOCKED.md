@@ -177,6 +177,39 @@ place the message will now name what's wrong.
 **Blocks:** the deployed office console is unusable until the Production env vars are
 set and redeployed. Local build runs clean.
 
+## 🟡 A13 — Costing engine: ASSUMED inputs to confirm (mig 060–062)
+**What:** the costing engine is built and computing real numbers, but a handful of
+inputs are seeded **ASSUMED** (flagged in every engine result under `assumptions`,
+and editable from settings without a deploy — Art. X §4). Confirm each real value:
+| Setting / row | Seeded ASSUMED value | Why assumed |
+|---|---|---|
+| `item: Pro Surfactant` landed cost | **0.05 AED/ml (50 AED/L)** | price was unknown — **placeholder**, replace with the real purchase price |
+| `cost.target_margin_default` | 0.35 (35%) | your real target margin was not given |
+| `cost.treatment_hours_per_visit` | 1.0 h | on-site time estimate |
+| `cost.travel_speed_kmh` | 32 km/h | turns distance into paid travel hours (gives ~2 h paid for a 16 km job, matching your example) |
+| `cost.default_job_one_way_km` | 16 km | used when a site has no measured route distance |
+| `treatment.gel_visits_per_year` | 6 of 24 | annual spray/gel mix |
+| `consumption:spray` per-m² | Blitz 0.25 ml/m², Surfactant 0.05 ml/m² | derived from "50 ml covers a medium restaurant", assuming that restaurant = **200 m²** (the recipe's coverage). Confirm the real medium-restaurant area. |
+| `consumption:gel` per-m² | 0.09 g/m² | derived from "9 g covers a ~100 m² 2BHK" |
+| `cost.overhead_rate_per_labour_hour` | 15% of labour | the 15% is assumed |
+**Confirmed as real (no action):** labour rate 10.62 AED/hr (from the 1,869/mo basis),
+vehicle 0.698 AED/km (fuel 3.49 ÷ 5 km/L), Blitz 0.10/ml, Gel 1.3333/g, 24 visits/yr
+(municipality), pricing refs 250 ad-hoc / 100 AMC.
+**Do:** tell me the real numbers (especially the **Pro Surfactant price** and your
+**target margin**) and I'll set them — or edit them yourself in Cost setup once that
+screen exposes these keys. Until then every costed figure is correctly flagged assumed.
+**Blocks:** nothing operationally — the engine runs and flags. Only the *accuracy* of
+margin/dosing figures depends on these; do not quote them to a customer as final yet.
+
+## 🟡 A14 — Pricing discrepancy surfaced: ad-hoc 250 vs AMC 100 for the same service
+**What:** the engine costs a medium restaurant (200 m², 24 visits/yr) at **1,365 AED/yr
+direct cost, ≈57/visit**. At the ad-hoc rate (250/visit) that is a **77% margin**; at the
+AMC rate (100/visit = contract 1330/25's 2,400 ÷ 24) it is **43%**. Both are profitable,
+but the **ad-hoc price is 2.5× the AMC price for identical work**.
+**Do:** decide whether the AMC per-visit rate is a deliberate annual-commitment discount
+or underpriced. Both reference rates are seeded and editable.
+**Blocks:** nothing — informational, surfaced so it isn't invisible.
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)
