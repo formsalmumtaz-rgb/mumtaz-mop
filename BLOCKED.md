@@ -293,6 +293,34 @@ what only you can supply. Consolidated here; most already have their own entry:
 | **Public QR page: technician full name?** | NEW — PDPL flag (ROADMAP §6.5): full name on a physically-public sticker page is personal data; recommendation is technician code + masked name ("Muh*** Ali"). **Full names will not be implemented without your explicit confirmation.** |
 **Blocks:** nothing today — the spec is filed, not building. These become blocking as
 their tiers are picked up in EXECUTION.md.
+**Update 13 Aug (QR name):** owner decided — technician **code + masked name**; full
+names will NOT be implemented. Decision recorded in ROADMAP §6.5; row above closed.
+
+## 🟡 A17 — Customer groups: how does a group get billed? (ASSUMED default seeded)
+**What:** Sultan Al Arab = 6 independent customers under one `customer_group`. When
+group features build (statements, consolidated AR — ROADMAP §7.2), the billing shape
+needs your call: (a) ONE invoice covering all sites, (b) separate invoice per site
+(today's behaviour), or (c) separate invoices + a monthly summary statement for the
+group. **Seeded ASSUMED: (c) — invoice-per-site plus a group summary statement** (no
+re-keying, no change to the per-site invoice chain; the statement is a projection).
+**Do:** confirm (c) or pick (a)/(b). Editable without a deploy once the setting lands
+with the group features.
+**Blocks:** nothing yet — group reporting reads either way; only the *statement/
+consolidation shape* waits on this.
+
+## 🔴 A18 — Email provider + API key (blocks real sending; everything else built around it)
+**What:** the outbound email channel (ROADMAP §7.4) is provider-agnostic; in
+development it LOGS what it would send (append-only delivery log) instead of
+sending. Real delivery needs a transactional email provider account + API key +
+a verified sending domain — only you can create these.
+**Do (recommended: Resend — simple, generous free tier; SES/Postmark also fine):**
+1. Create the account, verify the sending domain (e.g. almumtaz.ae — needs the DNS
+   records they show you added at your domain host).
+2. Create an API key and give it to me (or put it in Vercel env as EMAIL_API_KEY +
+   EMAIL_FROM, e.g. "Mumtaz Operations <ops@almumtaz.ae>").
+**Blocks:** actual delivery of every §7.4 notification (24h notice, ETA, annual
+schedule, schedule-change, service report email). The templates, triggers, log,
+re-send and flags all work now in log-only mode and light up when the key lands.
 
 ---
 

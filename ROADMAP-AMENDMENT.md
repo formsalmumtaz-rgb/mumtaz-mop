@@ -1144,5 +1144,139 @@ technician-name decision (Part G).
 
 ---
 
+## 7. Amendment — Roles, Groups, Import, Email, Expiry (filed 13 Aug 2026, night run)
+
+**Status: FILED. Build authorised for tonight's autonomous run by the owner
+("Full autonomous run. Complete authority."), within the standing limits (no
+structural invariant may be weakened; unknown business rules seeded ASSUMED).**
+
+Owner additions delivered mid-run, filed verbatim as **DOCUMENT 9** below with
+assessment inline. These extend DOCUMENT 8 (§6); the role structure corrects a
+gap in the original spec.
+
+### 7.1 Role structure (owner-specified, verbatim in DOCUMENT 9 §A)
+
+Six operating roles: **Supreme Admin** (everything) · **Operations** (scheduling,
+assignment, customers, contracts, jobs, complaints, approval queue, inventory
+issue, reports; sees revenue/collections; NEVER margin, profitability, GL, cost
+config, user management) · **Team Lead** (technician + team attendance [a
+technician never marks their own], uniform/hygiene flags, vehicle/odometer/fuel/
+stock declaration, submits the TEAM pre-flight; sees the team's jobs only) ·
+**Technician** (own assigned jobs only; execute/capture/collect/expense; no
+customer list, no pricing, no other teams) · **Finance** (invoices→ledger; not
+operational scheduling) · **Viewer/Auditor** (read-only; external parties get
+scoped expiring links, never logins — Art. VI §4 reaffirmed).
+
+**Assessment:** mig 039 seeded admin/management/finance/operations/technician/
+viewer over a 28-permission catalogue — **team_lead does not exist**, pre-flight
+submission is not role-gated (any linked technician can submit their own), and
+the operations-must-not-see-margin boundary needs verification against the
+current permission map. Enforcement must be API + database layer, proven by
+negative tests — a hidden button is not access control. → Built tonight
+(migration + guards + negative tests).
+
+### 7.2 Customer groups (DOCUMENT 9 §B)
+
+`customer_groups` exists (mig 014) with Sultan Al Arab imported (6 customers).
+Missing: group statements, consolidated receivables, group-level reporting,
+retroactive assignment from the UI. **Open owner decision:** one invoice across
+all sites vs invoice-per-site vs summary statement → seeded ASSUMED as
+**invoice-per-site + monthly summary statement** (matches current per-site
+invoicing; nothing re-keyed), flagged, editable. → BLOCKED A17.
+
+### 7.3 Customer data import (DOCUMENT 9 §C)
+
+`merge ` CSVs: 584 customers, 430 contacts, 462 branches, 220 contracts +
+exception sheets; live tenant has ~7 customers. Import per Art. VII §5: staging →
+validation → dry-run report → commit clean rows. **Account numbers are
+system-assigned, never taken from the file** (spreadsheet CUST-XXXX conflicts);
+match on legacy_customer_code → TRN → phone → name. Owner-decision rows logged,
+clean rows imported tonight (owner pre-authorised).
+
+### 7.4 Email architecture (DOCUMENT 9 §D)
+
+No sending infrastructure exists (verified repo-wide). Build: outbound channel
+behind a provider-agnostic transport (**real provider + API key = owner input,
+BLOCKED A18**; dev transport logs instead of sending), append-only delivery log
+(sent/delivered/bounced; bounce → customer data-quality flag, never silent),
+manual re-send, and the triggers: 24h-before-service notice w/ site access
+requirements · ETA-on-previous-job-completion · annual schedule document on
+activation (with the ~80% adherence clause) · schedule-change email + internal
+phone task · service report auto-email on sync · 3 no-access visits → commercial
+flag. **Notification-only: no reschedule/cancel links; the customer calls the
+team lead, whose number surfaces from the employee record.**
+
+### 7.5 Document expiry engine (DOCUMENT 9 §E)
+
+Generic monitored-documents engine: customer trade licences, municipality
+licences, vehicle registration/insurance, employee visa/Emirates ID,
+certifications. Configurable intervals (90/60/30/14/7/0/after). Actions:
+dashboard alert, notify operations/sales, email customer (rides §7.4 channel).
+Consumes the licence dates Part B captures.
+
+### 7.6 Source document (filed verbatim)
+
+#### DOCUMENT 9 — Night-run additions: Roles / Groups / Import / Email / Expiry (13 Aug 2026)
+
+**§A ROLE STRUCTURE.** Six roles exist; map them onto how we actually operate.
+SUPREME ADMIN (owner) — everything: financials, margins, costing config, GL, user
+management, all divisions, all emirates. OPERATIONS — scheduling, technician and
+vehicle assignment, customers, contracts, jobs, complaints, next-day approval
+queue, inventory issue, reports; sees revenue and collections; NEVER margin,
+profitability, GL, cost configuration or user management. TEAM LEAD — everything
+a technician can do, PLUS: marks attendance for the whole team (a technician must
+never mark their own), flags uniform and hygiene issues per person, declares
+vehicle condition, odometer, fuel and stock on hand, submits the team's
+pre-flight; sees the team's jobs, not the company's. TECHNICIAN — only their
+assigned jobs; execute, capture, collect payment, log expenses; no financials
+beyond what they collected on their own jobs; no customer list, no pricing, no
+other teams' work. FINANCE — invoices, receipts, credit notes, refunds, AR,
+ledger, financial reports; not operational scheduling. VIEWER/AUDITOR —
+read-only; external parties get scoped expiring links, never logins. Assess
+whether the existing permission map matches. Team lead in particular — distinct
+role, or just a technician with extra fields? If any technician can submit
+pre-flight today, that's a gap. Fix it. Every role boundary must be enforced at
+the API and database layer, not by hiding UI. A hidden button is not access
+control. Prove it with negative tests.
+
+**§B CUSTOMER GROUPS.** customer_groups exists and Sultan Al Arab is imported (6
+independent customers under one group). Missing: group statements, consolidated
+receivables, group-level reporting, retroactive assignment of existing customers
+to a group from the UI. Open decision for the owner — one invoice covering all
+sites, separate invoices per site, or a statement summarising many. Seed a
+default, flag it ASSUMED.
+
+**§C CUSTOMER DATA IMPORT.** /merge holds cleaned CSVs — 584 customers, 430
+contacts, 462 branches, 220 contracts, plus exception reports. The live tenant
+still has 7 customers. Import through the dry-run pipeline per Art. VII §5:
+staging, validation, dry-run report, then commit. Account numbers are assigned by
+the system, never taken from the file — the spreadsheet's CUST-XXXX codes
+conflict with ours. Match on legacy_customer_code, then TRN, then phone, then
+name. If the dry-run surfaces anything needing the owner's decision, log it and
+import what's clean.
+
+**§D EMAIL ARCHITECTURE.** No sending infrastructure exists anywhere. Build the
+channel plus: automatic 24h-before-service notice with site-specific access
+requirements ("ensure kitchen accessible, surfaces cleared"); ETA notification
+fired when the technician completes the previous job; annual schedule document on
+contract activation — all visits for the year, with the clause that it is
+auto-generated, subject to change, ~80% on-time adherence, changes communicated;
+any schedule change triggers a customer email AND an internal task to phone them;
+service report auto-emailed on sync, PDF attached; delivery logging — sent,
+delivered, bounced; a bounce raises a data-quality flag on the customer, never
+fails silently; office can manually re-send any notification; three no-access
+visits at one site raises a commercial flag. Notification only — no reschedule or
+cancel links. To change, the customer calls the assigned team lead, whose number
+surfaces from the employee record.
+
+**§E DOCUMENT EXPIRY ENGINE.** Trade licence issue and expiry are captured at
+registration but nothing consumes them. Build a reusable engine monitoring
+customer documents, municipality licences, vehicle registration and insurance,
+employee visa and Emirates ID, and certifications. Configurable reminder
+intervals (90/60/30/14/7 days, expiry day, after expiry). Actions: dashboard
+alert, notify operations, notify sales, email the customer.
+
+---
+
 *End of filing. Nothing above is authorised for build until a sprint in `EXECUTION.md`
-picks it up.*
+picks it up — except §7, authorised for the 13 Aug 2026 night run by the owner.*
