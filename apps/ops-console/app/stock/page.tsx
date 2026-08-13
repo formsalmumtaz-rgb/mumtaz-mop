@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { listOnHand, listLocations, listTransferableItems } from "@/lib/domain/stock";
+import { listOnHand, listLocations, listTransferableItems, listLowStock } from "@/lib/domain/stock";
 import { PageHeader } from "@/components/ui";
 import { transferStockAction } from "./actions";
 
@@ -15,8 +15,8 @@ const qty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 
 export default async function StockPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const tenantId = await getTenantId();
-  const [onHand, locations, items] = await Promise.all([
-    listOnHand(tenantId), listLocations(tenantId), listTransferableItems(tenantId),
+  const [onHand, locations, items, lowStock] = await Promise.all([
+    listOnHand(tenantId), listLocations(tenantId), listTransferableItems(tenantId), listLowStock(tenantId),
   ]);
 
   // Group on-hand rows by location for display.
@@ -35,6 +35,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         title="Stock"
         description="On-hand by location and batch (movement ledger sums — append-only). Issue stock from the warehouse to a team van; jobs consume from the van, FEFO."
       />
+
+      {lowStock.length > 0 && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <b>Low stock:</b>{" "}
+          {lowStock.map((l) => `${l.item_name} (${l.total_base}${l.base_unit ?? ""} ≤ reorder ${l.reorder_level})`).join(" · ")}
+        </div>
+      )}
 
       {sp.issued && (
         <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Stock issued ✓</div>

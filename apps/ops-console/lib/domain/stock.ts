@@ -120,3 +120,19 @@ export async function transferStock(
     return { batches: used };
   });
 }
+
+// Low stock (refresh item 5): total on-hand per item vs items.reorder_level.
+export interface LowStockRow { item_id: string; item_name: string; base_unit: string | null; total_base: number; reorder_level: number }
+export async function listLowStock(tenantId: string): Promise<LowStockRow[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select it.id as item_id, it.name as item_name, u.code as base_unit,
+            coalesce(sum(oh.qty_base), 0)::float8 as total_base, it.reorder_level::float8 as reorder_level
+       from items it
+       left join units u on u.id = it.base_unit_id
+       left join batch_stock_on_hand oh on oh.item_id = it.id and oh.tenant_id = it.tenant_id
+      where it.tenant_id = $1 and it.is_active and it.reorder_level is not null
+      group by it.id, it.name, u.code, it.reorder_level
+     having coalesce(sum(oh.qty_base), 0) <= it.reorder_level
+      order by it.name`, [tenantId]);
+  return rows as LowStockRow[];
+}
