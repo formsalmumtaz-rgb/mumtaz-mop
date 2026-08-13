@@ -233,3 +233,21 @@ plus the origin in `FIELD_APP_ORIGINS` if deployed cross-origin). (2) Provision 
 technician login and set `technicians.user_id` for them (no UI for this mapping
 yet — currently a manual insert). (3) Re-verify sync returns only that
 technician's jobs and upload/media reject other technicians' jobs.
+
+---
+
+## D9 — Resend API key is full-access, not sending-only
+
+**Logged:** 13 Aug 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — pre-production
+
+**The shortcut.** The Resend API key provisioned for outbound email is a
+full-access key rather than a sending-only key — deliberately, to simplify setup
+while the channel is being commissioned.
+
+**What it costs us.** A leaked key could read/manage the Resend account (domains,
+keys, audiences), not merely send. Exposure is limited to the two git-ignored
+`.env.local` files and (later) Vercel env vars.
+
+**Repayment trigger.** **Before production go-live**: replace with a sending-only
+key in `.env.local` (root + apps/ops-console) and Vercel, then revoke the
+full-access key in the Resend dashboard.
