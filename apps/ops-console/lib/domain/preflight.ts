@@ -23,6 +23,10 @@ export interface PreflightInput {
   vehicle_id?: string | null; odometer_km?: number | null; fuel_litres?: number | null; fuel_amount?: number | null;
   ppe?: Record<string, boolean>; equipment?: Record<string, boolean>; notes?: string | null;
   client_uuid?: string | null; device_time?: string | null; time_suspect?: boolean;
+  // Declared van stock (DOCUMENT 8 Part E, mig 072): what the team physically
+  // holds, in the item's base unit. Recorded and compared against the issued
+  // ledger (preflight_stock_variance) — never blocks, never rejects a figure.
+  stock?: { item_id: string; qty_base: number; note?: string | null }[];
 }
 
 // Idempotent by (tenant, technician, day): one record per shift, correctable the
@@ -55,6 +59,20 @@ export async function upsertPreflight(tenantId: string, actorId: string, p: Pref
 
     // Post fuel to the ledger once per pre-flight. Guards match the table's CHECKs
     // (litres > 0, amount >= 0) and NOT NULL vehicle_id.
+    // Declared stock (upsert per item; same-day corrections replace the figure).
+    if (preflightId && p.stock) {
+      for (const s of p.stock) {
+        if (!s.item_id || !(s.qty_base >= 0)) continue; // never reject — just skip garbage
+        await c.query(
+          `insert into preflight_stock_declarations
+             (tenant_id, preflight_check_id, item_id, declared_qty_base, note, created_by)
+           values ($1,$2,$3,$4,$5,$6)
+           on conflict (preflight_check_id, item_id)
+             do update set declared_qty_base = excluded.declared_qty_base, note = excluded.note`,
+          [tenantId, preflightId, s.item_id, s.qty_base, s.note ?? null, actorId]);
+      }
+    }
+
     const litres = p.fuel_litres ?? null;
     const amount = p.fuel_amount ?? null;
     if (preflightId && p.vehicle_id && litres != null && litres > 0 && amount != null && amount >= 0) {
