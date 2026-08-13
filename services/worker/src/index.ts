@@ -10,3 +10,5 @@ export { recordPurchase, postConsumptionValuation, resolveInventoryAccounts, res
 export type { RecordPurchaseInput, InventoryAccounts } from "./inventory";
 export { costingConsumers, jobCoster } from "./costing";
 export { runContractBilling, runAllContractBilling } from "./billing";
+export { notifyConsumers, runNotificationSweep, resendNotification } from "./notify";
+export type { SweepResult } from "./notify";

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getActiveDivision } from "@/lib/domain/reference";
-import { getDashboard, getAssumedBacklog } from "@/lib/domain/dashboard";
+import { getDashboard, getAssumedBacklog, getExpiryAttention } from "@/lib/domain/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +24,8 @@ function Tile({ label, value, sub, href }: { label: string; value: string; sub?:
 export default async function DashboardPage() {
   const tenantId = await getTenantId();
   const division = await getActiveDivision(tenantId);
-  const [d, assumed] = await Promise.all([getDashboard(tenantId, division.id), getAssumedBacklog(tenantId)]);
-  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0 || assumed.total > 0;
+  const [d, assumed, expiry] = await Promise.all([getDashboard(tenantId, division.id), getAssumedBacklog(tenantId), getExpiryAttention(tenantId)]);
+  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0 || assumed.total > 0 || expiry.expiring > 0 || expiry.bounced > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -55,6 +55,13 @@ export default async function DashboardPage() {
             )}
             {d.reportsPending > 0 && (
               <Tile label="Service reports to review" value={String(d.reportsPending)} sub="awaiting approval" href="/service-reports" />
+            )}
+            {expiry.expiring > 0 && (
+              <Tile label="Documents expiring ≤90 days" value={String(expiry.expiring)}
+                    sub={expiry.nearest ? `nearest ${expiry.nearest}` : undefined} href="/notifications" />
+            )}
+            {expiry.bounced > 0 && (
+              <Tile label="Customers with bounced email" value={String(expiry.bounced)} sub="fix the address — data quality" href="/customers" />
             )}
             {assumed.total > 0 && (
               <Tile label="Assumed values to confirm" value={String(assumed.total)}
