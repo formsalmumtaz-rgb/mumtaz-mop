@@ -33,35 +33,37 @@ test("per-visit breakdown: travel folded into labour, material from landed cost"
   near(Number(j.per_visit.labour_cost), 21.24);
   // fuel = 32km ÷ 5km/L × 3.49 ≈ 22.34
   near(Number(j.per_visit.fuel_cost), 22.34);
-  // spray material = 200 m² × (0.25×0.10 Blitz + 0.05×0.05 Surfactant) = 5.50
-  near(Number(j.per_visit.spray.material_cost), 5.5);
-  // gel material = 200 m² × 0.09 × 1.3333 = 24.00
-  near(Number(j.per_visit.gel.material_cost), 24);
+  // spray material = 200 m² × (0.25×0.08925 Blitz + 0.025×0.42 Surfactant) = 6.56 (CHEMICAL_LIST 13 Aug)
+  near(Number(j.per_visit.spray.material_cost), 6.56);
+  // gel material = 200 m² × 0.105 × 1.20 (Power Gel 40/35g ex-VAT +5%) = 25.20
+  near(Number(j.per_visit.gel.material_cost), 25.2);
 });
 
 test("annual direct cost and suggested price are deterministic", async () => {
   const j = await cost(null);
-  near(Number(j.annual.total_direct_cost), 1365.48);
-  near(Number(j.annual.cost_per_visit_blended), 56.9);
-  // suggested min at 35% margin = 56.90 / 0.65 ≈ 87.54
-  near(Number(j.pricing.suggested_min_price_per_visit), 87.54);
+  near(Number(j.annual.total_direct_cost), 1391.76);
+  near(Number(j.annual.cost_per_visit_blended), 57.99);
+  // suggested min at 35% margin = 57.99 / 0.65 ≈ 89.22 (default margin is now 70%; the test passes 0.35 explicitly)
+  near(Number(j.pricing.suggested_min_price_per_visit), 89.22);
   assert.equal(Number(j.pricing.adhoc_reference_per_visit), 250);
   assert.equal(Number(j.pricing.amc_reference_per_visit), 100);
 });
 
 test("margin at ad-hoc 250 vs AMC 100 (the flagged discrepancy)", async () => {
   const adhoc = await cost(250);
-  near(Number(adhoc.at_price.margin_pct), 77.2);
-  near(Number(adhoc.at_price.annual_profit), 4634.52);
+  near(Number(adhoc.at_price.margin_pct), 76.8);
+  near(Number(adhoc.at_price.annual_profit), 4608.24);
 
   const amc = await cost(100);
-  near(Number(amc.at_price.margin_pct), 43.1);
-  near(Number(amc.at_price.annual_profit), 1034.52);
+  near(Number(amc.at_price.margin_pct), 42.0);
+  near(Number(amc.at_price.annual_profit), 1008.24);
 });
 
 test("every figure is flagged assumed until inputs are confirmed", async () => {
   const j = await cost(250);
   assert.equal(j.is_assumed, true);
-  assert.ok(j.assumptions.includes("material:Pro Surfactant"));
+  // Pro Surfactant price is REAL now (CHEMICAL_LIST) — no longer in the list;
+  // the consumption coverage rates remain assumed until the owner confirms areas.
+  assert.ok(!j.assumptions.includes("material:Pro Surfactant"));
   assert.ok(j.assumptions.includes("consumption:spray"));
 });

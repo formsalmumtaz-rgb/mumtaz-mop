@@ -278,7 +278,14 @@ async function commit(): Promise<void> {
     // 1. clean customers → live, SYSTEM-assigned codes continuing our sequence (set-based)
     const { rows: cust } = await c.query(
       `with base as (
-         select coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0) as n
+         -- Account numbers are permanent and never reused: the floor is the max of
+         -- live codes AND the burn setting (import.next_customer_code), so codes
+         -- issued by a rolled-back batch stay burned forever.
+         select greatest(
+                  coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0),
+                  coalesce((select (value #>> '{}')::int - 1 from settings
+                             where tenant_id=$1 and key='import.next_customer_code'), 0)
+                ) as n
            from customers where tenant_id=$1 and code ~ '^CUST-\\d+$'
        ), ins as (
          insert into customers (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license,
