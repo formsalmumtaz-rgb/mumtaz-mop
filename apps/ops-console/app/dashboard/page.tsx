@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getActiveDivision } from "@/lib/domain/reference";
-import { getDashboard, getAssumedBacklog, getExpiryAttention } from "@/lib/domain/dashboard";
+import { getDashboard, getAssumedBacklog, getExpiryAttention, getComplianceAttention } from "@/lib/domain/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +24,8 @@ function Tile({ label, value, sub, href }: { label: string; value: string; sub?:
 export default async function DashboardPage() {
   const tenantId = await getTenantId();
   const division = await getActiveDivision(tenantId);
-  const [d, assumed, expiry] = await Promise.all([getDashboard(tenantId, division.id), getAssumedBacklog(tenantId), getExpiryAttention(tenantId)]);
-  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0 || assumed.total > 0 || expiry.expiring > 0 || expiry.bounced > 0;
+  const [d, assumed, expiry, comp] = await Promise.all([getDashboard(tenantId, division.id), getAssumedBacklog(tenantId), getExpiryAttention(tenantId), getComplianceAttention(tenantId)]);
+  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0 || assumed.total > 0 || expiry.expiring > 0 || expiry.bounced > 0 || comp.attestationOverdue > 0 || comp.severeActive > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -55,6 +55,12 @@ export default async function DashboardPage() {
             )}
             {d.reportsPending > 0 && (
               <Tile label="Service reports to review" value={String(d.reportsPending)} sub="awaiting approval" href="/service-reports" />
+            )}
+            {comp.attestationOverdue > 0 && (
+              <Tile label="⚠ Attestation OVERDUE" value={String(comp.attestationOverdue)} sub="legal exposure — Unified Contract condition 1" href="/contracts" />
+            )}
+            {comp.severeActive > 0 && (
+              <Tile label="Severe infestation active" value={String(comp.severeActive)} sub="3-day follow-ups, zero revenue — clause 6" href="/contracts" />
             )}
             {expiry.expiring > 0 && (
               <Tile label="Documents expiring ≤90 days" value={String(expiry.expiring)}

@@ -77,3 +77,12 @@ export async function getExpiryAttention(tenantId: string): Promise<{ expiring: 
     `select count(*)::int as n from customers where tenant_id = $1 and email_bounced_at is not null and archived_at is null`, [tenantId]);
   return { expiring: e[0]?.n ?? 0, nearest: e[0]?.nearest ?? null, bounced: b[0]?.n ?? 0 };
 }
+
+// Attestation overdue + active severe-infestation episodes (migs 076/077).
+export async function getComplianceAttention(tenantId: string): Promise<{ attestationOverdue: number; severeActive: number }> {
+  const { rows: a } = await scopedRead(tenantId,
+    `select count(*)::int as n from contract_attestation_alerts where tenant_id=$1 and is_overdue`, [tenantId]);
+  const { rows: s } = await scopedRead(tenantId,
+    `select count(*)::int as n from severe_infestation_episodes where tenant_id=$1 and resolved_at is null`, [tenantId]);
+  return { attestationOverdue: a[0]?.n ?? 0, severeActive: s[0]?.n ?? 0 };
+}

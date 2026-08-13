@@ -35,6 +35,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const c = await getContract(tenantId, id);
   if (!c) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  // Attestation (mig 076, Unified Contract condition 1): the MOMENT a contract
+  // document is generated/downloaded, tracking starts — no manual step.
+  const { withRequest } = await import("@/lib/rls");
+  await withRequest({ tenantId, actorId: session?.userId ?? null }, (cl) =>
+    cl.query(
+      `update contracts set attestation_status = 'pending'
+        where id = $1 and tenant_id = $2 and attestation_status = 'not_required'`,
+      [id, tenantId]),
+  );
+
   // Service line name + code (getContract has the id only) — code drives branding.
   const { rows: slRows } = await scopedRead(tenantId,
     `select code, name from service_lines where tenant_id = $1 and id = $2`, [tenantId, c.service_line_id]);

@@ -67,3 +67,56 @@ export async function activateContractAction(fd: FormData): Promise<void> {
   await activateContract(tenantId, id);
   revalidatePath(`/contracts/${id}`);
 }
+
+// ── Attestation (mig 076) + severe infestation (mig 077) ──
+export async function markAttestationAction(fd: FormData): Promise<void> {
+  const session = await requirePermission("contract.edit");
+  const id = String(fd.get("contract_id") ?? "");
+  const to = String(fd.get("to_status") ?? "");
+  if (!id || !["submitted", "attested"].includes(to)) return;
+  const tenantId = await getTenantId();
+  const { withRequest } = await import("@/lib/rls");
+  await withRequest({ tenantId, actorId: session?.userId ?? null }, (c) =>
+    c.query(
+      to === "submitted"
+        ? `update contracts set attestation_status='submitted', attestation_submitted_at=coalesce(attestation_submitted_at, current_date) where id=$1 and tenant_id=$2`
+        : `update contracts set attestation_status='attested', attested_at=coalesce(nullif($3,'')::date, current_date),
+                  attestation_receipt_no=nullif($4,''), attestation_employee_ref=nullif($5,''), attestation_fee=nullif($6,'')::numeric
+             where id=$1 and tenant_id=$2`,
+      to === "submitted" ? [id, tenantId] : [id, tenantId, String(fd.get("attested_at") ?? ""), String(fd.get("receipt_no") ?? ""), String(fd.get("employee_ref") ?? ""), String(fd.get("fee") ?? "")]),
+  );
+  revalidatePath(`/contracts/${id}`);
+}
+
+export async function openSevereEpisodeAction(fd: FormData): Promise<void> {
+  const session = await requirePermission("contract.edit");
+  const contractId = String(fd.get("contract_id") ?? "");
+  const cause = String(fd.get("cause") ?? "").trim();
+  if (!contractId || !cause) return;
+  const tenantId = await getTenantId();
+  const { withRequest } = await import("@/lib/rls");
+  await withRequest({ tenantId, actorId: session?.userId ?? null }, (c) =>
+    c.query(
+      `insert into severe_infestation_episodes (tenant_id, service_line_id, contract_id, customer_id, branch_id, cause, opened_by)
+       select ct.tenant_id, ct.service_line_id, ct.id, ct.customer_id, null, $3, $4
+         from contracts ct where ct.id = $1 and ct.tenant_id = $2`,
+      [contractId, tenantId, cause, session?.userId ?? null]),
+  );
+  revalidatePath(`/contracts/${contractId}`);
+}
+
+export async function resolveSevereEpisodeAction(fd: FormData): Promise<void> {
+  const session = await requirePermission("contract.edit");
+  const id = String(fd.get("episode_id") ?? "");
+  const contractId = String(fd.get("contract_id") ?? "");
+  if (!id) return;
+  const tenantId = await getTenantId();
+  const { withRequest } = await import("@/lib/rls");
+  await withRequest({ tenantId, actorId: session?.userId ?? null }, (c) =>
+    c.query(
+      `update severe_infestation_episodes set resolved_at=now(), resolved_note=nullif($3,''), resolved_by=$4
+        where id=$1 and tenant_id=$2 and resolved_at is null`,
+      [id, tenantId, String(fd.get("note") ?? ""), session?.userId ?? null]),
+  );
+  revalidatePath(`/contracts/${contractId}`);
+}
