@@ -13,7 +13,7 @@
     "services/*"
   ],
   "scripts": {
-    "test:worker": "node --env-file=.env.local --import tsx --test --test-concurrency=1 services/worker/test/*.test.ts"
+    "test:worker": "node --env-file=.env.local --import tsx --import ./services/worker/test/_setup.ts --test --test-concurrency=1 services/worker/test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
