@@ -322,6 +322,27 @@ a verified sending domain — only you can create these.
 schedule, schedule-change, service report email). The templates, triggers, log,
 re-send and flags all work now in log-only mode and light up when the key lands.
 
+## 🟡 A19 — Customer import: 76 customers + 176 contracts HELD for your decision
+**Done (13 Aug, per Art. VII §5):** the /merge master data is IN — staging → validation
+→ dry-run → commit. **Imported: 508 customers (codes CUST-0093…CUST-0600, system-
+assigned — file codes kept only as source_ref), 393 branches, 355 contacts, and 42
+contracts as DRAFT + ASSUMED** (never auto-activated — you review, then activate).
+Idempotency proven: a re-run marks all 508 "already imported", zero duplicates.
+**HELD — needs you (full row detail in `merge /import-dry-run-report.md` and the
+staging tables, batch 59d96951…):**
+| Cohort | Count | What you decide |
+|---|---|---|
+| Shared-TRN groups (decision sheet) | 41 customers | same entity or separate customers? |
+| Duplicate groups (decision sheet) | 27 customers | merge or keep separate |
+| Malformed TRN | 8 customers | correct the TRN (e-invoicing field — never imported dirty) |
+| Contracts needing a customer match | 71 | pick the right customer |
+| Contracts with unparseable dates | 55 | supply real start/end dates |
+| Contracts at MEDIUM match confidence | 21 | confirm the fuzzy match |
+| Contracts on held customers / flagged dup / amount / date-order issues | ~29 | per-row |
+**Do:** work through the held cohorts with me in a session — each decision is a one-line
+update, then a re-run imports the newly-clean rows (safe: idempotent by source_ref).
+**Blocks:** nothing — the clean majority is live. Held rows simply aren't in yet.
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)
