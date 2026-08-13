@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveFieldRequest, fieldCors, technicianForUser } from "@/lib/field-auth";
+import { resolveFieldRequest, fieldCors, technicianForUser, fieldUserHasPermission } from "@/lib/field-auth";
 import { getPreflightChecklist, getTodayPreflight, upsertPreflight } from "@/lib/domain/preflight";
 
 // Technician start-of-shift pre-flight (T3). GET returns the configurable
@@ -42,6 +42,16 @@ export async function POST(req: Request) {
   if (auth.revoked) return NextResponse.json({ error: "revoked" }, { status: 401, headers: { ...cors, "x-mop-revoked": "1" } });
   const tech = await technicianForUser(auth.session);
   if (!tech) return NextResponse.json({ error: "no technician linked to this login" }, { status: 403, headers: cors });
+
+  // DOCUMENT 9 §A: only a TEAM LEAD (or a role holding preflight.submit) submits
+  // the pre-flight — a technician never marks their own. Enforced here (API) and
+  // by the preflight_checks_authority trigger (database, mig 066).
+  if (!tech.is_team_lead && !(await fieldUserHasPermission(auth.session, "preflight.submit"))) {
+    return NextResponse.json(
+      { error: "only the team lead submits the pre-flight" },
+      { status: 403, headers: cors },
+    );
+  }
 
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   await upsertPreflight(auth.session.tenantId, auth.session.userId, {

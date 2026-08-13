@@ -4,6 +4,7 @@ import { listCustomers } from "@/lib/domain/customers";
 import { listTechnicians } from "@/lib/domain/technicians";
 import { listSurveys } from "@/lib/domain/survey";
 import { createSurveyAction } from "./actions";
+import { canSeeProfit } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
   // Release 1 item 4 — "Start survey →" from a customer profile preselects the
   // customer and opens the form, so the funnel carries forward.
   const preselect = (sp.customer ?? "").trim() || undefined;
+  const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const tenantId = await getTenantId();
   const [surveys, customers, technicians] = await Promise.all([
     listSurveys(tenantId), listCustomers(tenantId), listTechnicians(tenantId),
@@ -59,7 +61,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
               <th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Date</th>
               <th className="px-3 py-2 font-medium">Surveyor</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
-              <th className="px-3 py-2 font-medium text-right">Revenue</th><th className="px-3 py-2 font-medium text-right">Gross profit</th>
+              <th className="px-3 py-2 font-medium text-right">Revenue</th>{showProfit && <th className="px-3 py-2 font-medium text-right">Gross profit</th>}
               <th className="px-3 py-2 font-medium">Estimate</th>
             </tr>
           </thead>
@@ -73,7 +75,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[s.status] ?? ""}`}>{s.status}</span></td>
                 <td className="px-3 py-2 text-neutral-600">{s.line_count ?? 0}</td>
                 <td className="px-3 py-2 text-right">{aed(s.revenue)}</td>
-                <td className="px-3 py-2 text-right font-medium">{aed(s.gross_profit)}</td>
+                {showProfit && <td className="px-3 py-2 text-right font-medium">{aed(s.gross_profit)}</td>}
                 <td className="px-3 py-2">{s.estimate_id ? <Link href={`/estimates/${s.estimate_id}`} className="text-brand underline">view</Link> : "—"}</td>
               </tr>
             ))}
