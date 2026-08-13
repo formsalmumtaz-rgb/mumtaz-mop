@@ -69,6 +69,11 @@ export async function POST(req: Request) {
     client_uuid: (b.client_uuid as string) ?? null,
     device_time: (b.device_time as string) ?? null,
     time_suspect: suspect(b.device_time as string | null),
+    stock: Array.isArray(b.stock)
+      ? (b.stock as { item_id?: string; qty_base?: number; note?: string }[])
+          .filter((s) => s && typeof s.item_id === "string" && Number.isFinite(Number(s.qty_base)))
+          .map((s) => ({ item_id: s.item_id!, qty_base: Number(s.qty_base), note: s.note ?? null }))
+      : undefined,
   });
   return NextResponse.json({ ok: true }, { headers: cors });
 }
