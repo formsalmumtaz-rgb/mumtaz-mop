@@ -1278,5 +1278,43 @@ alert, notify operations, notify sales, email the customer.
 
 ---
 
+## 8. Amendment — Premises-Category Compliance Rules (filed 13 Aug 2026)
+
+**Source: DOCUMENT 10 — Sharjah Municipality medical-facility pest-control contract
+requirements (Arabic original filed at
+`docs/compliance/sharjah-medical-facility-pest-contract-requirements-ar.pdf`;
+the owner's English distillation below is the operative spec). BUILT same night
+(mig 073, PR ref in git):**
+
+1. **Frequency is a function of premises category AND target pest — never one
+   number.** `compliance_visit_frequencies` + `fn_visit_frequency(emirate,
+   facility, pest)` replace the single 24/yr default (that setting is now labelled
+   F&B-only). Seeded from known sources only: Sharjah/Dubai restaurant general 24 ·
+   Sharjah medical general 12 · Sharjah medical mosquito 24. Unknown combinations
+   return NULL — the caller must ask (Art. X §4).
+2. **Per-category contract clauses** — `contract_clause_templates` (same pattern as
+   division branding: reference data the agreement generator reads). 11 Sharjah
+   medical clauses seeded (building description incl. medical-waste room · scope =
+   every harbourage · whole-building incl. vacant rooms · categorised target pests ·
+   stated frequency · IPM commitment (physical/environmental first, chemical only
+   when necessary) · outside working hours, area unoccupied · 24h institutions
+   00:00–03:00 · indoor pesticide criteria (odourless, knock-down, low toxicity, no
+   irritation/allergy, patient-safe dosing) · EDE certificate + MSDS attached ·
+   municipality notified within 15 days of termination). Bodies are English
+   renderings of the Arabic source, ASSUMED until owner/legal confirms wording.
+   **Generator wiring (agreement DOCX reads clauses per facility type) = follow-up.**
+3. **Scheduling constraints are regulatory, not preference** —
+   `compliance_scheduling_rules`: Sharjah medical forces night (area unoccupied);
+   24-hour institutions carry a HARD 00:00–03:00 window. The scheduler must treat
+   these as constraints when it gains window-awareness (rides the §6 night-shift
+   schema, mig 071).
+4. **Chemical approval is per premises category** — `items.ede_registration_no`
+   (+ existing msds_ref) and `item_premises_approvals` (item × facility type):
+   restaurant-acceptable ≠ medical-acceptable. Approval data entry = owner/ops.
+5. **Owner inputs pending → BLOCKED A20:** Dubai + Abu Dhabi municipality
+   equivalents, and the unified contract this document references.
+
+---
+
 *End of filing. Nothing above is authorised for build until a sprint in `EXECUTION.md`
-picks it up — except §7, authorised for the 13 Aug 2026 night run by the owner.*
+picks it up — except §7 and §8, authorised/built on the 13 Aug 2026 night run.*

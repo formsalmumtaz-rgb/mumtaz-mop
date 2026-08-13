@@ -343,6 +343,21 @@ staging tables, batch 59d96951…):**
 update, then a re-run imports the newly-clean rows (safe: idempotent by source_ref).
 **Blocks:** nothing — the clean majority is live. Held rows simply aren't in yet.
 
+## 🔴 A20 — Municipality requirements: Dubai + Abu Dhabi equivalents, and the unified contract
+**What:** Sharjah's medical-facility requirements are filed and modelled (ROADMAP §8,
+mig 073). The compliance engine deliberately returns NOTHING for combinations it has no
+source for (e.g. Abu Dhabi medical) — it will not guess a municipality rule.
+**Do (only you can supply these):**
+1. The **Dubai Municipality** and **Abu Dhabi (Tadweer/ADAFSA)** equivalents of the
+   Sharjah medical document — frequencies per premises category + pest, contract
+   clauses, treatment-window rules. PDFs like the Sharjah one are perfect.
+2. The **unified contract** the Sharjah document references, so the clause wording can
+   be confirmed against it (the 11 seeded clauses are English renderings, ASSUMED).
+3. Per-category **chemical approvals**: which products are approved for medical
+   facilities (EDE registration numbers + MSDS refs per item — columns are ready).
+**Blocks:** frequency/clauses for non-Sharjah medical work and the legal wording
+confirmation. Sharjah medical + Sharjah/Dubai F&B are live now.
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)
