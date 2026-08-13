@@ -72,13 +72,31 @@ export async function resolveFieldRequest(req: Request): Promise<{ session: AppS
 
 // The technician the authenticated user operates as (technicians.user_id, mig 051),
 // or null. Used by per-technician endpoints (pre-flight, etc.).
-export async function technicianForUser(session: AppSession): Promise<{ id: string; service_line_id: string | null } | null> {
+export async function technicianForUser(session: AppSession): Promise<{ id: string; service_line_id: string | null; is_team_lead: boolean } | null> {
   const { rows } = await scopedRead(
     session.tenantId,
-    `select id, service_line_id from technicians where tenant_id = $1 and user_id = $2 limit 1`,
+    `select id, service_line_id, is_team_lead from technicians where tenant_id = $1 and user_id = $2 limit 1`,
     [session.tenantId, session.userId],
   );
-  return rows[0] ? { id: rows[0].id as string, service_line_id: rows[0].service_line_id as string | null } : null;
+  return rows[0]
+    ? { id: rows[0].id as string, service_line_id: rows[0].service_line_id as string | null, is_team_lead: !!rows[0].is_team_lead }
+    : null;
+}
+
+// Does this session's user hold a permission through any of their roles? Field
+// routes resolve their own session (Bearer), so they can't use the cookie-bound
+// can() — this is the same role_permissions lookup, scoped by RLS.
+export async function fieldUserHasPermission(session: AppSession, code: string): Promise<boolean> {
+  const { rows } = await scopedRead(
+    session.tenantId,
+    `select 1
+       from user_roles ur
+       join role_permissions rp on rp.role_id = ur.role_id
+      where ur.tenant_id = $1 and ur.user_id = $2 and rp.permission_code = $3
+      limit 1`,
+    [session.tenantId, session.userId, code],
+  );
+  return rows.length > 0;
 }
 
 // Of the given job ids, the subset assigned to a technician the authenticated user

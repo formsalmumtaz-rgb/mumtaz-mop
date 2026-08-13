@@ -2,10 +2,12 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { listEstimates } from "@/lib/domain/estimation";
+import { canSeeProfit } from "@/lib/auth";
 import { createEstimateAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
+// DOCUMENT 9 §A: cost/margin rendered only for profit.view holders.
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const STATUS_CLASS: Record<string, string> = {
   draft: "bg-neutral-100 text-neutral-700", quoted: "bg-blue-100 text-blue-800",
@@ -14,6 +16,7 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default async function EstimatesPage() {
   const tenantId = await getTenantId();
+  const showProfit = await canSeeProfit();
   const [estimates, customers] = await Promise.all([listEstimates(tenantId), listCustomers(tenantId)]);
 
   return (
@@ -50,8 +53,9 @@ export default async function EstimatesPage() {
             <tr>
               <th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
-              <th className="px-3 py-2 font-medium text-right">Revenue</th><th className="px-3 py-2 font-medium text-right">Est. cost</th>
-              <th className="px-3 py-2 font-medium text-right">Gross profit</th><th className="px-3 py-2 font-medium text-right">Margin</th>
+              <th className="px-3 py-2 font-medium text-right">Revenue</th>
+              {showProfit && <><th className="px-3 py-2 font-medium text-right">Est. cost</th>
+              <th className="px-3 py-2 font-medium text-right">Gross profit</th><th className="px-3 py-2 font-medium text-right">Margin</th></>}
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
@@ -64,9 +68,9 @@ export default async function EstimatesPage() {
                   <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[e.status] ?? ""}`}>{e.status}</span></td>
                   <td className="px-3 py-2 text-neutral-600">{e.line_count ?? 0}</td>
                   <td className="px-3 py-2 text-right">{aed(e.revenue)}</td>
-                  <td className="px-3 py-2 text-right text-neutral-600">{aed(e.est_cost)}</td>
+                  {showProfit && <><td className="px-3 py-2 text-right text-neutral-600">{aed(e.est_cost)}</td>
                   <td className="px-3 py-2 text-right font-medium">{aed(e.gross_profit)}</td>
-                  <td className="px-3 py-2 text-right">{margin}</td>
+                  <td className="px-3 py-2 text-right">{margin}</td></>}
                 </tr>
               );
             })}

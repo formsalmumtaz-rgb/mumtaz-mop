@@ -100,3 +100,13 @@ export async function requireView(permission: string): Promise<void> {
   if (!s) redirect("/login");
   if (!s.permissions.has(permission)) redirect("/dashboard?denied=1");
 }
+
+// Profit/margin visibility (DOCUMENT 9 §A: operations sees revenue, NEVER margin).
+// Server components use this to decide whether cost/margin figures are sent at all
+// — the data simply isn't rendered for a session without profit.view, which is
+// enforcement, not UI-hiding. Dev opt-out (auth off) shows everything, same as
+// every other guard.
+export async function canSeeProfit(): Promise<boolean> {
+  if (!authEnforced()) return true;
+  return can("profit.view");
+}

@@ -5,6 +5,7 @@ import { listServiceTypes, getServiceLineId } from "@/lib/domain/reference";
 import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
 import { getSurvey } from "@/lib/domain/survey";
+import { canSeeProfit } from "@/lib/auth";
 import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
 import { addSurveyLineAction, addSurveyLineFromCategoryAction, deleteSurveyLineAction, setSurveyStatusAction, createEstimateFromSurveyAction } from "../actions";
@@ -26,6 +27,7 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
   if (!data) notFound();
   const { header, lines } = data;
   const isDraft = header.status === "draft";
+  const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const margin = header.revenue > 0 ? ((header.gross_profit / header.revenue) * 100).toFixed(1) + "%" : "—";
   const rateProps = {
     labour: Number(rates.labour_rate ?? 0), vehicle: Number(rates.vehicle_rate ?? 0),
@@ -70,7 +72,7 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
 
       {/* Profit preview */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[["Revenue", aed(header.revenue)], ["Est. cost", aed(header.est_cost)], ["Gross profit", aed(header.gross_profit)], ["Margin", margin]].map(([l, v]) => (
+        {(showProfit ? [["Revenue", aed(header.revenue)], ["Est. cost", aed(header.est_cost)], ["Gross profit", aed(header.gross_profit)], ["Margin", margin]] : [["Revenue", aed(header.revenue)]]).map(([l, v]) => (
           <div key={l} className="rounded-lg border border-neutral-200 bg-white p-4">
             <div className="text-xs uppercase tracking-wide text-neutral-500">{l}</div>
             <div className="mt-1 text-xl font-semibold">{v}</div>
@@ -86,7 +88,7 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
             <tr>
               <th className="px-3 py-2 font-medium">Service</th><th className="px-3 py-2 font-medium">Model</th>
               <th className="px-3 py-2 font-medium">Detail</th><th className="px-3 py-2 font-medium">Observed</th>
-              <th className="px-3 py-2 font-medium text-right">Revenue</th><th className="px-3 py-2 font-medium text-right">Est. cost</th>
+              <th className="px-3 py-2 font-medium text-right">Revenue</th>{showProfit && <th className="px-3 py-2 font-medium text-right">Est. cost</th>}
               {isDraft && <th className="px-3 py-2"></th>}
             </tr>
           </thead>
@@ -99,7 +101,7 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
                 <td className="px-3 py-2 text-neutral-500">{l.description ?? (l.model_type === "formula" ? JSON.stringify(l.measures) : `${l.unit_price} × ${l.measure}`)}</td>
                 <td className="px-3 py-2 text-neutral-500">{l.observed_notes ?? "—"}</td>
                 <td className="px-3 py-2 text-right">{aed(l.line_total)}</td>
-                <td className="px-3 py-2 text-right text-neutral-600">{aed(l.est_cost)}</td>
+                {showProfit && <td className="px-3 py-2 text-right text-neutral-600">{aed(l.est_cost)}</td>}
                 {isDraft && <td className="px-3 py-2 text-right">
                   <form action={deleteSurveyLineAction}><input type="hidden" name="line_id" value={l.id} /><input type="hidden" name="survey_id" value={header.id} />
                     <button className="text-xs text-neutral-500 hover:text-red-600">remove</button></form>
