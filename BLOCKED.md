@@ -308,7 +308,16 @@ with the group features.
 **Blocks:** nothing yet — group reporting reads either way; only the *statement/
 consolidation shape* waits on this.
 
-## 🔴 A18 — Email provider + API key (blocks real sending; everything else built around it)
+## ✅ A18 — Email provider — LIVE (delivery proven 13 Aug 2026)
+**Cleared:** owner provisioned Resend (domain mumtazgroup.ae verified) and pasted the
+key into `.env.local` (root + ops-console synced). Live proof through the REAL pipeline
+(queued row → runNotificationSweep → Resend): provider id `c72a4c4c…`,
+**`last_event: "delivered"`** to sahad@almumtaz.ae — delivered, not merely queued.
+All notifications are now live (the transport goes live automatically when the key is
+present). **Remaining: add EMAIL_API_KEY + EMAIL_FROM to Vercel (Production scope) for
+deployed sending; DEBT D9 (full-access key → sending-only before go-live).**
+**(original entry:)**
+## 🔴 (was) Email provider + API key (blocks real sending; everything else built around it)
 **What:** the outbound email channel (ROADMAP §7.4) is provider-agnostic; in
 development it LOGS what it would send (append-only delivery log) instead of
 sending. Real delivery needs a transactional email provider account + API key +

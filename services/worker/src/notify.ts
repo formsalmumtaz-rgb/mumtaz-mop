@@ -213,6 +213,36 @@ Al Mumtaz Building Cleaning & Pest Control`,
       out.expiryNotices++;
     }
 
+    // (b2) attestation reminders (mig 076, condition 1): 14/7/3 days before the
+    // deadline, on the day, and every 7 days while overdue. Internal notice —
+    // office acts; idempotent per (contract, bucket) via subject convention.
+    const { rows: att } = await c.query(
+      `select a.tenant_id, a.contract_id, a.contract_number, a.customer, a.attestation_deadline::text as dl,
+              a.is_overdue, a.attest_before_treatment,
+              (a.attestation_deadline - current_date) as days_left
+         from contract_attestation_alerts a
+        where a.attestation_status in ('pending','submitted')
+          and ( (a.attestation_deadline - current_date) in (14, 7, 3, 0)
+                or (a.is_overdue and (current_date - a.attestation_deadline) % 7 = 0) )`);
+    for (const a of att) {
+      const bucket = a.is_overdue ? `overdue+${Math.abs(a.days_left)}d` : `${a.days_left}d`;
+      const subject = `Attestation ${a.is_overdue ? "OVERDUE" : "due"}: contract ${a.contract_number ?? a.contract_id} (${bucket})`;
+      const { rows: dup } = await c.query(
+        `select 1 from outbound_notifications where tenant_id=$1 and kind='attestation' and subject=$2`,
+        [a.tenant_id, subject]);
+      if (dup.length) continue;
+      await queue(c, {
+        tenantId: a.tenant_id, kind: "attestation", contractId: a.contract_id, toEmail: null,
+        subject,
+        body: `Sharjah Municipality attestation for contract ${a.contract_number ?? ""} (${a.customer ?? ""}) ` +
+              (a.attest_before_treatment
+                ? `must be completed BEFORE treatment begins (Restrictive contract). Deadline: ${a.dl}.`
+                : `is due by ${a.dl} (30 days from signing). `) +
+              (a.is_overdue ? " THIS IS OVERDUE — both parties are exposed to violations and legal action (Unified Contract, condition 1)." : ""),
+      });
+      out.expiryNotices++;
+    }
+
     // (c) dispatch everything queued
     const { rows: q } = await c.query(
       `select id, tenant_id, customer_id, to_email, subject, body_text from outbound_notifications

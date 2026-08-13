@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getContract, getScheduleSummary } from "@/lib/domain/contracts";
 import { listFrequencies, listPricingModels } from "@/lib/domain/reference";
+import { scopedRead } from "@/lib/rls";
 import {
   activateContractAction, setContractBillingAction,
   updateContractAction, extendContractAction, archiveContractAction, restoreContractAction,
+  markAttestationAction, openSevereEpisodeAction, resolveSevereEpisodeAction,
 } from "./actions";
 
 const FREQS = ["per_visit", "weekly", "monthly", "quarterly", "half_yearly", "yearly", "custom"];
@@ -19,11 +21,26 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
   const tenantId = await getTenantId();
   const ct = await getContract(tenantId, id);
   if (!ct) notFound();
-  const [sum, frequencies, pricingModels] = await Promise.all([
+  const [sum, frequencies, pricingModels, attRows, episodes] = await Promise.all([
     getScheduleSummary(tenantId, id),
     listFrequencies(tenantId),
     listPricingModels(tenantId),
+    scopedRead(tenantId,
+      `select ct.attestation_status, ct.attestation_submitted_at::text, ct.attested_at::text,
+              ct.attestation_receipt_no, ct.attestation_employee_ref, ct.attestation_fee::text,
+              a.attestation_deadline::text as deadline, a.is_overdue, a.attest_before_treatment
+         from contracts ct
+         left join contract_attestation_alerts a on a.contract_id = ct.id
+        where ct.id = $2 and ct.tenant_id = $1`, [tenantId, id]).then((r) => r.rows),
+    scopedRead(tenantId,
+      `select e.id, e.cause, e.opened_at::text, e.resolved_at::text, s.followup_jobs, s.cost_absorbed::float8,
+              array(select fn_suggest_followup_dates(e.id, 3)::text) as suggested
+         from severe_infestation_episodes e
+         left join contract_severe_cost s on s.episode_id = e.id
+        where e.tenant_id = $1 and e.contract_id = $2
+        order by e.opened_at desc limit 5`, [tenantId, id]).then((r) => r.rows),
   ]);
+  const att = attRows[0] ?? { attestation_status: "not_required" };
   const isActive = ct.lifecycle_status === "active";
   const locked = ct.financially_locked;
   const archived = !!ct.archived_at;
@@ -168,6 +185,75 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
           {!isActive && " — K2 fans out the schedule + jobs."}
         </p>
       )}
+
+      {/* Attestation — HARD legal obligation (Unified Contract condition 1, mig 076) */}
+      <section className={`rounded-lg border p-5 ${att.is_overdue ? "border-red-300 bg-red-50" : "border-neutral-200 bg-white"}`}>
+        <h2 className="mb-1 font-medium">Municipality attestation
+          <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-medium ${
+            att.attestation_status === "attested" ? "bg-emerald-100 text-emerald-800"
+            : att.is_overdue ? "bg-red-100 text-red-700"
+            : att.attestation_status === "not_required" ? "bg-neutral-100 text-neutral-600"
+            : "bg-amber-100 text-amber-800"}`}>
+            {att.is_overdue ? "OVERDUE" : att.attestation_status}
+          </span>
+        </h2>
+        <p className="mb-3 text-sm text-neutral-600">
+          Sharjah City Municipality must attest within <b>30 days of signing</b>
+          {att.attest_before_treatment && <> — <b>Restrictive: BEFORE treatment begins</b></>}
+          {att.deadline && <> · deadline <b>{att.deadline}</b></>}. Fees payable by the client.
+          Tracking starts automatically when the agreement document is generated.
+        </p>
+        {att.attestation_status === "pending" && (
+          <form action={markAttestationAction} className="mb-2">
+            <input type="hidden" name="contract_id" value={ct.id} /><input type="hidden" name="to_status" value="submitted" />
+            <button className="rounded bg-navy px-3 py-1.5 text-sm font-medium text-white hover:opacity-90">Mark submitted to municipality</button>
+          </form>
+        )}
+        {att.attestation_status === "submitted" && (
+          <form action={markAttestationAction} className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            <input type="hidden" name="contract_id" value={ct.id} /><input type="hidden" name="to_status" value="attested" />
+            <label className="text-sm"><span className="text-neutral-600">Attested date</span>
+              <input name="attested_at" type="date" className={ipt} /></label>
+            <label className="text-sm"><span className="text-neutral-600">Receipt no</span>
+              <input name="receipt_no" className={ipt} /></label>
+            <label className="text-sm"><span className="text-neutral-600">Employee ref (stamp)</span>
+              <input name="employee_ref" className={ipt} /></label>
+            <label className="text-sm"><span className="text-neutral-600">Fee (AED, client)</span>
+              <input name="fee" type="number" step="0.01" className={ipt} /></label>
+            <div className="flex items-end"><button className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">Mark ATTESTED</button></div>
+          </form>
+        )}
+        {att.attestation_status === "attested" && (
+          <p className="text-sm text-emerald-800">Attested {att.attested_at}{att.attestation_receipt_no && <> · receipt {att.attestation_receipt_no}</>}{att.attestation_employee_ref && <> · ref {att.attestation_employee_ref}</>}{att.attestation_fee && <> · fee AED {att.attestation_fee} (client)</>}</p>
+        )}
+      </section>
+
+      {/* Severe infestation (condition 6) — recorded manually, never forced */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-1 font-medium">Severe infestation <span className="text-xs font-normal text-neutral-500">(clause 6 — every 3 days until resolved, no fee; AMC only; recorded by the office, never automatic)</span></h2>
+        {episodes.filter((e: Record<string, unknown>) => !e.resolved_at).map((e: Record<string, string | number | string[]>) => (
+          <div key={String(e.id)} className="mb-3 rounded border border-red-200 bg-red-50 p-3 text-sm">
+            <div className="font-medium text-red-800">ACTIVE since {String(e.opened_at).slice(0, 10)} — {String(e.cause)}</div>
+            <div className="mt-1 text-red-700">{String(e.followup_jobs ?? 0)} follow-up visits · cost absorbed AED {Number(e.cost_absorbed ?? 0).toFixed(2)} (zero revenue — margin impact on this contract)</div>
+            <div className="mt-1 text-neutral-700">Suggested next 3-day visits (office decides; nothing is auto-created): {(e.suggested as string[]).join(" · ")}</div>
+            <form action={resolveSevereEpisodeAction} className="mt-2 flex items-end gap-2">
+              <input type="hidden" name="episode_id" value={String(e.id)} /><input type="hidden" name="contract_id" value={ct.id} />
+              <label className="text-sm"><span className="text-neutral-600">Resolution note (inspection)</span>
+                <input name="note" className={ipt} /></label>
+              <button className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700">Mark resolved</button>
+            </form>
+          </div>
+        ))}
+        {isActive && (
+          <form action={openSevereEpisodeAction} className="flex items-end gap-2">
+            <input type="hidden" name="contract_id" value={ct.id} />
+            <label className="grow text-sm"><span className="text-neutral-600">Record severe infestation — cause (required)</span>
+              <input name="cause" required placeholder="e.g. German cockroach infestation found in kitchen ducting" className={ipt} /></label>
+            <button className="rounded border border-red-300 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50">Open episode</button>
+          </form>
+        )}
+        {!isActive && episodes.length === 0 && <p className="text-sm text-neutral-500">Applies to active AMC contracts only.</p>}
+      </section>
 
       {/* Recurring billing */}
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
