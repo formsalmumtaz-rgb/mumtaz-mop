@@ -32,16 +32,28 @@ export async function scopedRead<T extends QueryResultRow = any>(
   return withRequest({ tenantId }, (c) => c.query<T>(sql, params));
 }
 
+// The database is ~30-50ms away (Mumbai pooler); every round trip is paid in
+// user-visible latency. The transaction preamble (begin + role drop + tenant +
+// actor) is ONE round trip: tenant/actor are strictly validated UUIDs inlined
+// into a multi-statement simple query — identical semantics to the previous
+// four-trip version (set local role mop_app; txn-scoped set_config), just not
+// four network waits. Speed refresh item 1.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function withRequest<T>(ctx: RequestContext, fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  if (!UUID_RE.test(ctx.tenantId)) throw new Error("withRequest: tenantId is not a UUID");
+  const actor = ctx.actorId ?? "";
+  if (actor !== "" && !UUID_RE.test(actor)) throw new Error("withRequest: actorId is not a UUID");
   const client = await pool.connect();
   try {
-    await client.query("begin");
-    // A3 flip: drop to the non-privileged role for the rest of the transaction, so
-    // RLS is the LIVE boundary for every app read/write. `set local` reverts at
-    // commit/rollback, and the pool hands back a clean (privileged) connection.
-    await client.query("set local role mop_app");
-    await client.query(`select set_config('app.current_tenant', $1, true)`, [ctx.tenantId]);
-    await client.query(`select set_config('app.current_actor', $1, true)`, [ctx.actorId ?? ""]);
+    // A3 flip lives here: RLS is the LIVE boundary for every app read/write.
+    // `set local` reverts at commit/rollback; the pool gets back a clean
+    // (privileged) connection. Values are inlined ONLY after UUID validation.
+    await client.query(
+      `begin; set local role mop_app; ` +
+      `select set_config('app.current_tenant', '${ctx.tenantId}', true), ` +
+      `set_config('app.current_actor', '${actor}', true)`,
+    );
     const result = await fn(client);
     await client.query("commit");
     return result;

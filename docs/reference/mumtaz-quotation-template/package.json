@@ -1,0 +1,21 @@
+{
+  "name": "@mumtaz/quotation-template",
+  "version": "1.0.0",
+  "description": "Branded quotation renderer for the Mumtaz Operations Platform — one payload, three outputs (HTML / PDF / DOCX).",
+  "main": "src/render.js",
+  "bin": {
+    "mumtaz-quote": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node src/render.test.js",
+    "example": "node src/cli.js examples/satguru-pest-control.json --out ./out"
+  },
+  "dependencies": {
+    "docx": "^9.0.0",
+    "handlebars": "^4.7.8"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true
+}

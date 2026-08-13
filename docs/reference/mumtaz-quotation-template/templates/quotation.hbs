@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{doc.title}} — {{client.name}}</title>
+<style>
+
+  @page {
+    size: A4;
+    margin: 29mm 16mm 27mm 16mm;
+
+    @top-center {
+      content: element(pagehead);
+      vertical-align: top;
+    }
+    @bottom-center {
+      content: element(pagefoot);
+      vertical-align: bottom;
+    }
+  }
+
+  :root {
+    --red: {{brand.accent_color}};
+    --ink: #1c1c1c;
+    --muted: #5c5c5c;
+    --line: #d8d3cc;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Carlito", "DejaVu Sans", sans-serif;
+    font-size: 9.3pt;
+    line-height: 1.42;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  /* ---------- RUNNING HEADER ---------- */
+  header {
+    position: running(pagehead);
+    width: 178mm;
+  }
+  .hdr-table { width: 100%; border-collapse: collapse; }
+  .hdr-table td { vertical-align: middle; padding: 0; }
+  .hdr-logo { width: 46mm; }
+  .hdr-logo img { width: 46mm; }
+  .hdr-tf { text-align: right; width: 34mm; }
+  .hdr-tf img { width: 32mm; }
+  .hdr-rule {
+    margin-top: 2.4mm;
+    border-top: 2.2pt solid var(--red);
+  }
+  .hdr-rule-thin {
+    margin-top: 0.9mm;
+    border-top: 0.5pt solid var(--line);
+  }
+
+  /* ---------- RUNNING FOOTER ---------- */
+  footer {
+    position: running(pagefoot);
+    width: 178mm;
+    padding-bottom: 3mm;
+    font-size: 7.1pt;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+  .ftr-rule { border-top: 0.5pt solid var(--line); margin-bottom: 2mm; }
+  .ftr-legal {
+    font-family: "Caladea", "DejaVu Serif", serif;
+    font-size: 8.1pt;
+    color: var(--red);
+    letter-spacing: 0.02em;
+    margin-bottom: 1.1mm;
+  }
+  .ftr-legal span { color: var(--muted); font-family: "Carlito", sans-serif; font-size: 7.1pt; }
+  .ftr-offices { width: 100%; border-collapse: collapse; margin-top: 1mm; }
+  .ftr-offices td { width: 33.33%; vertical-align: top; padding-right: 4mm; }
+  .ftr-offices .city {
+    color: var(--red);
+    font-weight: bold;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 6.6pt;
+  }
+  .pageno {
+    float: right;
+    font-size: 6.8pt;
+    color: var(--muted);
+    margin-top: -0.2mm;
+  }
+  .pageno::after { content: counter(page) " / " counter(pages); }
+
+  /* ---------- DOCUMENT BODY ---------- */
+  .meta { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .meta td { padding: 0; }
+  .meta .r { text-align: right; }
+  .meta b { color: var(--ink); }
+
+  h1 {
+    font-family: "Caladea", serif;
+    font-size: 16pt;
+    font-weight: normal;
+    letter-spacing: 0.14em;
+    text-align: center;
+    color: var(--red);
+    margin: 4mm 0 1.2mm 0;
+    text-transform: uppercase;
+  }
+  .h1-sub {
+    text-align: center;
+    font-size: 7.4pt;
+    letter-spacing: 0.28em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 4mm;
+  }
+
+  h2 {
+    font-family: "Caladea", serif;
+    font-size: 10.4pt;
+    font-weight: bold;
+    color: var(--red);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 3.4mm 0 1.6mm 0;
+    padding-bottom: 1mm;
+    border-bottom: 0.8pt solid var(--line);
+  }
+
+  .client {
+    border-left: 2.4pt solid var(--red);
+    padding: 0 0 0 4mm;
+    margin-bottom: 2.8mm;
+  }
+  .client .lbl {
+    font-size: 6.8pt; letter-spacing: 0.2em; color: var(--muted);
+    text-transform: uppercase; margin-bottom: 0.8mm;
+  }
+  .client .name {
+    font-family: "Caladea", serif; font-size: 11.4pt; font-weight: bold; color: var(--ink);
+  }
+  .client .addr { font-size: 9pt; color: #3a3a3a; }
+
+  .subject { margin-bottom: 2.8mm; }
+  .subject b { color: var(--red); }
+
+  p { margin: 0 0 2.2mm 0; text-align: justify; }
+
+  ul { margin: 1mm 0 2mm 0; padding-left: 4.6mm; }
+  li { margin-bottom: 1.1mm; }
+  li::marker { color: var(--red); }
+
+  /* pricing table */
+  table.price { width: 100%; border-collapse: collapse; margin-top: 1mm; font-size: 9.3pt; }
+  table.price { page-break-inside: avoid; }
+  table.price th {
+    background: var(--red); color: #fff; font-weight: bold;
+    font-size: 7.6pt; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 2.4mm 3mm; text-align: left;
+  }
+  table.price th.num, table.price td.num { text-align: right; }
+  table.price th.ctr, table.price td.ctr { text-align: center; }
+  table.price td { padding: 1.9mm 3mm; border-bottom: 0.5pt solid var(--line); vertical-align: top; }
+  table.price td .desc-t { font-weight: bold; }
+  table.price td .desc-s { font-size: 8.2pt; color: var(--muted); }
+  table.price tr.sum td { border-bottom: none; padding: 1.2mm 3mm; }
+  table.price tr.sum td.lbl { text-align: right; color: var(--muted); }
+  table.price tr.total td {
+    background: #f6f1ea; border-top: 1.2pt solid var(--red); border-bottom: 1.2pt solid var(--red);
+    font-family: "Caladea", serif; font-weight: bold; font-size: 11.4pt; color: var(--red);
+    padding: 2.8mm 3mm;
+  }
+  .words { font-size: 8.2pt; color: var(--muted); font-style: italic; margin-top: 1.2mm; }
+
+  .badge-row { width: 100%; border-collapse: collapse; margin-top: 3.4mm; page-break-inside: avoid; }
+  .badge-row td {
+    width: 33.33%; border: 0.6pt solid var(--line); padding: 2.2mm 3mm; text-align: center;
+  }
+  .badge-row .bt {
+    font-family: "Caladea", serif; color: var(--red); font-size: 10.6pt; font-weight: bold;
+  }
+  .badge-row .bs { font-size: 7.2pt; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+
+  ol.terms { margin: 1mm 0 0 0; padding-left: 5mm; font-size: 9.2pt; }
+  ol.terms li { margin-bottom: 1.4mm; }
+  ol.terms li::marker { color: var(--red); font-weight: bold; }
+
+  /* signature */
+  .sig-table { width: 100%; border-collapse: collapse; margin-top: 4.5mm; page-break-inside: avoid; }
+  .sig-table td { width: 50%; vertical-align: top; padding: 0 6mm 0 0; }
+  .sig-table td.right { padding: 0 0 0 6mm; }
+  .sig-hd {
+    font-size: 7.2pt; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--red); font-weight: bold; margin-bottom: 1mm;
+  }
+  .sig-box {
+    height: 25mm;
+    border: 0.6pt dashed #c3bcb2;
+    border-radius: 1mm;
+    position: relative;
+  }
+  .sig-box .hint {
+    position: absolute; bottom: 1.6mm; left: 0; right: 0; text-align: center;
+    font-size: 6.6pt; color: #a8a29a; letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .sig-line { border-bottom: 0.8pt solid var(--ink); margin-top: 2mm; }
+  .sig-name { font-weight: bold; font-size: 9.6pt; margin-top: 1.4mm; }
+  .sig-role { font-size: 8.4pt; color: var(--muted); }
+  .sig-co { font-size: 8.2pt; color: var(--red); margin-top: 0.6mm; }
+  .sig-field { font-size: 8.4pt; color: var(--muted); margin-top: 2.4mm; }
+  .sig-field .u { display: inline-block; border-bottom: 0.5pt solid #b8b2a9; min-width: 34mm; }
+
+  .accept-note {
+    margin-top: 4mm; font-size: 8.4pt; color: var(--muted);
+    background: #faf7f3; border-left: 2.4pt solid var(--red); padding: 2.4mm 3mm;
+  }
+
+  .closing { margin-top: 4mm; font-size: 9.3pt; }
+  .page-break { page-break-before: always; }
+
+</style>
+</head>
+<body>
+
+<header>
+  <table class="hdr-table">
+    <tr>
+      <td class="hdr-logo"><img src="{{brand.logo_src}}" alt="{{brand.division_name}}"></td>
+      <td class="hdr-tf"><img src="{{brand.toll_free_src}}" alt="Toll Free {{brand.toll_free}}"></td>
+    </tr>
+  </table>
+  <div class="hdr-rule"></div>
+  <div class="hdr-rule-thin"></div>
+</header>
+
+<footer>
+  <div class="ftr-rule"></div>
+  <div class="pageno">Page </div>
+  <div class="ftr-legal">{{brand.legal_name}} <span>&nbsp;|&nbsp; {{brand.group_line}} &nbsp;|&nbsp; Est. {{brand.established}} &nbsp;|&nbsp; Trade Licence {{brand.trade_licence}}</span></div>
+  <table class="ftr-offices">
+    <tr>
+      {{#each brand.offices}}
+      <td><span class="city">{{this.city}}</span><br>{{this.line1}}<br>{{this.line2}}</td>
+      {{/each}}
+    </tr>
+  </table>
+</footer>
+
+<table class="meta">
+  <tr>
+    <td><b>Ref. No:</b> {{doc.ref_no}}</td>
+    <td class="r"><b>Date:</b> {{doc.issue_date}}</td>
+  </tr>
+  <tr>
+    <td><b>Validity:</b> {{doc.validity_text}}</td>
+    <td class="r"><b>Prepared by:</b> {{signatory.name}}</td>
+  </tr>
+</table>
+
+<h1>{{doc.title}}</h1>
+<div class="h1-sub">{{doc.subtitle}}</div>
+
+<div class="client">
+  <div class="lbl">Submitted to</div>
+  <div class="name">{{client.name}}</div>
+  <div class="addr">{{#each client.address_lines}}{{this}}{{#unless @last}}<br>{{/unless}}{{/each}}</div>
+</div>
+
+<div class="subject"><b>Subject:</b> {{doc.subject}}</div>
+
+<p>{{doc.salutation}}</p>
+
+{{#each doc.intro_paragraphs}}
+<p>{{{this}}}</p>
+{{/each}}
+
+{{#if scope.items.length}}
+<h2>{{scope.heading}}</h2>
+<ul>
+  {{#each scope.items}}<li>{{this}}</li>
+  {{/each}}
+</ul>
+{{/if}}
+
+{{#if premises.text}}
+<h2>{{premises.heading}}</h2>
+<p>{{premises.text}}</p>
+{{/if}}
+
+<h2>{{pricing.heading}}</h2>
+<table class="price">
+  <tr>
+    <th>Description of Service</th>
+    <th class="ctr" style="width:13mm">Qty</th>
+    <th class="num" style="width:24mm">Rate ({{pricing.currency}})</th>
+    <th class="num" style="width:26mm">Amount ({{pricing.currency}})</th>
+  </tr>
+  {{#each line_items}}
+  <tr>
+    <td>
+      <div class="desc-t">{{this.title}}</div>
+      {{#if this.description}}<div class="desc-s">{{this.description}}</div>{{/if}}
+    </td>
+    <td class="ctr">{{this.qty}}</td>
+    <td class="num">{{this.rate_fmt}}</td>
+    <td class="num">{{this.amount_fmt}}</td>
+  </tr>
+  {{/each}}
+  <tr class="sum"><td colspan="3" class="lbl">Sub-Total</td><td class="num">{{totals.subtotal_fmt}}</td></tr>
+  {{#if totals.discount}}
+  <tr class="sum"><td colspan="3" class="lbl">Discount</td><td class="num">-{{totals.discount_fmt}}</td></tr>
+  {{/if}}
+  <tr class="sum"><td colspan="3" class="lbl">VAT @ {{totals.vat_rate_pct}}%</td><td class="num">{{totals.vat_fmt}}</td></tr>
+  <tr class="total"><td colspan="3">Total Payable (Inclusive of VAT)</td><td class="num">{{pricing.currency}}&nbsp;{{totals.total_fmt}}</td></tr>
+</table>
+<div class="words">Amount in words: {{totals.amount_in_words}}</div>
+
+<!-- ============ PAGE 2 ============ -->
+<div class="page-break"></div>
+
+{{#if badges.length}}
+<table class="badge-row">
+  <tr>
+    {{#each badges}}
+    <td><div class="bt">{{this.value}}</div><div class="bs">{{this.label}}</div></td>
+    {{/each}}
+  </tr>
+</table>
+{{/if}}
+
+{{#if warranty.text}}
+<h2>{{warranty.heading}}</h2>
+<p>{{{warranty.text}}}</p>
+{{/if}}
+
+{{#if terms.length}}
+<h2>Terms and Conditions</h2>
+<ol class="terms">
+  {{#each terms}}<li>{{this}}</li>
+  {{/each}}
+</ol>
+{{/if}}
+
+{{#if credentials.length}}
+<h2>{{credentials_heading}}</h2>
+<ul>
+  {{#each credentials}}<li>{{this}}</li>
+  {{/each}}
+</ul>
+{{/if}}
+
+<div class="closing">
+  {{#each doc.closing_paragraphs}}<p>{{{this}}}</p>
+  {{/each}}
+</div>
+
+<table class="sig-table">
+  <tr>
+    <td>
+      <div class="sig-hd">For {{brand.legal_name}}</div>
+      <div class="sig-box"><div class="hint">Signature &amp; Company Stamp</div></div>
+      <div class="sig-line"></div>
+      <div class="sig-name">{{signatory.name}}</div>
+      <div class="sig-role">{{signatory.title}}</div>
+      <div class="sig-co">{{brand.legal_name}}</div>
+      <div class="sig-field">Date: <span class="u"></span></div>
+    </td>
+    <td class="right">
+      <div class="sig-hd">Accepted for and on behalf of the Client</div>
+      <div class="sig-box"><div class="hint">Signature &amp; Company Stamp</div></div>
+      <div class="sig-line"></div>
+      <div class="sig-name">{{client.name}}</div>
+      <div class="sig-role">Authorised Signatory</div>
+      <div class="sig-field">Name: <span class="u"></span></div>
+      <div class="sig-field">Date: <span class="u"></span></div>
+    </td>
+  </tr>
+</table>
+
+{{#if doc.acceptance_note}}
+<div class="accept-note">{{{doc.acceptance_note}}}</div>
+{{/if}}
+
+</body>
+</html>

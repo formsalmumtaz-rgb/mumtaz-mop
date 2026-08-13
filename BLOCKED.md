@@ -367,6 +367,19 @@ source for (e.g. Abu Dhabi medical) — it will not guess a municipality rule.
 **Blocks:** frequency/clauses for non-Sharjah medical work and the legal wording
 confirmation. Sharjah medical + Sharjah/Dubai F&B are live now.
 
+## 🟡 A21 — Two five-minute fixes only you can do
+**(a) Google Places autocomplete** (refresh item 3): the fast-entry customer form
+wants Places suggestions. In Google Cloud Console → APIs & Services → Library →
+enable **Places API (New)**; then APIs & Services → Credentials → your browser key →
+API restrictions → add **Places API (New)** alongside Maps JavaScript API. Tell me
+when done and I wire the autocomplete (graceful text field until then).
+**(b) Stale local production DB credential**: `apps/ops-console/.env.production.local`
+holds a DATABASE_URL that FAILS authentication (almost certainly the pre-11-Aug
+password, DEBT D2) — running a local production build against it tripped Supabase's
+connection circuit breaker tonight. Vercel is unaffected (own env vars). Fix: paste
+the current DATABASE_URL from `.env.local` into `.env.production.local` (or delete
+that line — it is only used for local production runs).
+
 ---
 
 ## Real-device checklist (🟢 — you run these; I cannot)
