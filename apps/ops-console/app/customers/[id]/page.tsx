@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
-import { getCustomer } from "@/lib/domain/customers";
+import { getCustomer, getCustomerActivity } from "@/lib/domain/customers";
 import { listBranches } from "@/lib/domain/branches";
 import { listContacts } from "@/lib/domain/contacts";
 import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
@@ -32,7 +32,7 @@ export default async function CustomerDetail({ params, searchParams }: {
   const customer = await getCustomer(tenantId, id);
   if (!customer) notFound();
 
-  const [branches, contacts, contracts, frequencies, pricingModels, facilityTypes, surveys, estimates] = await Promise.all([
+  const [branches, contacts, contracts, frequencies, pricingModels, facilityTypes, surveys, estimates, activity] = await Promise.all([
     listBranches(tenantId, id, includeArchived),
     listContacts(tenantId, id, includeArchived),
     listContracts(tenantId, id),
@@ -41,6 +41,7 @@ export default async function CustomerDetail({ params, searchParams }: {
     listFacilityTypes(tenantId),
     listSurveysForCustomer(tenantId, id),
     listEstimatesForCustomer(tenantId, id),
+    getCustomerActivity(tenantId, id),
   ]);
   const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
   const summaries = new Map(
@@ -58,10 +59,18 @@ export default async function CustomerDetail({ params, searchParams }: {
             {customer.is_assumed && <AssumedBadge />}
           </h1>
         </div>
-        <Link href={includeArchived ? `/customers/${customer.id}` : `/customers/${customer.id}?archived=1`}
-              className={`shrink-0 rounded border px-3 py-1.5 text-sm ${includeArchived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
-          {includeArchived ? "✓ Showing archived sites & contacts" : "Show archived"}
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Release 1 item 4 — the front of the funnel: carry a customer straight
+              into a survey instead of making the user find the Surveys module. */}
+          <Link href={`/surveys?customer=${customer.id}`}
+                className="rounded bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">
+            Start survey →
+          </Link>
+          <Link href={includeArchived ? `/customers/${customer.id}` : `/customers/${customer.id}?archived=1`}
+                className={`rounded border px-3 py-1.5 text-sm ${includeArchived ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 hover:bg-neutral-50"}`}>
+            {includeArchived ? "✓ Showing archived sites & contacts" : "Show archived"}
+          </Link>
+        </div>
       </div>
 
       {/* Edit customer */}
@@ -366,6 +375,95 @@ export default async function CustomerDetail({ params, searchParams }: {
         <p className="mt-3 text-xs text-neutral-500">
           Activating a contract emits <code className="rounded bg-neutral-100 px-1">contract.activated</code> — the event K2 fans out from (schedule + jobs).
         </p>
+      </section>
+
+      {/* Money — Release 1 item 3: the profile previously showed no financials. */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-medium">
+            Money
+            {activity.outstanding > 0 && (
+              <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-sm font-semibold text-red-700">
+                {aed(activity.outstanding)} outstanding
+              </span>
+            )}
+          </h2>
+          <Link href={`/receipts/new?customer=${customer.id}`}
+                className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">
+            Record payment →
+          </Link>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <div>
+            <h3 className="mb-2 text-sm font-medium text-neutral-600">Invoices</h3>
+            {activity.invoices.length === 0 ? <p className="text-sm text-neutral-500">No invoices.</p> : (
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-neutral-100">
+                  {activity.invoices.map((i) => (
+                    <tr key={i.id}>
+                      <td className="py-1.5 pr-2"><Link href={`/invoices/${i.id}`} className="font-mono text-xs text-brand underline">{i.invoice_number ?? "(draft)"}</Link></td>
+                      <td className="py-1.5 pr-2 text-neutral-500">{i.issue_date ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-right">{aed(i.total)}</td>
+                      <td className="py-1.5 text-right">
+                        {i.status !== "issued" ? <span className="text-xs text-neutral-500">{i.status}</span>
+                          : i.open_amount <= 0 ? <span className="text-xs font-medium text-emerald-700">paid</span>
+                          : <span className="text-xs font-medium text-red-600">{aed(i.open_amount)} open</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-medium text-neutral-600">Payments received</h3>
+            {activity.receipts.length === 0 ? <p className="text-sm text-neutral-500">No receipts.</p> : (
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-neutral-100">
+                  {activity.receipts.map((r) => (
+                    <tr key={r.id} className={r.reversed ? "opacity-50" : ""}>
+                      <td className="py-1.5 pr-2"><Link href={`/receipts/${r.id}`} className="font-mono text-xs text-brand underline">{r.receipt_number ?? "—"}</Link></td>
+                      <td className="py-1.5 pr-2 text-neutral-500">{r.receipt_date ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-neutral-500">{r.method ?? "—"}</td>
+                      <td className="py-1.5 text-right">{aed(r.amount)}{r.reversed && <span className="ml-1 text-xs text-red-600">reversed</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Visit history — every job, with its service report when one exists. */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-4 font-medium">Visit history <span className="text-neutral-400">({activity.visits.length})</span></h2>
+        {activity.visits.length === 0 ? <p className="text-sm text-neutral-500">No jobs yet.</p> : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="text-left text-neutral-500">
+                <tr><th className="py-1 pr-3 font-medium">Date</th><th className="py-1 pr-3 font-medium">Site</th>
+                    <th className="py-1 pr-3 font-medium">Service</th><th className="py-1 pr-3 font-medium">Status</th>
+                    <th className="py-1 font-medium">Service report</th></tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {activity.visits.map((v) => (
+                  <tr key={v.id}>
+                    <td className="py-1.5 pr-3"><Link href={`/jobs/${v.id}`} className="text-brand underline">{v.scheduled_date ?? "(unscheduled)"}</Link></td>
+                    <td className="py-1.5 pr-3 text-neutral-600">{v.branch ?? "—"}</td>
+                    <td className="py-1.5 pr-3 text-neutral-600">{v.service_type ?? "—"}</td>
+                    <td className="py-1.5 pr-3"><StatusPill status={v.status} /></td>
+                    <td className="py-1.5">
+                      {v.report_id
+                        ? <Link href={`/service-reports/${v.report_id}`} className="text-brand underline">{v.report_number ?? "report"}{v.report_approved && <span className="ml-1 text-xs text-neutral-500">({v.report_approved})</span>}</Link>
+                        : <span className="text-neutral-400">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

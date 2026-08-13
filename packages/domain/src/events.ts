@@ -119,9 +119,21 @@ export function payloadSchemaFor(type: EventType) {
 }
 
 // Validate a full event (envelope + payload) — throws on invalid.
+//
+// job_id defaulting: field-app events (ingest.ts) carry the job id in the
+// envelope's entity_id (the aggregate id, immutable outbox content) while the
+// payload holds only the device capture — so a payload schema that requires
+// job_id rejected every field job.started/job.completed and the device→invoice/
+// stock chain silently stalled (events retried forever). When the envelope is
+// job-scoped and the payload lacks job_id, default it from entity_id BEFORE
+// validation. Validation is not weakened — the id must still be a UUID, and it
+// comes from the authoritative column rather than a duplicated payload field.
 export function parseEvent(input: unknown): { envelope: EventEnvelope; payload: unknown } {
   const envelope = EventEnvelope.parse(input);
-  const raw = (input as { payload?: unknown }).payload ?? {};
+  const raw = { ...((input as { payload?: Record<string, unknown> }).payload ?? {}) };
+  if (raw.job_id == null && envelope.entity_id && (envelope.aggregate_type ?? "job") === "job") {
+    raw.job_id = envelope.entity_id;
+  }
   const payload = payloadSchemaFor(envelope.event_type).parse(raw);
   return { envelope, payload };
 }

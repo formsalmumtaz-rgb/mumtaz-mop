@@ -308,3 +308,25 @@ export async function setEstimateStatus(tenantId: string, id: string, status: st
     await audit(c, tenantId, { table: "estimates", rowId: id, action: "update", oldValue: { status: cur.status }, newValue: { status }, note: "estimate status changed" });
   });
 }
+
+// Pricing guidance for the estimate screen (Release 1 item 2). The engines were
+// built in mig 060/062 but never surfaced where the pricing decision happens:
+// suggested revenue at the configured target margin, and margin at any price the
+// user types. Deterministic arithmetic over fn_estimate_cost output — no AI.
+export interface PricingGuidance {
+  target_margin: number | null; // fraction, e.g. 0.35
+  is_assumed: boolean;          // Art. X §4 — badge until the owner confirms it
+}
+
+export async function getPricingGuidance(tenantId: string, serviceLineId: string): Promise<PricingGuidance> {
+  const { rows } = await scopedRead(tenantId,
+    `select (value #>> '{}')::numeric as m, is_assumed
+       from settings
+      where tenant_id = $1 and key = 'cost.target_margin_default'
+        and (service_line_id = $2 or service_line_id is null)
+      order by service_line_id nulls last limit 1`,
+    [tenantId, serviceLineId],
+  );
+  if (!rows[0] || rows[0].m == null) return { target_margin: null, is_assumed: true };
+  return { target_margin: Number(rows[0].m), is_assumed: !!rows[0].is_assumed };
+}

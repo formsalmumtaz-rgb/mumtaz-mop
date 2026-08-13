@@ -4,29 +4,37 @@ import { getTenantId } from "@/lib/tenant";
 import { listServiceTypes, getServiceLineId } from "@/lib/domain/reference";
 import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
-import { getEstimate } from "@/lib/domain/estimation";
+import { getEstimate, getPricingGuidance } from "@/lib/domain/estimation";
 import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
-import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction } from "../actions";
+import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-export default async function EstimateDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function EstimateDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  const [data, services, models, rates, categories] = await Promise.all([
+  const [data, services, models, rates, categories, guidance] = await Promise.all([
     getEstimate(tenantId, id),
     listServiceTypes(tenantId),
     listPricingModels(tenantId),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
+    getPricingGuidance(tenantId, sl),
   ]);
   if (!data) notFound();
   const { header, lines } = data;
   const isDraft = header.status === "draft";
   const margin = header.revenue > 0 ? ((header.gross_profit / header.revenue) * 100).toFixed(1) + "%" : "—";
+  // Pricing guidance (Release 1 item 2): suggested revenue at the target margin,
+  // and margin at any price the user types (?price=). Pure arithmetic, server-side.
+  const tm = guidance.target_margin;
+  const suggested = tm != null && tm < 1 && header.est_cost > 0 ? header.est_cost / (1 - tm) : null;
+  const tryPrice = sp.price != null && sp.price !== "" && !Number.isNaN(Number(sp.price)) ? Number(sp.price) : null;
+  const tryMargin = tryPrice != null && tryPrice > 0 ? ((tryPrice - header.est_cost) / tryPrice) * 100 : null;
   const rateProps = {
     labour: Number(rates.labour_rate ?? 0), vehicle: Number(rates.vehicle_rate ?? 0),
     overheadOn: rates.overhead_enabled, overhead: Number(rates.overhead_rate ?? 0),
@@ -53,6 +61,12 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
         <div className="flex gap-2">
           {(header.status === "quoted" || header.status === "accepted") && (
             <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
+          )}
+          {header.status === "quoted" && !header.contract_id && (
+            <form action={acceptAndConvertAction}>
+              <input type="hidden" name="estimate_id" value={header.id} />
+              <button className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700">Accept &amp; create contract →</button>
+            </form>
           )}
           {header.status === "accepted" && !header.contract_id && (
             <form action={convertToContractAction}>
@@ -83,6 +97,42 @@ export default async function EstimateDetail({ params }: { params: Promise<{ id:
         ))}
       </div>
       <p className="text-xs text-neutral-500">Cost is the operating estimate (material + labour + vehicle + optional overhead at standard rates) — no depreciation. Profit preview is indicative.</p>
+
+      {/* Pricing guidance — the engines, surfaced where the decision happens */}
+      <section className="rounded-lg border border-neutral-200 bg-white p-5">
+        <h2 className="mb-3 font-medium">Pricing guidance</h2>
+        <div className="flex flex-wrap items-end gap-6">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500">
+              Suggested minimum{tm != null && <> at {(tm * 100).toFixed(0)}% target margin</>}
+              {guidance.is_assumed && (
+                <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" title="Target margin is an ASSUMED value — confirm it in Cost setup">ASSUMED</span>
+              )}
+            </div>
+            <div className="mt-1 text-xl font-semibold">
+              {suggested != null ? aed(suggested) : "—"}
+              {suggested != null && header.revenue > 0 && (
+                <span className={`ml-2 text-sm font-medium ${header.revenue >= suggested ? "text-emerald-700" : "text-red-600"}`}>
+                  {header.revenue >= suggested ? "current price is above it" : `current price is ${aed(suggested - header.revenue)} below it`}
+                </span>
+              )}
+            </div>
+          </div>
+          <form method="get" className="flex items-end gap-2">
+            <label className="text-sm">
+              <span className="text-neutral-600">Margin at price…</span>
+              <input name="price" type="number" step="0.01" min="0" defaultValue={tryPrice ?? ""} placeholder="type a price"
+                     className="mt-1 w-40 rounded border border-neutral-300 px-2 py-2" />
+            </label>
+            <button className="rounded border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50">Check</button>
+            {tryMargin != null && (
+              <div className={`rounded px-3 py-2 text-sm font-semibold ${tryMargin >= (tm ?? 0) * 100 ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-700"}`}>
+                {tryMargin.toFixed(1)}% margin · {aed(tryPrice! - header.est_cost)} profit
+              </div>
+            )}
+          </form>
+        </div>
+      </section>
 
       {/* Lines */}
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">

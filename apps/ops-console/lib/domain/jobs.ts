@@ -48,12 +48,13 @@ const SELECT_JOB = `
 // Paged, filterable job list (customer search, status, date range).
 export async function listJobsPaged(
   tenantId: string,
-  opts: { q?: string; status?: string; from?: string; to?: string; serviceLineId?: string; unassigned?: boolean; limit: number; offset: number },
+  opts: { q?: string; status?: string; from?: string; to?: string; serviceLineId?: string; unassigned?: boolean; contractId?: string; limit: number; offset: number },
 ): Promise<{ rows: JobRow[]; total: number }> {
   const where: string[] = ["j.tenant_id = $1"];
   const params: unknown[] = [tenantId];
   const q = (opts.q ?? "").trim();
   if (q) { params.push(`%${q}%`); where.push(`cu.trade_name ilike $${params.length}`); }
+  if (opts.contractId) { params.push(opts.contractId); where.push(`j.contract_id = $${params.length}`); }
   if (opts.status && (JOB_STATUSES as readonly string[]).includes(opts.status)) { params.push(opts.status); where.push(`j.status = $${params.length}`); }
   if (opts.from) { params.push(opts.from); where.push(`j.scheduled_date >= $${params.length}`); }
   if (opts.to) { params.push(opts.to); where.push(`j.scheduled_date <= $${params.length}`); }

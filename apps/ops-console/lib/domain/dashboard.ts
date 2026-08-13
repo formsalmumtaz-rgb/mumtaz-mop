@@ -57,3 +57,13 @@ export async function getDashboard(tenantId: string, serviceLineId: string): Pro
     currency: "AED",
   };
 }
+
+// Release 1 item 7 — the ASSUMED-values backlog lived on an orphan landing page
+// (`/`, not in the nav). Surfaced here instead so the daily screen carries it.
+export async function getAssumedBacklog(tenantId: string): Promise<{ total: number; tables: { tbl: string; n: number }[] }> {
+  const tables = ["technicians", "teams", "service_types", "pest_types", "treatment_methods", "frequencies", "facility_types", "pricing_models"];
+  const parts = tables.map((t) => `select '${t}' as tbl, count(*) filter (where is_assumed)::int as n from ${t} where tenant_id = $1`);
+  const { rows } = await scopedRead(tenantId, parts.join("\nunion all\n"), [tenantId]);
+  const list = rows as { tbl: string; n: number }[];
+  return { total: list.reduce((s, r) => s + r.n, 0), tables: list.filter((r) => r.n > 0) };
+}

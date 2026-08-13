@@ -138,3 +138,59 @@ export async function confirmCustomer(tenantId: string, id: string): Promise<voi
     await audit(c, tenantId, { table: "customers", rowId: id, action: "confirm", oldValue: { is_assumed: true }, newValue: { is_assumed: false } });
   });
 }
+
+// Release 1 item 3 — the customer profile previously showed no money and no visit
+// history. One consolidated activity reader: outstanding balance, recent invoices,
+// recent receipts, visit history (jobs + their service reports). Pure joins of data
+// already in the DB, via scopedRead (RLS live).
+export interface CustomerActivity {
+  outstanding: number;
+  invoices: { id: string; invoice_number: string | null; status: string; issue_date: string | null; total: number; open_amount: number }[];
+  receipts: { id: string; receipt_number: string | null; receipt_date: string | null; method: string | null; amount: number; reversed: boolean }[];
+  visits: { id: string; scheduled_date: string | null; status: string; service_type: string | null; branch: string | null;
+            report_id: string | null; report_number: string | null; report_approved: string | null }[];
+}
+
+export async function getCustomerActivity(tenantId: string, customerId: string): Promise<CustomerActivity> {
+  const [inv, rcp, vis] = await Promise.all([
+    // invoice_ar is the authoritative AR view (mig 035/042): balance nets non-reversed
+    // receipt allocations; payment_status/days_overdue come with it.
+    scopedRead(tenantId,
+      `select ar.invoice_id as id, ar.invoice_number, ar.status, ar.issue_date::text as issue_date,
+              ar.total::numeric as total, ar.balance::numeric as open_amount
+         from invoice_ar ar
+        where ar.tenant_id = $1 and ar.customer_id = $2 and ar.status <> 'cancelled'
+        order by ar.issue_date desc nulls last, ar.invoice_id desc limit 12`,
+      [tenantId, customerId]),
+    scopedRead(tenantId,
+      `select r.id, r.receipt_number, r.receipt_date::text as receipt_date, r.method,
+              r.amount::numeric as amount,
+              exists (select 1 from receipt_reversals rr where rr.receipt_id = r.id) as reversed
+         from receipts r
+        where r.tenant_id = $1 and r.customer_id = $2
+        order by r.receipt_date desc nulls last, r.created_at desc limit 12`,
+      [tenantId, customerId]),
+    scopedRead(tenantId,
+      `select j.id, j.scheduled_date::text as scheduled_date, j.status,
+              st.name as service_type, b.name as branch,
+              sr.id as report_id, sr.report_number,
+              (select rv.action from service_report_reviews rv
+                where rv.service_report_id = sr.id order by rv.created_at desc limit 1) as report_approved
+         from jobs j
+         left join service_types st on st.id = j.service_type_id
+         left join customer_branches b on b.id = j.branch_id
+         left join service_reports sr on sr.job_id = j.id
+        where j.tenant_id = $1 and j.customer_id = $2
+        order by j.scheduled_date desc nulls last, j.created_at desc limit 25`,
+      [tenantId, customerId]),
+  ]);
+  const outstanding = (inv.rows as { open_amount: string; status: string }[])
+    .filter((r) => r.status === "issued")
+    .reduce((s, r) => s + Number(r.open_amount), 0);
+  return {
+    outstanding,
+    invoices: inv.rows.map((r: Record<string, unknown>) => ({ ...r, total: Number(r.total), open_amount: Number(r.open_amount) })) as CustomerActivity["invoices"],
+    receipts: rcp.rows.map((r: Record<string, unknown>) => ({ ...r, amount: Number(r.amount) })) as CustomerActivity["receipts"],
+    visits: vis.rows as CustomerActivity["visits"],
+  };
+}

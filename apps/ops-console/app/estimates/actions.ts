@@ -84,3 +84,18 @@ export async function convertToContractAction(fd: FormData): Promise<void> {
   const contractId = await convertEstimateToContract(tenantId, sl, id);
   redirect(`/contracts/${contractId}`);
 }
+
+// Release 1 item 2 — one click instead of Accept → wait → Convert. Accepts the
+// quoted estimate and immediately creates + opens its contract (both steps are the
+// existing idempotent domain functions; conversion refuses if already linked).
+export async function acceptAndConvertAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
+  await requirePermission("contract.edit");
+  const id = String(fd.get("estimate_id") ?? "");
+  if (!id) return;
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  await setEstimateStatus(tenantId, id, "accepted");
+  const contractId = await convertEstimateToContract(tenantId, sl, id);
+  redirect(`/contracts/${contractId}`);
+}

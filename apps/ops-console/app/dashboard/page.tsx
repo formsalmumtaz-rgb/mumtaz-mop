@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getActiveDivision } from "@/lib/domain/reference";
-import { getDashboard } from "@/lib/domain/dashboard";
+import { getDashboard, getAssumedBacklog } from "@/lib/domain/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -24,8 +24,8 @@ function Tile({ label, value, sub, href }: { label: string; value: string; sub?:
 export default async function DashboardPage() {
   const tenantId = await getTenantId();
   const division = await getActiveDivision(tenantId);
-  const d = await getDashboard(tenantId, division.id);
-  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0;
+  const [d, assumed] = await Promise.all([getDashboard(tenantId, division.id), getAssumedBacklog(tenantId)]);
+  const attention = d.pendingExpenses > 0 || d.reportsPending > 0 || d.fieldReviewHeld > 0 || assumed.total > 0;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -55,6 +55,11 @@ export default async function DashboardPage() {
             )}
             {d.reportsPending > 0 && (
               <Tile label="Service reports to review" value={String(d.reportsPending)} sub="awaiting approval" href="/service-reports" />
+            )}
+            {assumed.total > 0 && (
+              <Tile label="Assumed values to confirm" value={String(assumed.total)}
+                    sub={assumed.tables.map((t) => `${t.tbl.replace(/_/g, " ")} (${t.n})`).join(" · ")}
+                    href="/settings/master-data" />
             )}
             {d.fieldReviewHeld > 0 && (
               <Tile label="Field events held for review" value={String(d.fieldReviewHeld)} sub="from a revoked device — approve or reject" href="/field-review" />
