@@ -67,3 +67,13 @@ export async function getAssumedBacklog(tenantId: string): Promise<{ total: numb
   const list = rows as { tbl: string; n: number }[];
   return { total: list.reduce((s, r) => s + r.n, 0), tables: list.filter((r) => r.n > 0) };
 }
+
+// Expiry + email data-quality attention (mig 068).
+export async function getExpiryAttention(tenantId: string): Promise<{ expiring: number; nearest: string | null; bounced: number }> {
+  const { rows: e } = await scopedRead(tenantId,
+    `select count(*)::int as n, min(expiry_date)::text as nearest
+       from expiring_documents where tenant_id = $1 and expiry_date <= current_date + 90`, [tenantId]);
+  const { rows: b } = await scopedRead(tenantId,
+    `select count(*)::int as n from customers where tenant_id = $1 and email_bounced_at is not null and archived_at is null`, [tenantId]);
+  return { expiring: e[0]?.n ?? 0, nearest: e[0]?.nearest ?? null, bounced: b[0]?.n ?? 0 };
+}

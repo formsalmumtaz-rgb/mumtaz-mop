@@ -2,7 +2,7 @@
   "name": "mumtaz-mop",
   "version": "0.0.0",
   "private": true,
-  "description": "Mumtaz Operations Platform (MOP) — integrated ERP + Field Service Management. Monorepo root.",
+  "description": "Mumtaz Operations Platform (MOP) \u2014 integrated ERP + Field Service Management. Monorepo root.",
   "packageManager": "pnpm@11.17.0",
   "engines": {
     "node": ">=20"
@@ -13,7 +13,7 @@
     "services/*"
   ],
   "scripts": {
-    "test:worker": "node --env-file=.env.local --import tsx --test services/worker/test/*.test.ts"
+    "test:worker": "node --env-file=.env.local --import tsx --test --test-concurrency=1 services/worker/test/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

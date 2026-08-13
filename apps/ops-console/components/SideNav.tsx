@@ -46,6 +46,7 @@ const GROUPS: Group[] = [
     { href: "/jobs/new", label: "New job" },
     { href: "/service-reports", label: "Service reports" },
     { href: "/field-review", label: "Field review" },
+    { href: "/notifications", label: "Notifications" },
     { href: "/manpower", label: "Manpower" },
     { href: "/technicians", label: "Technicians" },
     { href: "/teams", label: "Teams" },
