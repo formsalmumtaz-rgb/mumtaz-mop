@@ -16,7 +16,11 @@ function createPool(): pg.Pool {
   const p = new Pool({
     connectionString: url.toString(),
     ssl: { rejectUnauthorized: false }, // Supabase pooler TLS — see DEBT.md D4
-    max: 5,
+    // Heavy pages (customer profile) legitimately fan out ~12 scoped reads in
+    // parallel; at max 5 they queue in waves and the page pays 2-3x the Mumbai
+    // round-trip. The session pooler multiplexes fine at this level. (Speed
+    // refresh item 1.)
+    max: 12,
   });
   // Environment binding for the costing gate (mig 026): unset app.environment =>
   // 'production' => assumed costing denied, so production is fail-safe with zero

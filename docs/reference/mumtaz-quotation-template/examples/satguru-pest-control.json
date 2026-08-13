@@ -1,0 +1,97 @@
+{
+  "division": "pest_control",
+
+  "doc": {
+    "ref_no": "MPC/QTN/2026/0812",
+    "issue_date": "2026-08-08",
+    "validity_days": 30,
+    "subject": "Pest Control Treatment — Three Service Visits with Six Months Warranty",
+    "intro_paragraphs": [
+      "With reference to our discussion regarding pest control treatment at your office premises on Sheikh Zayed Road, Dubai, we are pleased to submit our most competitive rate together with the scope, terms and conditions detailed below. Serving the UAE since 2006 and municipality approved in Dubai, Sharjah and Abu Dhabi, all our treatments are carried out by trained, certified technicians using approved products under ISO-certified management systems."
+    ]
+  },
+
+  "client": {
+    "name": "M/s. Satguru Travel and Tourism L.L.C.",
+    "address_lines": [
+      "Office 310, 3rd Floor, Latifa Tower",
+      "Sheikh Zayed Road, Dubai, United Arab Emirates"
+    ],
+    "trn": null
+  },
+
+  "scope": {
+    "items": [
+      "Extermination of all common crawling and rodent pests — cockroaches, ants, spiders and rats.",
+      "Odourless, non-staining, municipality-approved pesticides, safe for occupied office environments.",
+      "Gel baiting and residual spray treatment of harbourage points, service voids, skirtings and entry paths.",
+      "Rodent monitoring and baiting at identified activity points, where applicable.",
+      "Site inspection report with recommended preventive housekeeping measures.",
+      "Treatment scheduled out of hours to avoid disruption to your operations."
+    ]
+  },
+
+  "premises": {
+    "text": "The entire area of Satguru Travel and Tourism L.L.C., Office 310, Latifa Tower, Dubai — all office rooms, corridors, pantry, washrooms, store areas and connected service areas."
+  },
+
+  "pricing": {
+    "currency": "AED",
+    "vat_rate": 0.05
+  },
+
+  "line_items": [
+    {
+      "title": "Initial Comprehensive Pest Control Treatment",
+      "description": "Full treatment of the entire premises as per scope of work above",
+      "qty": 1,
+      "rate": 750,
+      "counts_as_visit": true
+    },
+    {
+      "title": "Follow-Up Service Visits",
+      "description": "Two scheduled follow-up treatments within the warranty period",
+      "qty": 2,
+      "rate": 750,
+      "counts_as_visit": true
+    },
+    {
+      "title": "Materials & Mobilisation Charge",
+      "description": "One-time charge covering treatment materials and site mobilisation",
+      "qty": 1,
+      "rate": 150
+    }
+  ],
+
+  "badge_visit_label": "1 Treatment + 2 Follow-Ups",
+
+  "warranty": {
+    "months": 6,
+    "months_words": "six (6)",
+    "text": "A <b>six (6) month service warranty</b> applies from the date of the initial treatment. Two follow-up visits are included within this period as priced above. Should pest activity recur within the warranty period, our team will attend the site and re-treat the affected areas free of charge, subject to the terms below."
+  },
+
+  "terms": [
+    "Payment is due upon completion of each service visit, or as mutually agreed in writing.",
+    "Rates are quoted at AED 750 per service visit and are exclusive of VAT; 5% VAT is applied as shown in the commercial offer.",
+    "Service appointments will be scheduled by mutual agreement, subject to a minimum of 48 hours' advance notice.",
+    "The client shall provide access to all areas to be treated and clear food items, utensils and sensitive equipment beforehand.",
+    "Follow-up visits must be availed within the warranty period; unused visits lapse and are non-refundable.",
+    "The warranty is void where structural defects, persistent sanitation issues, drainage faults, or pest ingress from adjoining untreated premises are contributory factors, or where treatment by a third party is carried out during the warranty period.",
+    "Treatments comply with UAE municipality regulations and the HSE requirements of the premises.",
+    "This quotation is valid for thirty (30) days from the date of issue.",
+    "All rates quoted are in United Arab Emirates Dirhams (AED)."
+  ],
+
+  "credentials": [
+    "Established 2006 — Trade Licence No. 546486; municipality approved in Dubai, Sharjah and Abu Dhabi.",
+    "ISO 9001 (Quality), ISO 14001 (Environment) and ISO 45001 (Occupational Health & Safety) certified.",
+    "Trained and certified pest control technicians under full supervision.",
+    "Trusted by leading UAE corporate, retail, hospitality and healthcare groups."
+  ],
+
+  "signatory": {
+    "name": "Sahad Saleem",
+    "title": "Business Development Manager"
+  }
+}

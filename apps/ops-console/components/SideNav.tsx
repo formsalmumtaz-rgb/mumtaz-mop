@@ -32,7 +32,7 @@ type Item = { href: string; label: string };
 type Group = { label: string | null; items: Item[] };
 
 const GROUPS: Group[] = [
-  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }] },
+  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }, { href: "/search", label: "Search 🔎" }] },
   { label: "Sales", items: [
     { href: "/customers", label: "Customers" },
     { href: "/surveys", label: "Surveys" },
@@ -51,8 +51,8 @@ const GROUPS: Group[] = [
     { href: "/technicians", label: "Technicians" },
     { href: "/teams", label: "Teams" },
     { href: "/vehicles", label: "Vehicles" },
-    { href: "/chemicals", label: "Chemicals" },
     { href: "/stock", label: "Stock" },
+    { href: "/chemicals", label: "Manage items" },
     { href: "/purchases", label: "Purchases" },
     { href: "/recipes", label: "Treatment recipes" },
   ] },

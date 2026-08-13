@@ -17,12 +17,40 @@ export async function addLineFromCategoryAction(fd: FormData): Promise<void> {
   revalidatePath(`/estimates/${estimateId}`);
 }
 
+
+// Flow refresh item 3: estimates/surveys are mostly for NEW customers — the
+// creation forms accept a compact inline customer (name + phone + emirate) and
+// create it without leaving the flow. Full details completed later on the profile.
+async function resolveOrCreateCustomer(tenantId: string, sl: string, fd: FormData): Promise<string> {
+  const existing = String(fd.get("customer_id") ?? "").trim();
+  if (existing) return existing;
+  const name = String(fd.get("new_customer_name") ?? "").trim();
+  if (!name) throw new Error("Pick a customer or enter a new customer name");
+  const { createCustomer } = await import("@/lib/domain/customers");
+  const { withRequest } = await import("@/lib/rls");
+  const customerId = await createCustomer(tenantId, sl, {
+    trade_name: name,
+    customer_type: String(fd.get("new_customer_type") ?? "B2B") || "B2B",
+    emirate: String(fd.get("new_customer_emirate") ?? "Sharjah") || "Sharjah",
+  } as never);
+  const phone = String(fd.get("new_customer_phone") ?? "").trim();
+  if (phone) {
+    await withRequest({ tenantId }, (c) =>
+      c.query(
+        `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, is_primary, is_assumed, assumed_note)
+         values ($1,$2,$3,'Primary contact',$4,true,true,'Captured inline at survey/estimate - confirm')`,
+        [tenantId, sl, customerId, phone]));
+  }
+  return customerId;
+}
+
 export async function createEstimateAction(fd: FormData): Promise<void> {
   await requirePermission("estimate.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
+  const customerId = await resolveOrCreateCustomer(tenantId, sl, fd);
   const id = await createEstimate(tenantId, sl, {
-    customer_id: String(fd.get("customer_id") ?? ""),
+    customer_id: customerId,
     property_type: String(fd.get("property_type") ?? ""),
     engagement_type: String(fd.get("engagement_type") ?? ""),
     valid_until: String(fd.get("valid_until") ?? ""),

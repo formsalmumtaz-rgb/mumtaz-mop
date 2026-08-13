@@ -1,0 +1,82 @@
+{
+  "division": "cleaning",
+
+  "doc": {
+    "ref_no": "MCC/QTN/2026/0455",
+    "issue_date": "2026-08-12",
+    "validity_days": 15,
+    "subject": "Annual Deep Cleaning Contract — Quarterly Service Schedule",
+    "intro_paragraphs": [
+      "Further to your enquiry, we are pleased to submit our proposal for a scheduled deep cleaning contract covering your villa in Al Barsha. All works are carried out by our directly employed, uniformed cleaning crew using commercial-grade equipment and certified consumables."
+    ]
+  },
+
+  "client": {
+    "name": "M/s. Emerald Property Management L.L.C.",
+    "address_lines": [
+      "Villa 22, Street 14, Al Barsha South",
+      "Dubai, United Arab Emirates"
+    ],
+    "trn": "100234567800003"
+  },
+
+  "scope": {
+    "heading": "Scope of Cleaning Works",
+    "items": [
+      "Full internal deep clean of all rooms including high-level dusting and skirting detail.",
+      "Kitchen degreasing — cabinetry, splashbacks, extractor surfaces and appliance exteriors.",
+      "Sanitisation of all bathrooms, including descaling of fittings and grout treatment.",
+      "Internal and reachable external window glass, tracks and frames.",
+      "Steam cleaning of upholstery and area rugs where present."
+    ]
+  },
+
+  "premises": {
+    "text": "Entire villa — ground and first floor, five bedrooms, three receptions, kitchen, five bathrooms, staircase and connected service areas."
+  },
+
+  "pricing": {
+    "currency": "AED",
+    "vat_rate": 0.05,
+    "discount": 400
+  },
+
+  "line_items": [
+    {
+      "title": "Quarterly Deep Cleaning Service",
+      "description": "Four scheduled visits per annum, crew of six with supervisor",
+      "qty": 4,
+      "rate": 1850,
+      "counts_as_visit": true
+    },
+    {
+      "title": "Upholstery & Carpet Steam Treatment",
+      "description": "Included twice annually within the contract period",
+      "qty": 2,
+      "rate": 650,
+      "counts_as_visit": false
+    }
+  ],
+
+  "badge_visit_label": "Quarterly Schedule",
+
+  "warranty": {
+    "heading": "Service Guarantee",
+    "months": 12,
+    "text": "This contract runs for <b>twelve (12) months</b> from the date of the first scheduled visit. Should any area fall short of the agreed standard, notify us within 48 hours of the visit and our crew will return to rectify the work at no additional cost."
+  },
+
+  "terms": [
+    "Contract value is payable in four equal quarterly instalments, invoiced in advance of each visit.",
+    "All rates are exclusive of VAT; 5% VAT is applied as shown in the commercial offer.",
+    "Visit dates are fixed by mutual agreement at the start of the contract period.",
+    "The client shall provide access to water and electricity supply at the premises.",
+    "Rescheduling requires a minimum of 48 hours' notice; visits cancelled inside this window are treated as delivered.",
+    "This quotation is valid for fifteen (15) days from the date of issue."
+  ],
+
+  "signatory": {
+    "name": "Sahar Said",
+    "title": "Director of Operations"
+  }
+}

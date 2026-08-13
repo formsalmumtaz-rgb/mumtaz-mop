@@ -33,6 +33,22 @@ export default async function EstimatesPage() {
             <select name="customer_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
               <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.trade_name ?? c.code}</option>)}
             </select></label>
+          <fieldset className="rounded border border-dashed border-neutral-300 p-3 sm:col-span-2">
+            <legend className="px-1 text-xs font-medium uppercase tracking-wide text-neutral-500">…or a new customer, without leaving the flow</legend>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="text-sm"><span className="text-neutral-600">Trade name</span>
+                <input name="new_customer_name" placeholder="e.g. Al Noor Restaurant" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
+              <label className="text-sm"><span className="text-neutral-600">Phone</span>
+                <input name="new_customer_phone" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
+              <label className="text-sm"><span className="text-neutral-600">Emirate</span>
+                <select name="new_customer_emirate" defaultValue="Sharjah" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+                  {["Sharjah","Dubai","Ajman","Abu Dhabi","Umm Al Quwain","Ras Al Khaimah","Fujairah"].map((e) => <option key={e}>{e}</option>)}
+                </select></label>
+            </div>
+            <input type="hidden" name="new_customer_type" value="B2B" />
+            <p className="mt-2 text-xs text-neutral-500">Leave the customer picker empty and fill this instead — details are completed later on the profile.</p>
+          </fieldset>
+
           <label className="text-sm"><span className="text-neutral-600">Valid until</span>
             <input type="date" name="valid_until" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
           <label className="text-sm"><span className="text-neutral-600">Property type</span>

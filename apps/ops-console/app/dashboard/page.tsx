@@ -37,6 +37,17 @@ export default async function DashboardPage() {
         <span className="rounded-full bg-navy px-3 py-1 text-sm font-medium text-white">{division.name}</span>
       </div>
 
+      {/* Quick actions (refresh item 2): the daily workflow one tap from login */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {[["/customers", "＋ Customer"], ["/surveys", "＋ Survey"], ["/estimates", "＋ Estimate"], ["/jobs/new", "＋ Job"],
+          ["/invoices", "＋ Invoice"], ["/receipts", "Record payment"], ["/stock", "Issue stock"]].map(([href, label]) => (
+          <Link key={href} href={href}
+                className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-3 text-center text-sm font-medium text-brand hover:bg-brand/10">
+            {label}
+          </Link>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Tile label="Jobs today" value={String(d.jobsToday)} sub={`${d.scheduled} scheduled ahead`} href="/jobs?status=scheduled" />
         <Tile label="Completed today" value={String(d.completedToday)} sub={`${d.completedTotal} all-time`} href="/jobs?status=completed" />

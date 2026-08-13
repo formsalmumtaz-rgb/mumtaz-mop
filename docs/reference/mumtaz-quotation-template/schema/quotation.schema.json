@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mumtaz.internal/schemas/quotation.v1.json",
+  "title": "MOP Quotation Payload v1",
+  "description": "Lean input contract for the Mumtaz quotation renderer. Anything derivable (line amounts, sub-total, VAT, grand total, amount in words, badges) is computed by the renderer and must NOT be supplied here.",
+  "type": "object",
+  "required": ["client", "line_items", "doc"],
+  "additionalProperties": false,
+
+  "properties": {
+    "division": {
+      "type": "string",
+      "enum": ["pest_control", "cleaning", "facilities"],
+      "default": "pest_control",
+      "description": "Selects logo, default title and default subtitle."
+    },
+
+    "doc": {
+      "type": "object",
+      "required": ["subject"],
+      "additionalProperties": false,
+      "properties": {
+        "ref_no": { "type": "string", "description": "Quotation reference. Omit to render a DRAFT watermark-style placeholder." },
+        "issue_date": { "type": "string", "format": "date", "description": "ISO date. Defaults to today." },
+        "validity_days": { "type": "integer", "minimum": 1, "default": 30 },
+        "title": { "type": "string", "description": "Overrides the division default." },
+        "subtitle": { "type": "string" },
+        "subject": { "type": "string" },
+        "salutation": { "type": "string", "default": "Dear Sir," },
+        "intro_paragraphs": { "type": "array", "items": { "type": "string" }, "description": "Supports <b> only." },
+        "closing_paragraphs": { "type": "array", "items": { "type": "string" } },
+        "acceptance_note": { "type": ["string", "null"], "description": "Set null to suppress the acceptance callout." }
+      }
+    },
+
+    "client": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "address_lines": { "type": "array", "items": { "type": "string" } },
+        "trn": { "type": ["string", "null"], "description": "15-digit UAE Tax Registration Number. Required on tax invoices, optional on quotations." }
+      }
+    },
+
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading": { "type": "string", "default": "Scope of Work" },
+        "items": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "premises": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading": { "type": "string", "default": "Premises Covered" },
+        "text": { "type": "string" }
+      }
+    },
+
+    "pricing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading": { "type": "string", "default": "Commercial Offer" },
+        "currency": { "type": "string", "default": "AED" },
+        "vat_rate": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.05, "description": "Decimal, not percent. 0.05 = 5%." },
+        "discount": { "type": "number", "minimum": 0, "description": "Absolute amount off the sub-total, applied before VAT." }
+      }
+    },
+
+    "line_items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "qty", "rate"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "qty": { "type": "number", "minimum": 0 },
+          "rate": { "type": "number", "minimum": 0 },
+          "taxable": { "type": "boolean", "default": true, "description": "Set false to exclude the line from the VAT base." },
+          "counts_as_visit": { "type": "boolean", "default": false, "description": "Included in the auto-generated visit-count badge." },
+          "zero_label": { "type": "string", "description": "Text shown instead of 0.00, e.g. \"Included\"." }
+        }
+      }
+    },
+
+    "badges": {
+      "type": "array",
+      "maxItems": 4,
+      "description": "Overrides the auto-generated summary badges.",
+      "items": {
+        "type": "object",
+        "required": ["value", "label"],
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    },
+
+    "badge_visit_label": { "type": "string", "description": "Caption under the auto visit-count badge." },
+
+    "warranty": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "heading": { "type": "string", "default": "Warranty" },
+        "months": { "type": "integer", "minimum": 0 },
+        "months_words": { "type": "string", "description": "e.g. \"six (6)\"" },
+        "text": { "type": "string", "description": "Supports <b>. Auto-generated from months if omitted." }
+      }
+    },
+
+    "terms": { "type": "array", "items": { "type": "string" } },
+    "credentials_heading": { "type": "string", "default": "Our Credentials" },
+    "credentials": { "type": "array", "items": { "type": "string" }, "description": "Omit to use the standard company credentials." },
+
+    "signatory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "default": "Sahad Saleem" },
+        "title": { "type": "string", "default": "Business Development Manager" }
+      }
+    },
+
+    "brand_overrides": {
+      "type": "object",
+      "description": "Escape hatch for one-off letterhead changes. Avoid in normal use — edit src/normalize.js instead so every document stays consistent.",
+      "additionalProperties": true
+    }
+  }
+}

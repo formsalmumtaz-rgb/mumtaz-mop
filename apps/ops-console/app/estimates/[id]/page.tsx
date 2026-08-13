@@ -63,9 +63,10 @@ export default async function EstimateDetail({ params, searchParams }: { params:
           </p>
         </div>
         <div className="flex gap-2">
-          {(header.status === "quoted" || header.status === "accepted") && (
-            <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
-          )}
+          {/* Flow fix (refresh item 3): the quotation is VIEWABLE from draft —
+              generating/viewing never requires "mark as quoted"; sending or
+              accepting is what moves the status. */}
+          <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
           {header.status === "quoted" && !header.contract_id && (
             <form action={acceptAndConvertAction}>
               <input type="hidden" name="estimate_id" value={header.id} />
