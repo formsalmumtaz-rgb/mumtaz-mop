@@ -219,10 +219,60 @@ export async function convertEstimateToContract(tenantId: string, serviceLineId:
     if (!e.customer_id) throw new Error("Estimate needs a customer before it can become a contract");
     const sl = e.service_line_id ?? serviceLineId;
     const rev = (await c.query(`select coalesce(revenue,0) as r from estimate_profitability where estimate_id=$1`, [estimateId])).rows[0]?.r ?? 0;
+
+    // Flow item 8 — the contract INHERITS everything the pipeline already knows:
+    //   * pricing model: from the estimate's first line;
+    //   * end date: start + 364 days (a standard 1-year term, editable);
+    //   * frequency: derived from the customer's premises category through the
+    //     municipality compliance matrix (fn_visit_frequency, mig 073) and
+    //     matched to a frequency whose annualised visit count equals it.
+    //     No match / unknown category ⇒ NULL — the page says why, never guesses.
+    const inh = (await c.query(
+      `with first_line as (
+         select l.pricing_model_id from estimate_lines l
+          where l.estimate_id = $1 and l.tenant_id = $2
+          order by l.seq nulls last, l.created_at limit 1
+       ), cust as (
+         select cu.emirate,
+                case cu.attributes->>'industry'
+                  when 'restaurant' then 'restaurant' when 'cafe' then 'restaurant'
+                  when 'supermarket' then 'supermarket' when 'office' then 'office'
+                  when 'warehouse' then 'warehouse' when 'medical' then 'clinic'
+                  when 'educational' then 'school' when 'worship' then 'mosque'
+                  when 'construction' then 'construction'
+                end as ft_code
+           from customers cu where cu.id = $3
+       ), v as (
+         select fn_visit_frequency($2, $4, (select emirate from cust),
+                  (select id from facility_types where tenant_id = $2
+                    and code = (select ft_code from cust) limit 1), 'general') as n
+       )
+       select (select pricing_model_id from first_line) as pricing_model_id,
+              (select n from v) as visits_per_year,
+              (select f.id from frequencies f, v
+                where f.tenant_id = $2 and f.service_line_id = $4 and f.is_active and v.n is not null
+                  and round(case f.period_unit
+                        when 'year'  then f.visits_per_period::numeric / f.period_count
+                        when 'month' then f.visits_per_period * 12.0 / f.period_count
+                        when 'week'  then f.visits_per_period * 52.0 / f.period_count
+                        when 'day'   then f.visits_per_period * 365.0 / f.period_count
+                      end) = v.n
+                order by (f.period_unit = 'month') desc, f.name limit 1) as frequency_id`,
+      [estimateId, tenantId, e.customer_id, sl])).rows[0] ?? {};
+
+    // Contract number auto-generates in the house format (NNNN/YY — the format
+    // of the real contracts 1330/25, 1236/26): next sequence WITHIN the current
+    // year's series + the 2-digit year (year-scoped, so a stray legacy number in
+    // another series can't poison it). Editable until first invoice.
     const contract = (await c.query(
-      `insert into contracts(tenant_id, service_line_id, customer_id, contract_value, currency, lifecycle_status, start_date)
-       values ($1,$2,$3,$4,'AED','draft', current_date) returning id`,
-      [tenantId, sl, e.customer_id, rev])).rows[0];
+      `insert into contracts(tenant_id, service_line_id, customer_id, contract_value, currency,
+                             lifecycle_status, start_date, end_date, pricing_model_id, frequency_id, contract_number)
+       select $1,$2,$3,$4,'AED','draft', current_date, current_date + 364, $5, $6,
+              (coalesce(max((split_part(contract_number,'/',1))::int), 1000) + 1)::text || '/' || to_char(now(),'YY')
+         from contracts where tenant_id = $1
+          and contract_number ~ ('^\\d+/' || to_char(now(),'YY') || '$')
+       returning id`,
+      [tenantId, sl, e.customer_id, rev, inh.pricing_model_id ?? null, inh.frequency_id ?? null])).rows[0];
     await c.query(
       `insert into contract_services(tenant_id, service_line_id, contract_id, branch_id, service_type_id, pricing_model_id, unit_price, quantity, notes)
        select $1, $2, $3, $4, l.service_type_id, l.pricing_model_id, l.unit_price, greatest(l.measure,1), nullif(l.description,'')

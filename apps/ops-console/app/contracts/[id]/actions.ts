@@ -1,10 +1,11 @@
 "use server";
+import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { getTenantId } from "@/lib/tenant";
 import {
   activateContract, updateContract, extendContractEndDate,
-  archiveContract, restoreContract,
+  archiveContract, restoreContract, getContract, getScheduleSummary,
 } from "@/lib/domain/contracts";
 import { setContractBilling } from "@/lib/domain/billing";
 
@@ -59,13 +60,40 @@ export async function setContractBillingAction(fd: FormData): Promise<void> {
   revalidatePath(`/contracts/${id}`);
 }
 
+// Flow item 9: activation must END on the generated schedule, never a dead end.
+// 1) Pre-check what the scheduler needs (frequency + start date) and refuse with
+//    an exact message instead of activating into silence.
+// 2) Activate (emits contract.activated) and drain the outbox inline so K2's
+//    fan-out exists before the redirect — the user LANDS on the visits.
+// 3) If the drain flakes (shared pooler), the event stays queued for the
+//    webhook/sweeper — the page says the schedule is still generating. Honest.
 export async function activateContractAction(fd: FormData): Promise<void> {
   await requirePermission("contract.activate");
   const id = String(fd.get("contract_id") ?? "");
   if (!id) return;
   const tenantId = await getTenantId();
+
+  const ct = await getContract(tenantId, id);
+  if (!ct) return;
+  const missing: string[] = [];
+  if (!ct.frequency_id) missing.push("frequency");
+  if (!ct.start_date) missing.push("start");
+  if (missing.length) redirect(`/contracts/${id}?cannot_schedule=${missing.join(",")}`);
+
   await activateContract(tenantId, id);
+  try {
+    const { drainOnce, consumers } = await import("@mop/worker");
+    const { pool } = await import("@/lib/db");
+    await drainOnce(pool, consumers, { tenantId });
+  } catch {
+    // event remains queued; webhook/sweeper will process it
+  }
+  const sum = await getScheduleSummary(tenantId, id);
   revalidatePath(`/contracts/${id}`);
+  if (sum.scheduleCount > 0 && sum.firstDate) {
+    redirect(`/schedule?view=week&from=${sum.firstDate}&activated=${id}`);
+  }
+  redirect(`/contracts/${id}?activated=pending`);
 }
 
 // ── Attestation (mig 076) + severe infestation (mig 077) ──
