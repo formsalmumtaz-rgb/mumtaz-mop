@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import type { Consumer, ParsedEvent } from "./outbox";
+import { renderEmailHtml, type EmailCardRow } from "./emailTemplate";
 
 // Customer email architecture (DOCUMENT 9 §D, mig 068).
 //
@@ -26,17 +27,52 @@ const pickEmail = async (c: PoolClient, tenantId: string, customerId: string): P
   return rows[0]?.email ?? null;
 };
 
+// Vision P2: every queued notification carries the branded HTML body alongside
+// the plain text (content log stores BOTH — what was sent is what is frozen).
+// `card` renders the CTA-style summary block; paragraphs default to the text body.
 async function queue(c: PoolClient, n: {
   tenantId: string; kind: string; customerId?: string | null; branchId?: string | null;
   jobId?: string | null; contractId?: string | null; toEmail: string | null;
   subject: string; body: string; attachmentRef?: string | null;
+  serviceLineCode?: string | null; title?: string; card?: { heading?: string; rows: EmailCardRow[] };
+  footnote?: string | null;
 }): Promise<void> {
+  const html = renderEmailHtml({
+    serviceLineCode: n.serviceLineCode ?? "pest_control",
+    title: n.title ?? n.subject,
+    paragraphs: n.body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean),
+    card: n.card,
+    footnote: n.footnote ?? null,
+  });
   await c.query(
     `insert into outbound_notifications
-       (tenant_id, kind, customer_id, branch_id, job_id, contract_id, to_email, subject, body_text, attachment_ref, status)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, case when $7::text is null then 'failed' else 'queued' end)`,
+       (tenant_id, kind, customer_id, branch_id, job_id, contract_id, to_email, subject, body_text, body_html, attachment_ref, status)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, case when $7::text is null then 'failed' else 'queued' end)`,
     [n.tenantId, n.kind, n.customerId ?? null, n.branchId ?? null, n.jobId ?? null, n.contractId ?? null,
-     n.toEmail, n.subject, n.body, n.attachmentRef ?? null]);
+     n.toEmail, n.subject, n.body, html, n.attachmentRef ?? null]);
+}
+
+// The one Resend call — used by the sweep and by manual/test sends. Attachments
+// are base64 (Resend format). Exported so scripts exercise the REAL transport.
+export async function sendViaProvider(args: {
+  to: string; subject: string; text: string; html?: string | null;
+  attachments?: { filename: string; content: string }[];
+}): Promise<{ ok: boolean; id?: string; error?: string; bounce?: boolean }> {
+  const key = process.env.EMAIL_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!key || !from) return { ok: false, error: "EMAIL_API_KEY/EMAIL_FROM not set" };
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from, to: args.to, subject: args.subject, text: args.text,
+      ...(args.html ? { html: args.html } : {}),
+      ...(args.attachments?.length ? { attachments: args.attachments } : {}),
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
+  if (res.ok) return { ok: true, id: body.id };
+  return { ok: false, error: body.message ?? `HTTP ${res.status}`, bounce: res.status === 422 || res.status === 400 };
 }
 
 // ── Consumers (queue in the event's transaction) ────────────────────────────
@@ -84,15 +120,35 @@ export const jobCompletionNotifier: Consumer = {
     const t = ev.envelope.tenant_id;
     const { rows: j } = await c.query(
       `select j.id, j.customer_id, j.branch_id, cu.trade_name, cu.legal_name,
+              b.name as branch_name, b.address, sl.code as sl_code, st.name as service_type,
+              j.scheduled_date::text as sd,
+              (select string_agg(coalesce(tt.full_name, tt.code), ', ')
+                 from job_assignments ja join technicians tt on tt.id = ja.technician_id
+                where ja.job_id = j.id) as team,
               (select sr.id from service_reports sr where sr.job_id = j.id order by sr.created_at desc limit 1) as sr_id
-         from jobs j join customers cu on cu.id = j.customer_id where j.id = $1 and j.tenant_id = $2`, [p.job_id, t]);
+         from jobs j join customers cu on cu.id = j.customer_id
+         left join customer_branches b on b.id = j.branch_id
+         left join service_lines sl on sl.id = j.service_line_id
+         left join service_types st on st.id = j.service_type_id
+        where j.id = $1 and j.tenant_id = $2`, [p.job_id, t]);
     if (!j[0]) return;
     const email = await pickEmail(c, t, j[0].customer_id);
     const name = j[0].trade_name ?? j[0].legal_name ?? "Customer";
+    const cardRows = [
+      { label: "Customer", value: name },
+      j[0].branch_name || j[0].address ? { label: "Site", value: [j[0].branch_name, j[0].address].filter(Boolean).join(" — ") } : null,
+      j[0].service_type ? { label: "Service", value: j[0].service_type } : null,
+      j[0].sd ? { label: "Date", value: j[0].sd } : null,
+      j[0].team ? { label: "Team", value: j[0].team } : null,
+    ].filter((r): r is { label: string; value: string } => !!r);
     await queue(c, {
       tenantId: t, kind: "service_report", customerId: j[0].customer_id, branchId: j[0].branch_id, jobId: j[0].id,
       toEmail: email,
       subject: "Your service report",
+      title: "Your service is complete",
+      serviceLineCode: j[0].sl_code,
+      card: { heading: "Visit summary", rows: cardRows },
+      footnote: "Guarantee void if the service record is misplaced. Complaints within one month of service date.",
       body:
 `Dear ${name},
 
@@ -243,33 +299,26 @@ Al Mumtaz Building Cleaning & Pest Control`,
       out.expiryNotices++;
     }
 
-    // (c) dispatch everything queued
+    // (c) dispatch everything queued — branded HTML preferred, text always
     const { rows: q } = await c.query(
-      `select id, tenant_id, customer_id, to_email, subject, body_text from outbound_notifications
+      `select id, tenant_id, customer_id, to_email, subject, body_text, body_html from outbound_notifications
         where status = 'queued' order by created_at asc limit 200`);
-    const key = process.env.EMAIL_API_KEY;
-    const from = process.env.EMAIL_FROM;
+    const configured = !!process.env.EMAIL_API_KEY && !!process.env.EMAIL_FROM;
     for (const n of q) {
-      if (!key || !from) {
+      if (!configured) {
         await c.query(`update outbound_notifications set status='logged', sent_at=now() where id=$1`, [n.id]);
         out.logged++;
         continue;
       }
       try {
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ from, to: n.to_email, subject: n.subject, text: n.body_text }),
-        });
-        const body = (await res.json().catch(() => ({}))) as { id?: string; message?: string };
-        if (res.ok) {
-          await c.query(`update outbound_notifications set status='sent', provider_id=$2, sent_at=now() where id=$1`, [n.id, body.id ?? null]);
+        const r = await sendViaProvider({ to: n.to_email, subject: n.subject, text: n.body_text, html: n.body_html });
+        if (r.ok) {
+          await c.query(`update outbound_notifications set status='sent', provider_id=$2, sent_at=now() where id=$1`, [n.id, r.id ?? null]);
           out.dispatched++;
         } else {
-          const bounce = res.status === 422 || res.status === 400;
           await c.query(`update outbound_notifications set status=$2, error=$3 where id=$1`,
-            [n.id, bounce ? "bounced" : "failed", body.message ?? `HTTP ${res.status}`]);
-          if (bounce && n.customer_id) {
+            [n.id, r.bounce ? "bounced" : "failed", r.error ?? "send failed"]);
+          if (r.bounce && n.customer_id) {
             await c.query(`update customers set email_bounced_at = now() where id=$1 and tenant_id=$2`, [n.customer_id, n.tenant_id]);
           }
           out.bounced++;
