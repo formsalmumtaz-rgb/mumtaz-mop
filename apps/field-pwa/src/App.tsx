@@ -151,7 +151,8 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const media = useLiveQuery(() => db.media.where("job_id").equals(job.id).toArray(), [job.id], []);
   const [checklist, setChecklist] = useState<Record<string, boolean>>((job.checklist as Record<string, boolean>) ?? {});
   const [area, setArea] = useState("");
-  const sigRef = useRef<SignaturePadHandle>(null);
+  const sigCustRef = useRef<SignaturePadHandle>(null);
+  const sigTechRef = useRef<SignaturePadHandle>(null);
   // Post-inspection (T4): options cached from sync; entries accumulated per area.
   const options = useLiveQuery(async () => ((await db.meta.get("inspectionOptions"))?.value as InspectionOption[] | undefined) ?? [], [], []);
   const [inspections, setInspections] = useState<InspectionEntry[]>([]);
@@ -192,15 +193,20 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
     await db.media.add({ id: uuid(), job_id: job.id, kind: "photo", blob: compressed, created_at: new Date().toISOString(), synced: 0 });
   };
 
-  const saveSignature = async () => {
-    const blob = await sigRef.current?.toBlob();
-    if (blob) await db.media.add({ id: uuid(), job_id: job.id, kind: "signature", blob, created_at: new Date().toISOString(), synced: 0 });
+  // Item 20: a signature says WHOSE. "signature" = customer representative
+  // (historic kind name kept so already-stored rows stay valid);
+  // "signature_tech" = technician/supervisor. Both render on the report.
+  const saveSignature = async (kind: "signature" | "signature_tech") => {
+    const ref = kind === "signature" ? sigCustRef : sigTechRef;
+    const blob = await ref.current?.toBlob();
+    if (blob) await db.media.add({ id: uuid(), job_id: job.id, kind, blob, created_at: new Date().toISOString(), synced: 0 });
   };
 
   const complete = async () => {
     const now = new Date().toISOString();
     const photos = media.filter((m) => m.kind === "photo").map((m) => m.id);
     const signature = media.find((m) => m.kind === "signature")?.id ?? null;
+    const signatureTech = media.find((m) => m.kind === "signature_tech")?.id ?? null;
     const dose = calcDose(job.recipe, Number(area));
     await db.jobs.update(job.id, { local_status: "completed", device_completed_at: now, checklist });
     // Post-inspection is its own event so it lands in the append-only inspection
@@ -215,6 +221,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
       dose,
       photo_ids: photos,
       signature_id: signature,
+      signature_tech_id: signatureTech,
     });
     onBack();
   };
@@ -232,6 +239,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
 
   const photoCount = media.filter((m) => m.kind === "photo").length;
   const hasSignature = media.some((m) => m.kind === "signature");
+  const hasTechSignature = media.some((m) => m.kind === "signature_tech");
   const dose = calcDose(job.recipe, Number(area));
 
   return (
@@ -325,11 +333,22 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
           </div>
 
           <div className="card">
-            <h3>Signature {hasSignature && <span className="pill done">saved</span>}</h3>
-            <SignaturePad ref={sigRef} />
+            <h3>Customer signature {hasSignature && <span className="pill done">saved</span>}</h3>
+            <p className="muted" style={{ fontSize: ".8rem", marginTop: 0 }}>The customer&rsquo;s representative signs here to confirm the work.</p>
+            <SignaturePad ref={sigCustRef} />
             <div className="row" style={{ marginTop: ".5rem" }}>
-              <button className="ghost" style={{ width: "auto" }} onClick={() => sigRef.current?.clear()}>Clear</button>
-              <button className="secondary" style={{ width: "auto" }} onClick={saveSignature}>Save signature</button>
+              <button className="ghost" style={{ width: "auto" }} onClick={() => sigCustRef.current?.clear()}>Clear</button>
+              <button className="secondary" style={{ width: "auto" }} onClick={() => saveSignature("signature")}>Save customer signature</button>
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Your signature {hasTechSignature && <span className="pill done">saved</span>}</h3>
+            <p className="muted" style={{ fontSize: ".8rem", marginTop: 0 }}>You (the technician) sign here.</p>
+            <SignaturePad ref={sigTechRef} />
+            <div className="row" style={{ marginTop: ".5rem" }}>
+              <button className="ghost" style={{ width: "auto" }} onClick={() => sigTechRef.current?.clear()}>Clear</button>
+              <button className="secondary" style={{ width: "auto" }} onClick={() => saveSignature("signature_tech")}>Save my signature</button>
             </div>
           </div>
 
@@ -354,11 +373,18 @@ const SignaturePad = forwardRef<SignaturePadHandle>((_, ref) => {
   const drawing = useRef(false);
   useImperativeHandle(ref, () => ({
     clear: () => { const c = canvasRef.current; if (c) c.getContext("2d")!.clearRect(0, 0, c.width, c.height); },
-    toBlob: () => new Promise((res) => canvasRef.current?.toBlob((b) => res(b), "image/webp") ?? res(null)),
+    // PNG, not WebP: jsPDF (the on-device report renderer) cannot decode WebP —
+    // a WebP signature made addImage throw and the box silently printed empty
+    // (P0-2). PNG is ideal for line art and every renderer accepts it.
+    toBlob: () => new Promise((res) => canvasRef.current?.toBlob((b) => res(b), "image/png") ?? res(null)),
   }));
   const pos = (e: React.PointerEvent) => {
-    const r = canvasRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    // Scale CSS pixels → canvas buffer pixels: the canvas is styled to the card
+    // width but its buffer is fixed 560×160; without this the stroke lands
+    // offset from the finger (the reported device bug).
+    const c = canvasRef.current!;
+    const r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * (c.width / r.width), y: (e.clientY - r.top) * (c.height / r.height) };
   };
   return (
     <canvas

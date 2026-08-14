@@ -15,6 +15,31 @@ function blobToDataUrl(b: Blob): Promise<string> {
   });
 }
 
+// P0-2 root cause: media is stored as WebP (photos via compression, historic
+// signatures via the old capture) but jsPDF cannot decode WebP — addImage threw
+// and the empty catch printed an EMPTY box where the signature belonged.
+// Captured means rendered: transcode any blob to PNG (signatures — line art,
+// transparency) or JPEG (photos — smaller) via canvas before it reaches jsPDF.
+// Already-compatible formats pass through untouched.
+async function blobToRenderableDataUrl(b: Blob, target: "png" | "jpeg"): Promise<string> {
+  const passthrough = target === "png" ? "image/png" : "image/jpeg";
+  if (b.type === passthrough) return blobToDataUrl(b);
+  try {
+    const bmp = await createImageBitmap(b);
+    const canvas = document.createElement("canvas");
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    const ctx = canvas.getContext("2d")!;
+    if (target === "jpeg") { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(bmp, 0, 0);
+    bmp.close();
+    return canvas.toDataURL(passthrough, target === "jpeg" ? 0.85 : undefined);
+  } catch {
+    // decode failed — fall back to the raw data URL (renderer may still cope)
+    return blobToDataUrl(b);
+  }
+}
+
 const timeOf = (iso?: string) =>
   iso ? new Date(iso).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : undefined;
 
@@ -27,10 +52,12 @@ export async function buildReportModel(
     media
       .filter((m) => m.kind === "photo")
       .slice(0, 6)
-      .map(async (m) => ({ dataUrl: await blobToDataUrl(m.blob) })),
+      .map(async (m) => ({ dataUrl: await blobToRenderableDataUrl(m.blob, "jpeg") })),
   );
   const sigBlob = media.find((m) => m.kind === "signature");
-  const customerSig = sigBlob ? await blobToDataUrl(sigBlob.blob) : undefined;
+  const customerSig = sigBlob ? await blobToRenderableDataUrl(sigBlob.blob, "png") : undefined;
+  const techSigBlob = media.find((m) => m.kind === "signature_tech");
+  const techSig = techSigBlob ? await blobToRenderableDataUrl(techSigBlob.blob, "png") : undefined;
 
   const chemicals = job.recipe
     ? [
@@ -75,6 +102,7 @@ export async function buildReportModel(
     boilerplate: DEFAULT_BOILERPLATE,
     signatures: {
       customer: customerSig ? { dataUrl: customerSig } : undefined,
+      technician: techSig ? { dataUrl: techSig } : undefined,
     },
   };
 }
