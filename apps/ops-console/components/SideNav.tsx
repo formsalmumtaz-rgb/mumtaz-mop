@@ -28,43 +28,64 @@ function DivisionSwitcher({ divisions, active, pathname }: { divisions: ServiceL
 // Grouped, responsive navigation (Sales / Operations / Finance / Admin). Fixed
 // sidebar on desktop; slide-in drawer on mobile. The flat 26-item bar did not
 // scale — this groups by function so the daily tool reads like an instrument.
-type Item = { href: string; label: string };
+// Icons carry meaning (UI refresh 12): one stroke glyph per destination.
+type Item = { href: string; label: string; icon?: string };
 type Group = { label: string | null; items: Item[] };
 
+// Minimal single-path stroke icons (24×24 viewBox paths).
+const ICONS: Record<string, string> = {
+  dashboard: "M3 12l9-8 9 8M5 10v10h5v-6h4v6h5V10",
+  search: "M21 21l-5-5m2-5a7 7 0 11-14 0 7 7 0 0114 0",
+  customers: "M16 7a4 4 0 11-8 0 4 4 0 018 0M5 21v-1a7 7 0 0114 0v1",
+  surveys: "M9 5h6M9 3h6v4H9zM5 7v14h14V7M9 13l2 2 4-4",
+  estimates: "M7 3h10v18H7zM10 8h4M10 12h4M10 16h2",
+  contracts: "M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6",
+  pipeline: "M4 6h16M7 12h10M10 18h4",
+  schedule: "M5 5h14v15H5zM5 9h14M9 3v4M15 3v4",
+  jobs: "M9 6V4h6v2m-9 3h12v10H6zM3 9h18",
+  reports: "M6 3h9l4 4v14H6zM9 12l2 2 4-4",
+  money: "M4 7h16v10H4zM12 10a2 2 0 100 4 2 2 0 000-4",
+  stock: "M4 8l8-4 8 4v9l-8 4-8-4zM4 8l8 4 8-4M12 12v9",
+  settings: "M12 9a3 3 0 100 6 3 3 0 000-6M19 12a7 7 0 01-.1 1.2l2 1.6-2 3.4-2.4-1a7 7 0 01-2 1.2L14 21h-4l-.5-2.6a7 7 0 01-2-1.2l-2.4 1-2-3.4 2-1.6A7 7 0 015 12a7 7 0 01.1-1.2l-2-1.6 2-3.4 2.4 1a7 7 0 012-1.2L10 3h4l.5 2.6a7 7 0 012 1.2l2.4-1 2 3.4-2 1.6A7 7 0 0119 12",
+};
+
 const GROUPS: Group[] = [
-  { label: null, items: [{ href: "/dashboard", label: "Dashboard" }, { href: "/search", label: "Search 🔎" }] },
+  { label: null, items: [
+    { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
+    { href: "/search", label: "Search", icon: "search" },
+  ] },
   { label: "Sales", items: [
-    { href: "/customers", label: "Customers" },
-    { href: "/surveys", label: "Surveys" },
-    { href: "/estimates", label: "Estimates" },
-    { href: "/contracts", label: "Contracts" },
-    { href: "/pipeline", label: "Pipeline" },
+    { href: "/customers", label: "Customers", icon: "customers" },
+    { href: "/surveys", label: "Surveys", icon: "surveys" },
+    { href: "/estimates", label: "Estimates", icon: "estimates" },
+    { href: "/contracts", label: "Contracts", icon: "contracts" },
+    { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
   ] },
   { label: "Operations", items: [
-    { href: "/schedule", label: "Schedule" },
-    { href: "/jobs", label: "Jobs" },
+    { href: "/schedule", label: "Schedule", icon: "schedule" },
+    { href: "/jobs", label: "Jobs", icon: "jobs" },
     { href: "/jobs/new", label: "New job" },
-    { href: "/service-reports", label: "Service reports" },
+    { href: "/service-reports", label: "Service reports", icon: "reports" },
     { href: "/field-review", label: "Field review" },
     { href: "/notifications", label: "Notifications" },
     { href: "/manpower", label: "Manpower" },
     { href: "/technicians", label: "Technicians" },
     { href: "/teams", label: "Teams" },
     { href: "/vehicles", label: "Vehicles" },
-    { href: "/stock", label: "Stock" },
+    { href: "/stock", label: "Stock", icon: "stock" },
     { href: "/chemicals", label: "Manage items" },
     { href: "/purchases", label: "Purchases" },
     { href: "/recipes", label: "Treatment recipes" },
   ] },
   { label: "Finance", items: [
-    { href: "/invoices", label: "Invoices" },
+    { href: "/invoices", label: "Invoices", icon: "money" },
     { href: "/billing", label: "Billing" },
     { href: "/receipts", label: "Receipts" },
     { href: "/credit-notes", label: "Credit notes" },
     { href: "/ar", label: "Receivables" },
     { href: "/expenses", label: "Expenses" },
     { href: "/cash-flow", label: "Cash flow" },
-    { href: "/reports", label: "Reports" },
+    { href: "/reports", label: "Reports", icon: "reports" },
     { href: "/profitability", label: "Profitability" },
     { href: "/management", label: "Management" },
   ] },
@@ -75,7 +96,7 @@ const GROUPS: Group[] = [
     { href: "/cost-config", label: "Cost setup" },
     { href: "/settings/field-definitions", label: "Form questions" },
     { href: "/settings/master-data", label: "Master data" },
-    { href: "/settings", label: "Settings" },
+    { href: "/settings", label: "Settings", icon: "settings" },
     { href: "/settings/users", label: "Users" },
   ] },
 ];
@@ -100,13 +121,19 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
                     href={it.href}
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
-                    className={`block rounded-md px-3 py-2 text-sm transition-colors ${
+                    className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-all duration-150 ${
                       active
-                        ? "bg-white/15 font-medium text-white shadow-inner"
-                        : "text-white/75 hover:bg-white/10 hover:text-white"
+                        ? "border-l-2 border-gold bg-white/15 font-medium text-white shadow-inner"
+                        : "border-l-2 border-transparent text-white/75 hover:translate-x-0.5 hover:bg-white/10 hover:text-white"
                     }`}
                   >
-                    {it.label}
+                    {it.icon && (
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"
+                           strokeLinecap="round" strokeLinejoin="round" className={active ? "text-gold" : "opacity-60"}>
+                        <path d={ICONS[it.icon]} />
+                      </svg>
+                    )}
+                    <span className={it.icon ? "" : "pl-[25px]"}>{it.label}</span>
                   </Link>
                 </li>
               );
