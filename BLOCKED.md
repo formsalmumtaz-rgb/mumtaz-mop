@@ -1,4 +1,42 @@
-# BLOCKED — items needing the owner (technician app T1–T6 autonomous run)
+# BLOCKED — items needing the owner
+
+## ▶ FIRST TOMORROW — device checklist (14 Aug run)
+
+**Field app tunnel:** https://achieving-railway-sizes-laptops.trycloudflare.com
+**Serving commit:** `071a4c5` (main — fresh production build, verified: the
+tunnel returns the new bundle, API auth answers).
+Sign in as field.tech@almumtaz.ae, pull to re-sync, open one of the 3 remaining
+Calicut jobs (they now carry a price AED 147 + the Blitz recipe), then:
+1. Checklist shows service-specific items (no bait-station question).
+2. Enter the **treated area** → the chemical dose calculates for you.
+3. Sign BOTH pads — customer representative AND your signature (new split).
+4. Complete → the green "Job completed — nice work!" banner pops.
+5. Generate the on-device report → **the signatures now RENDER** in the boxes
+   (the WebP root cause is fixed; strokes no longer offset from your finger).
+Then say **CHECK** and I verify the five-point proof:
+① invoice queued (price now attached) · ② Van Blitz stock deducted ·
+③ service report row (office files it, or I do) · ④ visit in customer history ·
+⑤ notifications queued. Office report PDF now renders the full two-page
+structure with your device signatures in it.
+
+**New ASSUMED values this run (all editable, all flagged):**
+- Quotation letter content (intro/scope/terms/signatory) — mig 079, from your
+  real sample; confirm wording under Settings.
+- Category pricing models + 1.0h durations — mig 082 (prices deliberately
+  NOT set — never invented; use the price chips).
+- `cost.road_distance_factor` = 1.3 (straight-line→road km) — mig 081.
+- Contract numbers auto-generate as NNNN/YY continuing your real series
+  (next: 1001/26 until the held /26 imports land) — confirm the format.
+- Frequency inheritance maps customer industry → facility type → municipality
+  matrix; unknown industries stay unmapped (no guessing).
+
+**Owner actions still open:** A21a (enable Places API on the browser key),
+A21b (stale local prod DATABASE_URL), A19 (held import cohorts), A13/A14/A17
+(confirmations), A20 (Dubai/AD municipality docs), Vercel EMAIL_API_KEY.
+
+---
+
+## Ledger (historic — technician app T1–T6 autonomous run onward)
 
 Autonomous build of the technician app. This file lists everything that needs
 you: what, why, exactly what to do, and which phase it blocks. Work continued
