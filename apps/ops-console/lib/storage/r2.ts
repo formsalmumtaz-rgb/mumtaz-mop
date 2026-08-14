@@ -33,6 +33,11 @@ export async function getObjectText(key: string): Promise<string> {
   return await res.Body!.transformToString();
 }
 
+export async function getObjectBytes(key: string): Promise<Buffer> {
+  const res = await client().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  return Buffer.from(await res.Body!.transformToByteArray());
+}
+
 export async function objectExists(key: string): Promise<boolean> {
   try {
     await client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
