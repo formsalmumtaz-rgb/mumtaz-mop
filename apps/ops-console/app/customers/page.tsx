@@ -1,19 +1,22 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomersPaged } from "@/lib/domain/customers";
+import { listFacilityTypes } from "@/lib/domain/reference";
 import { parseListParams } from "@/lib/list";
 import { ListToolbar, Pagination } from "@/components/ListControls";
+import { NewCustomerForm } from "@/components/NewCustomerForm";
 import { createCustomerAction, archiveCustomerAction, restoreCustomerAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-
-const EMIRATES = ["Abu Dhabi", "Dubai", "Sharjah", "Ajman", "Umm Al Quwain", "Ras Al Khaimah", "Fujairah"];
 
 export default async function CustomersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const params = parseListParams(sp);
   const tenantId = await getTenantId();
-  const { rows: customers, total } = await listCustomersPaged(tenantId, params);
+  const [{ rows: customers, total }, facilityTypes] = await Promise.all([
+    listCustomersPaged(tenantId, params),
+    listFacilityTypes(tenantId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -25,48 +28,12 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
         <ListToolbar basePath="/customers" params={sp} placeholder="Search name or code" />
       </div>
 
-      {/* Create */}
+      {/* Create — items 14-17: same-name checkbox, B2B/Sharjah defaults,
+          inline first site with server-side geocoded pin */}
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={customers.length === 0}>
         <summary className="cursor-pointer font-medium">New customer</summary>
-        <form action={createCustomerAction} className="mt-4 grid grid-cols-2 gap-4">
-          <label className="text-sm">
-            <span className="text-neutral-600">Trade name *</span>
-            <input name="trade_name" required className="mt-1 w-full rounded border border-neutral-300 px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <span className="text-neutral-600">Legal name <span className="text-amber-600">(needed for tax invoices)</span></span>
-            <input name="legal_name" className="mt-1 w-full rounded border border-neutral-300 px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <span className="text-neutral-600">TRN</span>
-            <input name="trn" className="mt-1 w-full rounded border border-neutral-300 px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <span className="text-neutral-600">Trade license</span>
-            <input name="trade_license" className="mt-1 w-full rounded border border-neutral-300 px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <span className="text-neutral-600">Customer type</span>
-            <select name="customer_type" className="mt-1 w-full rounded border border-neutral-300 px-2 py-1">
-              <option value="">—</option>
-              <option value="B2B">B2B</option>
-              <option value="B2G">B2G</option>
-              <option value="B2C">B2C</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="text-neutral-600">Emirate</span>
-            <select name="emirate" className="mt-1 w-full rounded border border-neutral-300 px-2 py-1">
-              <option value="">—</option>
-              {EMIRATES.map((e) => <option key={e} value={e}>{e}</option>)}
-            </select>
-          </label>
-          <div className="col-span-2">
-            <button className="rounded bg-brand px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">
-              Create customer
-            </button>
-          </div>
-        </form>
+        <NewCustomerForm action={createCustomerAction}
+          facilityTypes={facilityTypes.map((f: { id: string; name: string | null }) => ({ id: f.id, name: f.name }))} />
       </details>
 
       {/* List */}
