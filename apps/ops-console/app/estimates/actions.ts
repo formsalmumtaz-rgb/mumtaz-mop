@@ -47,7 +47,16 @@ async function resolveOrCreateCustomer(tenantId: string, sl: string, fd: FormDat
 export async function createEstimateAction(fd: FormData): Promise<void> {
   await requirePermission("estimate.edit");
   const tenantId = await getTenantId();
-  const sl = await getServiceLineId(tenantId);
+  // P0-3: explicit service line from the form (prefilled with the active
+  // division, editable); the cookie is only the fallback for older forms.
+  // Validated against this tenant's own lines — form input, system boundary.
+  const requested = String(fd.get("service_line_id") ?? "").trim();
+  let sl = await getServiceLineId(tenantId);
+  if (requested && requested !== sl) {
+    const { listServiceLines } = await import("@/lib/domain/reference");
+    const lines = await listServiceLines(tenantId);
+    if (lines.some((l) => l.id === requested)) sl = requested;
+  }
   const customerId = await resolveOrCreateCustomer(tenantId, sl, fd);
   const id = await createEstimate(tenantId, sl, {
     customer_id: customerId,
