@@ -22,10 +22,13 @@ export async function OPTIONS(req: Request) {
 interface MediaUpload {
   id: string;
   job_id: string;
-  kind: "photo" | "signature";
+  // "signature" = customer representative, "signature_tech" = technician (item 20)
+  kind: "photo" | "signature" | "signature_tech";
   content_type?: string;
   data_base64: string;
 }
+
+const EXT_BY_TYPE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
 
 export async function POST(req: Request) {
   const cors = fieldCors(req, METHODS);
@@ -54,18 +57,21 @@ export async function POST(req: Request) {
       rejected++;
       continue;
     }
-    const key = `media/${session.tenantId}/${m.job_id}/${m.id}.webp`;
+    const contentType = m.content_type ?? "image/webp";
+    const ext = EXT_BY_TYPE[contentType] ?? "webp";
+    const key = `media/${session.tenantId}/${m.job_id}/${m.id}.${ext}`;
     const bytes = Buffer.from(m.data_base64, "base64");
-    await putObject(key, bytes, m.content_type ?? "image/webp");
+    await putObject(key, bytes, contentType);
     if (m.kind === "photo") {
       await pool.query(
         `insert into job_photos (id, tenant_id, job_id, storage_key) values ($1,$2,$3,$4) on conflict (id) do nothing`,
         [m.id, session.tenantId, m.job_id, key],
       );
     } else {
+      const signer = m.kind === "signature_tech" ? "technician" : "customer";
       await pool.query(
-        `insert into job_signatures (id, tenant_id, job_id, storage_key) values ($1,$2,$3,$4) on conflict (id) do nothing`,
-        [m.id, session.tenantId, m.job_id, key],
+        `insert into job_signatures (id, tenant_id, job_id, storage_key, signer) values ($1,$2,$3,$4,$5) on conflict (id) do nothing`,
+        [m.id, session.tenantId, m.job_id, key, signer],
       );
     }
     accepted.push(m.id);

@@ -44,7 +44,9 @@ export interface OutboxItem {
 export interface MediaItem {
   id: string; // client uuid
   job_id: string;
-  kind: "photo" | "signature";
+  // "signature" = customer representative (historic name kept for stored rows);
+  // "signature_tech" = technician/supervisor. Item 20: a signature says WHOSE.
+  kind: "photo" | "signature" | "signature_tech";
   blob: Blob;
   created_at: string;
   synced: 0 | 1;
