@@ -1,38 +1,52 @@
 # BLOCKED — items needing the owner
 
-## ▶ FIRST TOMORROW — device checklist (14 Aug run)
+## ▶ FIRST — device checklist (Vision run, 15 Aug)
 
-**Field app tunnel:** https://achieving-railway-sizes-laptops.trycloudflare.com
-**Serving commit:** `071a4c5` (main — fresh production build, verified: the
-tunnel returns the new bundle, API auth answers).
-Sign in as field.tech@almumtaz.ae, pull to re-sync, open one of the 3 remaining
-Calicut jobs (they now carry a price AED 147 + the Blitz recipe), then:
-1. Checklist shows service-specific items (no bait-station question).
-2. Enter the **treated area** → the chemical dose calculates for you.
-3. Sign BOTH pads — customer representative AND your signature (new split).
-4. Complete → the green "Job completed — nice work!" banner pops.
-5. Generate the on-device report → **the signatures now RENDER** in the boxes
-   (the WebP root cause is fixed; strokes no longer offset from your finger).
-Then say **CHECK** and I verify the five-point proof:
-① invoice queued (price now attached) · ② Van Blitz stock deducted ·
-③ service report row (office files it, or I do) · ④ visit in customer history ·
-⑤ notifications queued. Office report PDF now renders the full two-page
-structure with your device signatures in it.
+**Field app tunnel (NEW URL — the old one died with the session):**
+https://passion-supports-compromise-publishing.trycloudflare.com
+**Serving commit:** field bundle built from main `444ab83`; tunnel verified
+(fresh bundle hashes served, API answers 401 unauthenticated = auth alive).
 
-**New ASSUMED values this run (all editable, all flagged):**
-- Quotation letter content (intro/scope/terms/signatory) — mig 079, from your
-  real sample; confirm wording under Settings.
-- Category pricing models + 1.0h durations — mig 082 (prices deliberately
-  NOT set — never invented; use the price chips).
-- `cost.road_distance_factor` = 1.3 (straight-line→road km) — mig 081.
-- Contract numbers auto-generate as NNNN/YY continuing your real series
-  (next: 1001/26 until the held /26 imports land) — confirm the format.
-- Frequency inheritance maps customer industry → facility type → municipality
-  matrix; unknown industries stay unmapped (no guessing).
+Sign in as field.tech@almumtaz.ae, then:
+1. **"You're with Team A — confirm?"** banner appears → tap Confirm. That IS
+   your attendance record (new sign-in-for-today flow).
+2. The **VAN stock bar** shows your in-hand chemicals; it decrements the
+   moment you record usage (before sync).
+3. Open a Calicut job (still priced AED 147 + Blitz recipe): checklist is
+   service-specific; **treated area** calculates the dose; pick the
+   **treatment method chip**; enter **who received the service** and a
+   **recommendation**; sign BOTH pads; complete → green celebration.
+4. Sync, then say **CHECK** — I verify: invoice ① stock ② service report ③
+   visit history ④ notifications ⑤ — and now also: attendance row, rep name /
+   method / recommendation printed on the report.
+5. **Check your inbox (sahad@almumtaz.ae)** — two TEMPLATE TEST emails landed
+   (both provider-confirmed delivered): the branded service-completion email
+   with the CLONED service-report PDF attached (signatures + QR rendered), and
+   the daily operations report. Judge them as a customer would.
+
+**Service report is now a faithful clone of AlMumtaz_ServiceReport_v2** —
+S1–S12, your wordmark header, cert strip, checkbox vocabularies, financials,
+signatures, QR; S9 = scores/trends as agreed. S1–S3 prepopulate from the
+job/contract/customer/assignment.
+
+**Daily report email** goes automatically to sahad@almumtaz.ae at day close
+(17:00+ Dubai, `reports.daily_recipient` setting). /reports/daily and
+/reports/monthly are live with per-figure formulas.
+
+**New owner items this run:**
+- **A22 — office user invites:** creating office logins from the console needs
+  `SUPABASE_SERVICE_ROLE_KEY` (same as A2). Until then, create office users in
+  Supabase Auth dashboard and I link roles.
+- items.concentration (S7 conc %) is NULL for all chemicals — fill from the
+  product labels when convenient (never invented).
+- `service.guarantee_months_default` = 0 (ASSUMED, omits S11 field) — set the
+  real default.
 
 **Owner actions still open:** A21a (enable Places API on the browser key),
 A21b (stale local prod DATABASE_URL), A19 (held import cohorts), A13/A14/A17
 (confirmations), A20 (Dubai/AD municipality docs), Vercel EMAIL_API_KEY.
+Previous run's ASSUMED ledger (quotation content, category durations, road
+factor 1.3, NNNN/YY contract numbers) still awaits your confirmations.
 
 ---
 

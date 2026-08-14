@@ -73,9 +73,12 @@ test("revoked login: events ingested but HELD (drain skips), and the job is unto
   const held = (await pool.query(
     `select count(*)::int n from outbox_events where processed_at is null and not needs_review and client_uuid=$1`, [cu])).rows[0].n;
   assert.equal(held, 0, "held event is NOT drainable");
-  // job.completed side-effect must NOT have fired for a revoked device.
+  // job.completed side-effect must NOT have fired for a revoked device. (The
+  // job may legitimately be 'in_progress' from the earlier suspect-but-active
+  // job.started in this suite — since Vision P1, job.started stamps the job.
+  // The invariant here is narrower: a HELD completion never completes.)
   const status = (await pool.query(`select status from jobs where id=$1`, [jobId])).rows[0].status;
-  assert.equal(status, "scheduled", "revoked completion did not complete the job");
+  assert.notEqual(status, "completed", "revoked completion did not complete the job");
   // Admin approval releases it (needs_review cleared -> drainable).
   await pool.query(`update outbox_events set needs_review=false where client_uuid=$1`, [cu]);
   const releasable = (await pool.query(
