@@ -151,6 +151,11 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const media = useLiveQuery(() => db.media.where("job_id").equals(job.id).toArray(), [job.id], []);
   const [checklist, setChecklist] = useState<Record<string, boolean>>((job.checklist as Record<string, boolean>) ?? {});
   const [area, setArea] = useState("");
+  // Vision P1 — what only the technician knows on site (service report S2/S7/S8):
+  // who received the service, how it was treated, what we recommend.
+  const [repName, setRepName] = useState("");
+  const [treatMethod, setTreatMethod] = useState("");
+  const [recommend, setRecommend] = useState("");
   const sigCustRef = useRef<SignaturePadHandle>(null);
   const sigTechRef = useRef<SignaturePadHandle>(null);
   // Post-inspection (T4): options cached from sync; entries accumulated per area.
@@ -222,6 +227,9 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
       photo_ids: photos,
       signature_id: signature,
       signature_tech_id: signatureTech,
+      onsite_rep_name: repName.trim() || undefined,
+      treatment_method: treatMethod || undefined,
+      recommendations: recommend.trim() || undefined,
     });
     onBack();
   };
@@ -330,6 +338,32 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
               <button className="secondary" style={{ width: "auto" }} onClick={logExpense} disabled={!expAmt}>Log</button>
             </div>
             <p className="muted" style={{ fontSize: ".8rem" }}>Attach a receipt via Photos above. {moneyMsg}</p>
+          </div>
+
+          <div className="card">
+            <h3>How was it treated?</h3>
+            <p className="muted" style={{ fontSize: ".8rem", marginTop: 0 }}>Tap the method you used. This prints on the service report.</p>
+            <div className="row" style={{ flexWrap: "wrap", gap: ".4rem" }}>
+              {[["gel_treatment", "Gel"], ["spray_treatment", "Spray"], ["residual_spray", "Residual spray"],
+                ["fogging_ulv", "Fogging"], ["termite_treatment", "Termite"], ["rat_poison_bait_station", "Bait station"],
+                ["monitoring_only", "Monitoring only"]].map(([code, label]) => (
+                <button key={code} type="button" className={treatMethod === code ? "" : "ghost"}
+                        style={{ width: "auto", padding: ".55rem .8rem", minHeight: 40 }}
+                        onClick={() => setTreatMethod(treatMethod === code ? "" : code)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <h3>Site sign-off details</h3>
+            <label className="muted" style={{ display: "block", fontSize: ".85rem" }}>Who received the service? (name)
+              <input value={repName} onChange={(e) => setRepName(e.target.value)} placeholder="e.g. Mr. Rashid — Manager" />
+            </label>
+            <label className="muted" style={{ display: "block", fontSize: ".85rem", marginTop: ".5rem" }}>What should the customer fix or watch?
+              <input value={recommend} onChange={(e) => setRecommend(e.target.value)} placeholder="e.g. seal the gap under the rear door" />
+            </label>
           </div>
 
           <div className="card">

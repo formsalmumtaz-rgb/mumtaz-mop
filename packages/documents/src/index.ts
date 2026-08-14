@@ -3,7 +3,7 @@
 // it. Imported by both the ops-console and the field app. Explicit re-exports so
 // the shared primitives (Asset/pngSize/DocOrg/BrandSkin) come once from brandChrome.
 export * from "./brandChrome";
-export { renderServiceReportPdf } from "./serviceReportPdf";
+export { renderServiceReportPdf, prepareQr } from "./serviceReportPdf";
 export type { ServiceReportPdfData } from "./serviceReportPdf";
 export { renderQuotationPdf, amountInWords } from "./quotationPdf";
 export type { QuotationPdfData } from "./quotationPdf";

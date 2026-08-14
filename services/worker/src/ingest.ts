@@ -70,14 +70,47 @@ export async function ingestDeviceEvents(
       const wasNew = (ins.rowCount ?? 0) > 0;
       if (wasNew && suspect) flagged++;
       if (wasNew && needsReview) heldForReview++;
-      // reflect completion on the job itself (idempotent — only if not already done).
+      // reflect start/completion on the job itself (idempotent).
       // Held (revoked) events do NOT touch the job until an admin approves.
+      if (ev.event_type === "job.started" && !needsReview) {
+        // Vision P1: TIME IN on the service report comes from here — this was
+        // never stamped before, which is why reports printed "—" for time in.
+        await client.query(
+          `update jobs set status = case when status in ('scheduled','assigned','en_route','arrived') then 'in_progress' else status end,
+                  device_started_at = coalesce(device_started_at, $2::timestamptz),
+                  started_at = coalesce(started_at, now())
+            where id=$1 and tenant_id=$3`,
+          [ev.job_id, ev.device_time, tenantId],
+        );
+      }
       if (ev.event_type === "job.completed" && !needsReview) {
         await client.query(
           `update jobs set status='completed', device_completed_at=$2, completed_at=coalesce(completed_at, now())
             where id=$1 and tenant_id=$3 and status <> 'completed'`,
           [ev.job_id, ev.device_time, tenantId],
         );
+        // Vision P1 (S2/S6/S7/S8): what the technician typed on site lands on
+        // the job's validated attributes — the service report reads it from
+        // there. Only the declared question-set keys are taken (field_definitions
+        // 083); unknown keys are ignored, values are strings, and existing
+        // attributes win on conflict is NOT desired — latest completion wins.
+        const p = (ev.payload ?? {}) as Record<string, unknown>;
+        const CAPTURE_KEYS = [
+          "service_order_type", "treatment_method", "onsite_rep_name",
+          "onsite_rep_designation", "onsite_rep_contact",
+          "specific_areas_treated", "access_restrictions", "recommendations", "ppe_used",
+        ];
+        const captured: Record<string, string> = {};
+        for (const k of CAPTURE_KEYS) {
+          const v = p[k];
+          if (typeof v === "string" && v.trim() !== "") captured[k] = v.trim();
+        }
+        if (Object.keys(captured).length > 0) {
+          await client.query(
+            `update jobs set attributes = attributes || $2::jsonb where id=$1 and tenant_id=$3`,
+            [ev.job_id, JSON.stringify(captured), tenantId],
+          );
+        }
       }
       await client.query("commit");
       // server holds it (new or pre-existing) -> device may mark synced
