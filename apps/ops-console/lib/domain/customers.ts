@@ -91,8 +91,18 @@ export async function createCustomer(
   data: CustomerInput,
 ): Promise<string> {
   return withTenantTx(tenantId, async (c) => {
-    const { rows: cnt } = await c.query(`select count(*)::int n from customers where tenant_id = $1`, [tenantId]);
-    const code = "CUST-" + String(cnt[0].n + 1).padStart(4, "0");
+    // Account numbers are permanent and never reused (Art. VII): the next code is
+    // max(live codes, import burn floor) + 1 — same rule as the import pipeline.
+    // The old count(*)+1 collided with burned import codes once 508 customers
+    // landed (unique constraint would have rejected every new customer).
+    const { rows: seq } = await c.query(
+      `select greatest(
+                coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0),
+                coalesce((select (value #>> '{}')::int - 1 from settings
+                           where tenant_id = $1 and key = 'import.next_customer_code'), 0)
+              ) + 1 as n
+         from customers where tenant_id = $1 and code ~ '^CUST-\\d+$'`, [tenantId]);
+    const code = "CUST-" + String(seq[0].n).padStart(4, "0");
     const { rows } = await c.query(
       `insert into customers
          (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed)
@@ -193,4 +203,51 @@ export async function getCustomerActivity(tenantId: string, customerId: string):
     receipts: rcp.rows.map((r: Record<string, unknown>) => ({ ...r, amount: Number(r.amount) })) as CustomerActivity["receipts"],
     visits: vis.rows as CustomerActivity["visits"],
   };
+}
+
+// Flow items 6+7 — shared by the survey and estimate creation flows.
+// Inline "new customer" creates a REAL customer through the exact same path as
+// the full form (same code sequence, same audit), and reports what it made so
+// the screen can say so. The default site is inherited automatically: if the
+// customer has exactly one active branch, that is the site — never re-asked.
+export interface ResolvedCustomer { id: string; created: boolean; code: string | null; name: string | null }
+
+export async function resolveOrCreateInlineCustomer(
+  tenantId: string, serviceLineId: string, fd: FormData,
+): Promise<ResolvedCustomer> {
+  const existing = String(fd.get("customer_id") ?? "").trim();
+  if (existing) {
+    const { rows } = await scopedRead(tenantId,
+      `select code, coalesce(trade_name, legal_name) as name from customers where id = $1 and tenant_id = $2`,
+      [existing, tenantId]);
+    return { id: existing, created: false, code: rows[0]?.code ?? null, name: rows[0]?.name ?? null };
+  }
+  const name = String(fd.get("new_customer_name") ?? "").trim();
+  if (!name) throw new Error("Pick a customer or enter a new customer name");
+  const customerId = await createCustomer(tenantId, serviceLineId, {
+    trade_name: name,
+    customer_type: String(fd.get("new_customer_type") ?? "B2B") || "B2B",
+    emirate: String(fd.get("new_customer_emirate") ?? "Sharjah") || "Sharjah",
+  } as CustomerInput);
+  const phone = String(fd.get("new_customer_phone") ?? "").trim();
+  if (phone) {
+    const { withRequest } = await import("../rls");
+    await withRequest({ tenantId }, (c) =>
+      c.query(
+        `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, is_primary, is_assumed, assumed_note)
+         values ($1,$2,$3,'Primary contact',$4,true,true,'Captured inline at survey/estimate - confirm')`,
+        [tenantId, serviceLineId, customerId, phone]));
+  }
+  const { rows } = await scopedRead(tenantId,
+    `select code from customers where id = $1 and tenant_id = $2`, [customerId, tenantId]);
+  return { id: customerId, created: true, code: rows[0]?.code ?? null, name };
+}
+
+// The customer's default site: their only active branch (most customers have
+// exactly one). Ambiguous (0 or 2+) → null, the caller leaves it unset.
+export async function defaultBranchId(tenantId: string, customerId: string): Promise<string | null> {
+  const { rows } = await scopedRead(tenantId,
+    `select id from customer_branches where tenant_id = $1 and customer_id = $2 and is_active limit 2`,
+    [tenantId, customerId]);
+  return rows.length === 1 ? rows[0].id : null;
 }

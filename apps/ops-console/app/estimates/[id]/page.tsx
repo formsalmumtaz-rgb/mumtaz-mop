@@ -50,8 +50,16 @@ export default async function EstimateDetail({ params, searchParams }: { params:
     rejected: [{ s: "draft", label: "Reopen" }], expired: [{ s: "draft", label: "Reopen" }], accepted: [],
   };
 
+  const createdCode = (sp.created ?? "").trim();
   return (
     <div className="space-y-6">
+      {createdCode && header.customer_id && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          ✓ Customer <span className="font-semibold">{header.customer}</span> created with account number{" "}
+          <span className="font-mono font-semibold">{createdCode}</span> —{" "}
+          <Link href={`/customers/${header.customer_id}`} className="underline">complete their profile later</Link>.
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <Link href="/estimates" className="text-sm text-brand underline">← Estimates</Link>
@@ -208,8 +216,8 @@ export default async function EstimateDetail({ params, searchParams }: { params:
               <select name="category_id" required className="mt-1 block w-72 rounded-md border border-neutral-300 px-2 py-2 text-sm">
                 <option value="">Select…</option>
                 {categories.map((c) => (
-                  <option key={c.id} value={c.id} disabled={!c.default_pricing_model_id}>
-                    {c.name}{c.property_type ? ` (${c.property_type})` : ""}{!c.default_pricing_model_id ? " — no pricing set" : ""}
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.property_type ? ` (${c.property_type})` : ""}
                   </option>
                 ))}
               </select>
