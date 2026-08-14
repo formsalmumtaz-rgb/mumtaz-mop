@@ -108,7 +108,10 @@ export async function pendingCount(): Promise<number> {
 export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
   const res = await authedFetch(`${baseUrl}/api/field/sync`);
   if (!res.ok) throw new Error(`sync failed: ${res.status}`);
-  const data = (await res.json()) as { jobs: LocalJob[]; inspection_options?: InspectionOption[] };
+  const data = (await res.json()) as {
+    jobs: LocalJob[]; inspection_options?: InspectionOption[];
+    van_stock?: { item: string; unit: string | null; qty: number }[];
+  };
   await db.transaction("rw", db.jobs, db.meta, async () => {
     for (const j of data.jobs) {
       const existing = await db.jobs.get(j.id);
@@ -117,6 +120,9 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
     }
     // Cache the button-driven inspection option lists for offline use (T4).
     if (data.inspection_options) await db.meta.put({ key: "inspectionOptions", value: data.inspection_options });
+    // In-hand van stock (Vision P3) — displayed on every screen, decremented
+    // optimistically on the device as usage is recorded.
+    if (data.van_stock) await db.meta.put({ key: "vanStock", value: data.van_stock });
     await db.meta.put({ key: "lastSync", value: new Date().toISOString() });
   });
   return { jobs: data.jobs.length };
