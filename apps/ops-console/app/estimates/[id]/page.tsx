@@ -5,7 +5,7 @@ import { listServiceTypes, getServiceLineId } from "@/lib/domain/reference";
 import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
 import { canSeeProfit } from "@/lib/auth";
-import { getEstimate, getPricingGuidance } from "@/lib/domain/estimation";
+import { getEstimate, getPricingGuidance, getLineDefaults, ensureBaseLocation } from "@/lib/domain/estimation";
 import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
 import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction, generateQuotationAction } from "../actions";
@@ -18,13 +18,15 @@ export default async function EstimateDetail({ params, searchParams }: { params:
   const sp = await searchParams;
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  const [data, services, models, rates, categories, guidance] = await Promise.all([
+  await ensureBaseLocation(tenantId); // one-time geocode of the office pin (no-op after)
+  const [data, services, models, rates, categories, guidance, lineDefaults] = await Promise.all([
     getEstimate(tenantId, id),
     listServiceTypes(tenantId),
     listPricingModels(tenantId),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
     getPricingGuidance(tenantId, sl),
+    getLineDefaults(tenantId, sl, id),
   ]);
   if (!data) notFound();
   // DOCUMENT 9 §A: operations sees revenue, never margin. Without profit.view the
@@ -223,7 +225,7 @@ export default async function EstimateDetail({ params, searchParams }: { params:
           <LineForm action={addLineAction} entityId={header.id} idFieldName="estimate_id"
             services={services.map((s) => ({ id: s.id, name: s.name }))}
             models={models.map((m) => ({ id: m.id, name: m.name, model_type: m.model_type, formula_spec: m.formula_spec }))}
-            rates={rateProps} />
+            rates={rateProps} defaults={lineDefaults} />
         </div>
       ) : (
         <p className="text-sm text-neutral-500">This estimate is {header.status} — reopen to draft to edit lines.</p>

@@ -347,6 +347,137 @@ export interface PricingGuidance {
   is_assumed: boolean;          // Art. X §4 — badge until the owner confirms it
 }
 
+// Flow item 5 — THE GOVERNING RULE: a screen never asks for what the system
+// can compute. These are the engine-computed prefills for an estimate line —
+// labour hours, travel distance, per-m² material rates, reference rates —
+// each with the basis it was computed from (shown in the UI, always editable).
+export interface LineDefaults {
+  treatment_hours: number;        // cost.treatment_hours_per_visit
+  travel_hours: number;           // round_trip / cost.travel_speed_kmh
+  labour_hours: number;           // treatment + travel (travel time IS paid)
+  round_trip_km: number;
+  distance_basis: string;         // human basis: route computed vs company default
+  material_rate_spray_per_m2: number;  // Σ qty/m² × landed cost (visit_type=spray)
+  material_rate_gel_per_m2: number;
+  labour_rate: number;
+  vehicle_rate: number;
+  overhead_enabled: boolean;
+  overhead_rate: number;
+  target_margin: number | null;   // 0.70 (owner-set)
+  reference_rates: { label: string; aed: number }[];
+  assumed_keys: string[];         // which inputs are ASSUMED (flagged in UI)
+}
+
+export async function getLineDefaults(tenantId: string, serviceLineId: string, estimateId: string): Promise<LineDefaults> {
+  // One round trip: settings + per-m² material rates + the estimate's site pin
+  // distance (PostGIS straight-line × road factor) in a single query.
+  const { rows } = await scopedRead(tenantId,
+    `with s as (
+       select key,
+              case when value #>> '{}' ~ '^-?[0-9]+\\.?[0-9]*$' then (value #>> '{}')::numeric end as num,
+              value, is_assumed,
+              row_number() over (partition by key order by service_line_id nulls last) as rn
+         from settings
+        where tenant_id = $1 and (service_line_id = $2 or service_line_id is null)
+          and key in ('cost.treatment_hours_per_visit','cost.travel_speed_kmh',
+                      'cost.default_job_one_way_km','cost.road_distance_factor',
+                      'cost.standard_labour_rate_hourly','cost.standard_vehicle_rate_per_km',
+                      'cost.overhead_enabled','cost.overhead_rate_per_labour_hour',
+                      'cost.target_margin_default','pricing.reference_rates','cost.base_location')
+     ), sv as (select * from s where rn = 1
+     ), rates as (
+       select c.visit_type, sum(c.qty_per_m2 * fn_item_standard_cost($1, c.item_id)) as rate
+         from treatment_visit_consumption c
+        where c.tenant_id = $1 and (c.service_line_id = $2 or c.service_line_id is null) and c.is_active
+        group by c.visit_type
+     ), site as (
+       select cb.location as pin from estimates e
+         left join customer_branches cb on cb.id = coalesce(
+           e.branch_id,
+           (select b.id from customer_branches b
+             where b.customer_id = e.customer_id and b.is_active and b.location is not null
+             order by b.created_at limit 1))
+        where e.id = $3 and e.tenant_id = $1
+     )
+     select
+       (select num from sv where key='cost.treatment_hours_per_visit') as treat_hours,
+       (select num from sv where key='cost.travel_speed_kmh') as travel_speed,
+       (select num from sv where key='cost.default_job_one_way_km') as default_km,
+       (select num from sv where key='cost.road_distance_factor') as road_factor,
+       (select num from sv where key='cost.standard_labour_rate_hourly') as labour_rate,
+       (select num from sv where key='cost.standard_vehicle_rate_per_km') as vehicle_rate,
+       (select value #>> '{}' from sv where key='cost.overhead_enabled') as overhead_enabled,
+       (select num from sv where key='cost.overhead_rate_per_labour_hour') as overhead_rate,
+       (select num from sv where key='cost.target_margin_default') as target_margin,
+       (select value from sv where key='pricing.reference_rates') as reference_rates,
+       (select rate from rates where visit_type='spray') as rate_spray,
+       (select rate from rates where visit_type='gel') as rate_gel,
+       (select case when pin is not null and (select value from sv where key='cost.base_location') is not null
+          then st_distancesphere(
+                 pin::geometry,
+                 st_setsrid(st_makepoint(
+                   ((select value from sv where key='cost.base_location')->>'lng')::float8,
+                   ((select value from sv where key='cost.base_location')->>'lat')::float8), 4326)) / 1000.0
+          end from site) as straight_km,
+       (select coalesce(jsonb_agg(key), '[]'::jsonb) from sv where is_assumed
+          and key in ('cost.treatment_hours_per_visit','cost.travel_speed_kmh',
+                      'cost.default_job_one_way_km','cost.road_distance_factor',
+                      'cost.overhead_rate_per_labour_hour','cost.target_margin_default')) as assumed_keys`,
+    [tenantId, serviceLineId, estimateId]);
+  const r = rows[0] ?? {};
+  const treat = Number(r.treat_hours ?? 1);
+  const roadFactor = Number(r.road_factor ?? 1.3);
+  const straight = r.straight_km != null ? Number(r.straight_km) : null;
+  const oneWay = straight != null ? Math.round(straight * roadFactor * 10) / 10 : Number(r.default_km ?? 16);
+  const roundTrip = Math.round(oneWay * 2 * 10) / 10;
+  const speed = Number(r.travel_speed ?? 0);
+  const travelHours = speed > 0 ? Math.round((roundTrip / speed) * 100) / 100 : 0;
+  return {
+    treatment_hours: treat,
+    travel_hours: travelHours,
+    labour_hours: Math.round((treat + travelHours) * 100) / 100,
+    round_trip_km: roundTrip,
+    distance_basis: straight != null
+      ? `${straight.toFixed(1)} km straight line × ${roadFactor} road factor × 2 (site pin → base)`
+      : `company default ${Number(r.default_km ?? 16)} km one-way — no site pin on this customer`,
+    material_rate_spray_per_m2: Number(r.rate_spray ?? 0),
+    material_rate_gel_per_m2: Number(r.rate_gel ?? 0),
+    labour_rate: Number(r.labour_rate ?? 0),
+    vehicle_rate: Number(r.vehicle_rate ?? 0),
+    overhead_enabled: r.overhead_enabled === "true",
+    overhead_rate: Number(r.overhead_rate ?? 0),
+    target_margin: r.target_margin != null ? Number(r.target_margin) : null,
+    reference_rates: Array.isArray(r.reference_rates) ? r.reference_rates : [],
+    assumed_keys: Array.isArray(r.assumed_keys) ? r.assumed_keys : [],
+  };
+}
+
+// Geocode-and-remember the base departure pin (cost.base_location) from the real
+// office address (cost.base_address). Runs at most once — after that the pin is
+// data. Never blocks the caller: geocode failure just leaves the default-km path.
+export async function ensureBaseLocation(tenantId: string): Promise<void> {
+  const { rows } = await scopedRead(tenantId,
+    `select
+       (select 1 from settings where tenant_id=$1 and key='cost.base_location' limit 1) as has_pin,
+       (select value #>> '{}' from settings where tenant_id=$1 and key='cost.base_address' limit 1) as addr`,
+    [tenantId]);
+  if (rows[0]?.has_pin || !rows[0]?.addr) return;
+  try {
+    const { routeProvider } = await import("../route-provider");
+    const geo = await routeProvider.geocode(rows[0].addr);
+    if (!geo) return;
+    await withTenantTx(tenantId, (c) =>
+      c.query(
+        `insert into settings (tenant_id, key, value, description, is_assumed)
+         select $1, 'cost.base_location', $2::jsonb,
+                'Geocoded pin for cost.base_address (server-side geocode, Art. XVII). Editable.', false
+         where not exists (select 1 from settings where tenant_id = $1 and key = 'cost.base_location')`,
+        [tenantId, JSON.stringify({ lat: geo.location.lat, lng: geo.location.lng, source: "geocode" })]));
+  } catch {
+    // no key / provider down — distance prefill falls back to the default km
+  }
+}
+
 export async function getPricingGuidance(tenantId: string, serviceLineId: string): Promise<PricingGuidance> {
   const { rows } = await scopedRead(tenantId,
     `select (value #>> '{}')::numeric as m, is_assumed
