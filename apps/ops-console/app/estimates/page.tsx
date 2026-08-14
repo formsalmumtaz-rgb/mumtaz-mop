@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { listEstimates } from "@/lib/domain/estimation";
+import { listServiceLines, getActiveDivision } from "@/lib/domain/reference";
 import { canSeeProfit } from "@/lib/auth";
 import { createEstimateAction } from "./actions";
 
@@ -17,7 +18,9 @@ const STATUS_CLASS: Record<string, string> = {
 export default async function EstimatesPage() {
   const tenantId = await getTenantId();
   const showProfit = await canSeeProfit();
-  const [estimates, customers] = await Promise.all([listEstimates(tenantId), listCustomers(tenantId)]);
+  const [estimates, customers, serviceLines, activeDivision] = await Promise.all([
+    listEstimates(tenantId), listCustomers(tenantId), listServiceLines(tenantId), getActiveDivision(tenantId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -33,6 +36,16 @@ export default async function EstimatesPage() {
             <select name="customer_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
               <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.trade_name ?? c.code}</option>)}
             </select></label>
+          {/* P0-3: the service being sold is EXPLICIT, prefilled from the active
+              division and editable — a cleaning estimate recorded under pest was
+              how a cleaning contract came out titled 'Pest Control Agreement'.
+              Everything downstream (contract, agreement title, branding, clauses)
+              derives from this line. */}
+          <label className="text-sm"><span className="text-neutral-600">Service (division)</span>
+            <select name="service_line_id" defaultValue={activeDivision.id} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+              {serviceLines.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <span className="mt-0.5 block text-xs text-neutral-400">Prefilled from your active division — change it if this estimate is for a different service.</span></label>
           <fieldset className="rounded border border-dashed border-neutral-300 p-3 sm:col-span-2">
             <legend className="px-1 text-xs font-medium uppercase tracking-wide text-neutral-500">…or a new customer, without leaving the flow</legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

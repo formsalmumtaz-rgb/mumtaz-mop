@@ -61,8 +61,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   ]);
 
   const term = c.start_date || c.end_date ? `${fmtDate(c.start_date)} — ${fmtDate(c.end_date)}` : "—";
+  // P0-3: the document names the service actually contracted — a cleaning
+  // agreement is a "General Cleaning Agreement", never a pest one. Title,
+  // branding and clauses all derive from the contract's own service line.
   const buffer = await buildAgreementDocx({
-    title: "Service Agreement",
+    title: serviceLineName !== "—" ? `${serviceLineName} Agreement` : "Service Agreement",
     contractNumber: c.contract_number ?? "(draft)",
     date: fmtDate(new Date().toISOString().slice(0, 10)),
     term,
