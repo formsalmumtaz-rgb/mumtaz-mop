@@ -267,7 +267,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
         <>
           <div className="card">
             <h3>Checklist</h3>
-            {CHECKLIST.map((item) => (
+            {(job.checklist_items ?? CHECKLIST).map((item) => (
               <label className="chk" key={item}>
                 <input type="checkbox" checked={!!checklist[item]}
                        onChange={(e) => setChecklist((c) => ({ ...c, [item]: e.target.checked }))} />
@@ -288,14 +288,14 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
           </div>
 
           <div className="card">
-            <h3>Chemical dose</h3>
-            <div className="row">
-              <input type="number" placeholder="Area (m²)" value={area} onChange={(e) => setArea(e.target.value)} />
-            </div>
+            <h3>Chemicals used</h3>
+            <label className="muted" style={{ display: "block", fontSize: ".85rem" }}>Treated area (m²)
+              <input type="number" placeholder="e.g. 120" value={area} onChange={(e) => setArea(e.target.value)} />
+            </label>
             <p className="muted">
               {job.recipe
-                ? dose ? `${job.recipe.name}: ${dose.amount} ${dose.unit}` : "Enter an area to calculate."
-                : "No treatment recipe attached to this job — record chemical use manually."}
+                ? dose ? `${job.recipe.name}: ${dose.amount} ${dose.unit} — calculated for you from the treated area` : "Enter the treated area and the chemical amount is calculated for you."
+                : "No treatment recipe on this job — tell the office what you used."}
             </p>
           </div>
 
@@ -523,8 +523,8 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         <label className="muted">Vehicle (code/plate)<input value={vehicle} onChange={(e) => setVehicle(e.target.value)} /></label>
         <label className="muted">Odometer (km)<input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} /></label>
         <div className="row" style={{ gap: ".5rem" }}>
-          <label className="muted" style={{ flex: 1 }}>Fuel (L)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
-          <label className="muted" style={{ flex: 1 }}>Fuel (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
+          <label className="muted" style={{ flex: 1 }}>Fuel added (litres)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
+          <label className="muted" style={{ flex: 1 }}>Fuel cost (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
         </div>
         <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         {msg && <p className="muted">{msg}</p>}

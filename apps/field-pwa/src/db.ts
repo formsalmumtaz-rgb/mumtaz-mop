@@ -25,6 +25,8 @@ export interface LocalJob {
   service_type: string | null;
   access_notes: string | null;
   recipe: RecipeSnapshot | null;
+  // Item 18: server-derived per service — a cleaning job never asks about treatment.
+  checklist_items?: string[] | null;
   local_status: "scheduled" | "in_progress" | "completed";
   checklist?: Record<string, boolean | string>;
   device_started_at?: string;

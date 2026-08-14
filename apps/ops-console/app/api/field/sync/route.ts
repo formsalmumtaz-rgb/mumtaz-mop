@@ -52,6 +52,18 @@ export async function GET(req: Request) {
             j.status,
             j.attributes->>'instructions' as instructions,
             b.access_notes,
+            -- Item 18: the completion checklist derives from the SERVICE, not a
+            -- constant — a cleaning job never asks "Treatment applied".
+            -- "Bait stations checked" is deliberately absent until sites record
+            -- bait stations (monitoring-points module) — a site without them
+            -- must never be asked about them.
+            case when sl.code = 'cleaning' then
+              jsonb_build_array('Site accessible','Area cleaned','Customer briefed')
+            when sl.code = 'facilities_management' then
+              jsonb_build_array('Site accessible','Work completed','Customer briefed')
+            else
+              jsonb_build_array('Site accessible','Treatment applied','Customer briefed')
+            end as checklist_items,
             (select string_agg(coalesce(t.full_name, t.code), ', ')
                from job_assignments ja join technicians t on t.id = ja.technician_id
               where ja.job_id = j.id) as assigned_technicians,
