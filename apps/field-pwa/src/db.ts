@@ -111,6 +111,7 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
   const data = (await res.json()) as {
     jobs: LocalJob[]; inspection_options?: InspectionOption[];
     van_stock?: { item: string; unit: string | null; qty: number }[];
+    me?: { name: string; is_team_lead: boolean; team_name: string | null; confirmed_today: boolean } | null;
   };
   await db.transaction("rw", db.jobs, db.meta, async () => {
     for (const j of data.jobs) {
@@ -123,6 +124,8 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
     // In-hand van stock (Vision P3) — displayed on every screen, decremented
     // optimistically on the device as usage is recorded.
     if (data.van_stock) await db.meta.put({ key: "vanStock", value: data.van_stock });
+    // Who am I today (Vision P5.C): team + confirmation state for the banner.
+    if (data.me !== undefined) await db.meta.put({ key: "me", value: data.me });
     await db.meta.put({ key: "lastSync", value: new Date().toISOString() });
   });
   return { jobs: data.jobs.length };

@@ -124,5 +124,22 @@ export async function GET(req: Request) {
       order by it.name`,
     [session.tenantId, session.userId],
   ).catch(() => ({ rows: [] as { item: string; unit: string | null; qty: number }[] }));
-  return NextResponse.json({ jobs: rows, inspection_options: inspectionOptions, van_stock: vanStock }, { headers: cors });
+  // Vision P5.C — who am I today: current team (operations-assigned) + whether
+  // today's attendance confirmation exists yet, and team-lead status.
+  const { rows: me } = await scopedRead(
+    session.tenantId,
+    `select t.id, coalesce(t.full_name, t.code) as name, t.is_team_lead,
+            tm.name as team_name,
+            exists (select 1 from shift_confirmations sc
+                     where sc.technician_id = t.id and sc.shift_date = current_date) as confirmed_today
+       from technicians t
+       left join team_assignments ta on ta.technician_id = t.id and ta.effective_to is null
+       left join teams tm on tm.id = ta.team_id
+      where t.tenant_id = $1 and t.user_id = $2 limit 1`,
+    [session.tenantId, session.userId],
+  );
+  return NextResponse.json({
+    jobs: rows, inspection_options: inspectionOptions, van_stock: vanStock,
+    me: me[0] ?? null,
+  }, { headers: cors });
 }
