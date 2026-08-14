@@ -4,7 +4,7 @@ import path from "node:path";
 import { getSession } from "@/lib/auth";
 import { authEnforced } from "@/lib/auth-flags";
 import { getTenantId } from "@/lib/tenant";
-import { getQuotation } from "@/lib/domain/estimation";
+import { getQuotation, setEstimateStatus } from "@/lib/domain/estimation";
 import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
 import { renderQuotationPdf, pngSize, type Asset } from "@mop/documents";
 
@@ -27,8 +27,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "AUTH_REQUIRED" }, { status: 401 });
   }
   const tenantId = await getTenantId();
-  const q = await getQuotation(tenantId, id);
+  let q = await getQuotation(tenantId, id);
   if (!q) return NextResponse.json({ error: "not found" }, { status: 404 });
+  // P0-1: a document that reaches a customer must never print "(draft)" where its
+  // reference number belongs — generate the number here if this URL is hit first.
+  if (q.status === "draft") {
+    await setEstimateStatus(tenantId, id, "quoted");
+    q = await getQuotation(tenantId, id);
+    if (!q) return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
 
   const [brand, org] = await Promise.all([
     resolveDocumentBrand(tenantId, q.service_line_code),
@@ -40,18 +47,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   ]);
 
   const bytes = renderQuotationPdf({
-    quotationNumber: q.quotation_number ?? "(draft)",
+    quotationNumber: q.quotation_number ?? "",
     date: (q.quoted_at ?? "").slice(0, 10),
     validUntil: q.valid_until ?? "",
     customer: q.customer ?? "—",
     customerTrn: q.customer_trn ?? "—",
+    customerAddressLines: q.customer_address_lines,
+    accountNumber: q.account_number,
     divisionName: q.service_line_name ?? "—",
     currency: "AED",
+    salutation: q.salutation,
+    introParagraph: q.intro_paragraph,
+    scopeItems: q.scope_items,
     lines: q.lines,
     subtotal: q.subtotal,
     vatRate: q.vat_rate,
     vat: q.vat,
     total: q.total,
+    terms: q.terms,
+    signatoryName: q.signatory_name,
+    signatoryTitle: q.signatory_title,
     brand: {
       name: brand.name, label: brand.label, showLabel: brand.show_label_on_document,
       tagline: brand.tagline, accent: brand.accent_color ?? "#A31E22", showTollFree: brand.show_toll_free,

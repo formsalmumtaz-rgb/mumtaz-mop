@@ -103,6 +103,19 @@ export async function setStatusAction(fd: FormData): Promise<void> {
   revalidatePath(`/estimates/${id}`);
 }
 
+// P0-1 / flow item 10: "Generate quotation" is the single primary action on a
+// draft estimate. It freezes the snapshot + assigns the quotation number (what
+// setEstimateStatus('quoted') already does) and lands the user straight on the
+// quotation — no separate "mark as quoted" step before you can see it.
+export async function generateQuotationAction(fd: FormData): Promise<void> {
+  await requirePermission("estimate.edit");
+  const id = String(fd.get("estimate_id") ?? "");
+  if (!id) return;
+  const tenantId = await getTenantId();
+  await setEstimateStatus(tenantId, id, "quoted");
+  redirect(`/estimates/${id}/quotation`);
+}
+
 export async function convertToContractAction(fd: FormData): Promise<void> {
   await requirePermission("contract.edit");
   const id = String(fd.get("estimate_id") ?? "");

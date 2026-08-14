@@ -242,42 +242,71 @@ export interface Quotation {
   valid_until: string | null;
   customer: string | null;
   customer_trn: string | null;
+  customer_address_lines: string[];
+  account_number: string | null;
   service_line_code: string | null;
   service_line_name: string | null;
-  lines: { description: string; amount: number }[];
+  lines: { description: string; qty: number; rate: number; amount: number }[];
   subtotal: number;
   vat_rate: number;
   vat: number;
   total: number;
+  // P0-4: quotation letter content — company boilerplate, configured per service
+  // line (mig 079), never typed per quotation. Null/empty means no source for
+  // this division yet; the renderer omits the section rather than inventing one.
+  salutation: string | null;
+  intro_paragraph: string | null;
+  scope_items: string[];
+  terms: string[];
+  signatory_name: string | null;
+  signatory_title: string | null;
 }
 
 // Customer-facing quotation view — REVENUE ONLY. Never returns cost/margin (retail
 // mode by construction). Lines are frozen once the estimate is quoted.
 export async function getQuotation(tenantId: string, id: string): Promise<Quotation | null> {
-  const { rows: h } = await scopedRead(tenantId, 
+  const { rows: h } = await scopedRead(tenantId,
     `select e.quotation_number, e.status, e.snapshot->>'quoted_at' as quoted_at, e.valid_until::text,
-            cu.trade_name as customer, cu.trn as customer_trn,
-            sl.code as service_line_code, sl.name as service_line_name
+            cu.trade_name as customer, cu.trn as customer_trn, cu.code as account_number,
+            cb.address as branch_address, cb.emirate as branch_emirate, cu.emirate as customer_emirate,
+            sl.id as service_line_id, sl.code as service_line_code, sl.name as service_line_name
        from estimates e
        left join customers cu on cu.id=e.customer_id
+       left join customer_branches cb on cb.id=e.branch_id
        left join service_lines sl on sl.id=e.service_line_id
       where e.tenant_id=$1 and e.id=$2`, [tenantId, id]);
   if (!h[0]) return null;
-  const { rows: lines } = await scopedRead(tenantId, 
-    `select coalesce(nullif(l.description,''), st.name, 'Service') as description, l.line_total::float8 as amount
+  const { rows: lines } = await scopedRead(tenantId,
+    `select coalesce(nullif(l.description,''), st.name, 'Service') as description,
+            l.measure::float8 as qty, l.unit_price::float8 as rate, l.line_total::float8 as amount
        from estimate_lines l left join service_types st on st.id=l.service_type_id
       where l.tenant_id=$1 and l.estimate_id=$2 order by l.seq nulls last, l.created_at`, [tenantId, id]);
-  const { rows: vr } = await scopedRead(tenantId, 
+  const { rows: vr } = await scopedRead(tenantId,
     `select coalesce((value #>> '{}')::numeric, 5) as v from settings where tenant_id=$1 and key='vat_rate_percent' limit 1`, [tenantId]);
   const vat_rate = Number(vr[0]?.v ?? 5);
   const subtotal = lines.reduce((s: number, l: { amount: number }) => s + Number(l.amount), 0);
   const vat = Math.round(subtotal * vat_rate) / 100;
+
+  const { rows: content } = await scopedRead(tenantId,
+    `select key, value from settings
+      where tenant_id=$1 and service_line_id=$2 and key like 'quotation.%'`,
+    [tenantId, h[0].service_line_id]);
+  const cv = (k: string): string | null => (content.find((r: { key: string }) => r.key === k)?.value ?? null) as string | null;
+  const cArr = (k: string): string[] => (content.find((r: { key: string }) => r.key === k)?.value ?? []) as string[];
+
+  const addressLines = [h[0].branch_address, h[0].branch_emirate ?? h[0].customer_emirate, "United Arab Emirates"]
+    .filter((v): v is string => !!v);
+
   return {
     quotation_number: h[0].quotation_number, status: h[0].status, quoted_at: h[0].quoted_at,
     valid_until: h[0].valid_until, customer: h[0].customer, customer_trn: h[0].customer_trn,
+    customer_address_lines: addressLines, account_number: h[0].account_number,
     service_line_code: h[0].service_line_code, service_line_name: h[0].service_line_name,
-    lines: lines as { description: string; amount: number }[],
+    lines: lines as { description: string; qty: number; rate: number; amount: number }[],
     subtotal, vat_rate, vat, total: subtotal + vat,
+    salutation: cv("quotation.salutation"), intro_paragraph: cv("quotation.intro_paragraph"),
+    scope_items: cArr("quotation.scope_items"), terms: cArr("quotation.terms"),
+    signatory_name: cv("quotation.signatory_name"), signatory_title: cv("quotation.signatory_title"),
   };
 }
 
