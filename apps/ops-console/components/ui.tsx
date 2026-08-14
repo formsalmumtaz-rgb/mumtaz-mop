@@ -10,10 +10,10 @@ function cx(...v: (string | false | null | undefined)[]) { return v.filter(Boole
 // ── Button ──
 type BtnVariant = "primary" | "secondary" | "danger" | "ghost";
 type BtnSize = "sm" | "md";
-const BTN_BASE = "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 disabled:opacity-50 disabled:pointer-events-none";
+const BTN_BASE = "inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-all duration-150 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 disabled:opacity-50 disabled:pointer-events-none";
 const BTN_VARIANT: Record<BtnVariant, string> = {
-  primary: "bg-brand text-white hover:bg-brand-dark",
-  secondary: "border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-50",
+  primary: "bg-brand text-white shadow-sm hover:bg-brand-dark hover:shadow",
+  secondary: "border border-neutral-300 bg-white text-neutral-800 hover:border-neutral-400 hover:bg-neutral-50",
   danger: "border border-red-300 bg-white text-red-700 hover:bg-red-50",
   ghost: "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
 };

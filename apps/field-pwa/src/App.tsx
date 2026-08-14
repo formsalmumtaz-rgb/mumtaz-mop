@@ -357,10 +357,15 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
       )}
 
       {job.local_status === "completed" && (
-        <div className="card">
-          <div style={{ marginBottom: ".6rem" }}><span className="pill done">Completed ✓</span> — queued to sync.</div>
-          <button className="secondary" onClick={makeReport}>Generate report (PDF)</button>
-        </div>
+        <>
+          <div className="celebrate">
+            <span className="tick">✓</span>
+            <span>Job completed — nice work! It will sync automatically.</span>
+          </div>
+          <div className="card">
+            <button className="secondary" onClick={makeReport}>Generate report (PDF)</button>
+          </div>
+        </>
       )}
     </div>
   );

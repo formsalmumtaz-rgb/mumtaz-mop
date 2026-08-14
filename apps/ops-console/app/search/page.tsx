@@ -30,9 +30,21 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   ]);
   return (
     <div className="space-y-6">
-      <PageHeader title="Search" description={q ? `Results for “${q}”` : "Type a customer, contract number, invoice number, TRN, or phone."} />
+      <PageHeader title="Search" description={q ? `Results for “${q}”` : undefined} />
       <form method="get"><input name="q" defaultValue={q} autoFocus placeholder="Search everything…"
         className="w-full max-w-xl rounded border border-neutral-300 px-3 py-2.5 text-sm" /></form>
+      {q.length < 2 && (
+        <div className="max-w-xl rounded-lg border border-dashed border-neutral-300 bg-white px-5 py-6 text-sm text-neutral-600">
+          <p className="font-medium text-neutral-800">One box finds everything:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li><b>Customers</b> — by trade name, legal name, account number, TRN, or any contact&rsquo;s phone number</li>
+            <li><b>Contracts</b> — by contract number</li>
+            <li><b>Invoices</b> — by invoice number</li>
+            <li><b>Jobs</b> — by the customer&rsquo;s name</li>
+          </ul>
+          <p className="mt-2 text-xs text-neutral-400">Type at least two characters.</p>
+        </div>
+      )}
       {q.length >= 2 && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Section title="Customers" rows={cu.map((r: Record<string, string>) => ({ href: `/customers/${r.id}`, a: r.name, b: r.code }))} />

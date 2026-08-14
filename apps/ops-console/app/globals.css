@@ -18,4 +18,39 @@ body {
   textarea:focus-visible {
     @apply outline-none ring-2 ring-brand/40;
   }
+  /* UI refresh (Part 3): every interactive control answers within 100ms —
+     colour/shadow transitions everywhere, a physical press on buttons. */
+  button, a, select, input[type="checkbox"] {
+    @apply transition-all duration-150;
+  }
+  button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+}
+
+@layer utilities {
+  /* Card hover lift — used by dashboard tiles and list rows */
+  .lift {
+    @apply transition-all duration-150;
+  }
+  .lift:hover {
+    @apply -translate-y-0.5 shadow-md;
+  }
+  /* Entry fade for page content */
+  .fade-in {
+    animation: fadeIn 0.25s ease-out;
+  }
+  /* Celebration pop for completion states */
+  .pop-in {
+    animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.6); }
+  100% { opacity: 1; transform: scale(1); }
 }

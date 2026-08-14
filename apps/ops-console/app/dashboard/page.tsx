@@ -18,8 +18,21 @@ function Tile({ label, value, sub, href }: { label: string; value: string; sub?:
     </>
   );
   const cls = "block rounded-lg border border-neutral-200 bg-white p-4";
-  return href ? <Link href={href} className={`${cls} transition-colors hover:border-brand hover:bg-brand/5`}>{body}</Link> : <div className={cls}>{body}</div>;
+  return href ? <Link href={href} className={`${cls} lift hover:border-brand hover:bg-brand/5`}>{body}</Link> : <div className={cls}>{body}</div>;
 }
+
+// The front door (UI refresh 13): one satisfying tile per daily action, icon
+// first, brand-red on hover, physical lift. These are the six things the office
+// does all day — never more than one tap from login.
+const QUICK_ACTIONS: { href: string; label: string; icon: string }[] = [
+  { href: "/customers", label: "New customer", icon: "M12 5v14M5 12h14" },
+  { href: "/surveys", label: "New survey", icon: "M9 3h6v4H9zM5 7v14h14V7M9 13l2 2 4-4" },
+  { href: "/estimates", label: "New estimate", icon: "M7 3h10v18H7zM10 8h4M10 12h4" },
+  { href: "/jobs/new", label: "New job", icon: "M9 6V4h6v2m-9 3h12v10H6zM3 9h18" },
+  { href: "/invoices", label: "Raise invoice", icon: "M6 3h9l4 4v14H6zM9 12h6M9 16h4" },
+  { href: "/receipts", label: "Record payment", icon: "M4 7h16v10H4zM12 10a2 2 0 100 4 2 2 0 000-4" },
+  { href: "/stock", label: "Issue stock", icon: "M4 8l8-4 8 4v9l-8 4-8-4zM4 8l8 4 8-4M12 12v9" },
+];
 
 export default async function DashboardPage() {
   const tenantId = await getTenantId();
@@ -37,13 +50,16 @@ export default async function DashboardPage() {
         <span className="rounded-full bg-navy px-3 py-1 text-sm font-medium text-white">{division.name}</span>
       </div>
 
-      {/* Quick actions (refresh item 2): the daily workflow one tap from login */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        {[["/customers", "＋ Customer"], ["/surveys", "＋ Survey"], ["/estimates", "＋ Estimate"], ["/jobs/new", "＋ Job"],
-          ["/invoices", "＋ Invoice"], ["/receipts", "Record payment"], ["/stock", "Issue stock"]].map(([href, label]) => (
-          <Link key={href} href={href}
-                className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-3 text-center text-sm font-medium text-brand hover:bg-brand/10">
-            {label}
+      {/* Quick actions — the product's front door (UI refresh 13) */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-7">
+        {QUICK_ACTIONS.map((a) => (
+          <Link key={a.href + a.label} href={a.href}
+                className="lift group flex flex-col items-center gap-1.5 rounded-xl border border-brand/25 bg-white px-3 py-4 text-center text-sm font-medium text-brand hover:border-brand hover:bg-brand/5">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+                 strokeLinecap="round" strokeLinejoin="round" className="opacity-70 transition-transform duration-150 group-hover:scale-110 group-hover:opacity-100">
+              <path d={a.icon} />
+            </svg>
+            {a.label}
           </Link>
         ))}
       </div>
