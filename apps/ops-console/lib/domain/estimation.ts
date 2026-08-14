@@ -368,9 +368,15 @@ export interface LineDefaults {
   assumed_keys: string[];         // which inputs are ASSUMED (flagged in UI)
 }
 
-export async function getLineDefaults(tenantId: string, serviceLineId: string, estimateId: string): Promise<LineDefaults> {
-  // One round trip: settings + per-m² material rates + the estimate's site pin
-  // distance (PostGIS straight-line × road factor) in a single query.
+export async function getLineDefaults(
+  tenantId: string, serviceLineId: string, estimateId: string,
+  source: "estimates" | "surveys" = "estimates",
+): Promise<LineDefaults> {
+  // One round trip: settings + per-m² material rates + the estimate's/survey's
+  // site-pin distance (PostGIS straight-line × road factor) in a single query.
+  // `source` picks the header table (identical customer/branch shape) — never
+  // interpolated from user input.
+  const headerTable = source === "surveys" ? "surveys" : "estimates";
   const { rows } = await scopedRead(tenantId,
     `with s as (
        select key,
@@ -391,7 +397,7 @@ export async function getLineDefaults(tenantId: string, serviceLineId: string, e
         where c.tenant_id = $1 and (c.service_line_id = $2 or c.service_line_id is null) and c.is_active
         group by c.visit_type
      ), site as (
-       select cb.location as pin from estimates e
+       select cb.location as pin from ${headerTable} e
          left join customer_branches cb on cb.id = coalesce(
            e.branch_id,
            (select b.id from customer_branches b

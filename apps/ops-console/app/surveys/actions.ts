@@ -18,45 +18,25 @@ export async function addSurveyLineFromCategoryAction(fd: FormData): Promise<voi
 }
 
 
-// Flow refresh item 3: estimates/surveys are mostly for NEW customers — the
-// creation forms accept a compact inline customer (name + phone + emirate) and
-// create it without leaving the flow. Full details completed later on the profile.
-async function resolveOrCreateCustomer(tenantId: string, sl: string, fd: FormData): Promise<string> {
-  const existing = String(fd.get("customer_id") ?? "").trim();
-  if (existing) return existing;
-  const name = String(fd.get("new_customer_name") ?? "").trim();
-  if (!name) throw new Error("Pick a customer or enter a new customer name");
-  const { createCustomer } = await import("@/lib/domain/customers");
-  const { withRequest } = await import("@/lib/rls");
-  const customerId = await createCustomer(tenantId, sl, {
-    trade_name: name,
-    customer_type: String(fd.get("new_customer_type") ?? "B2B") || "B2B",
-    emirate: String(fd.get("new_customer_emirate") ?? "Sharjah") || "Sharjah",
-  } as never);
-  const phone = String(fd.get("new_customer_phone") ?? "").trim();
-  if (phone) {
-    await withRequest({ tenantId }, (c) =>
-      c.query(
-        `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, is_primary, is_assumed, assumed_note)
-         values ($1,$2,$3,'Primary contact',$4,true,true,'Captured inline at survey/estimate - confirm')`,
-        [tenantId, sl, customerId, phone]));
-  }
-  return customerId;
-}
-
 export async function createSurveyAction(fd: FormData): Promise<void> {
   await requirePermission("survey.edit");
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  const customerId = await resolveOrCreateCustomer(tenantId, sl, fd);
+  // Flow 6+7: inline customer creates a REAL record (shared path — same code
+  // sequence, same audit); the site is inherited automatically when the
+  // customer has exactly one branch. Zero re-entry.
+  const { resolveOrCreateInlineCustomer, defaultBranchId } = await import("@/lib/domain/customers");
+  const cust = await resolveOrCreateInlineCustomer(tenantId, sl, fd);
+  const branchId = await defaultBranchId(tenantId, cust.id);
   const id = await createSurvey(tenantId, sl, {
-    customer_id: customerId,
+    customer_id: cust.id,
+    branch_id: branchId ?? undefined,
     surveyor_id: String(fd.get("surveyor_id") ?? ""),
     survey_date: String(fd.get("survey_date") ?? ""),
     property_type: String(fd.get("property_type") ?? ""),
     notes: String(fd.get("notes") ?? ""),
   });
-  redirect(`/surveys/${id}`);
+  redirect(cust.created ? `/surveys/${id}?created=${encodeURIComponent(cust.code ?? "")}` : `/surveys/${id}`);
 }
 
 export async function addSurveyLineAction(fd: FormData): Promise<void> {

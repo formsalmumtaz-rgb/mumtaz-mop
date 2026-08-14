@@ -7,22 +7,26 @@ import { getCostRates } from "@/lib/domain/costconfig";
 import { getSurvey } from "@/lib/domain/survey";
 import { canSeeProfit } from "@/lib/auth";
 import { listCategories } from "@/lib/domain/categories";
+import { getLineDefaults, ensureBaseLocation } from "@/lib/domain/estimation";
 import { LineForm } from "@/components/LineForm";
 import { addSurveyLineAction, addSurveyLineFromCategoryAction, deleteSurveyLineAction, setSurveyStatusAction, createEstimateFromSurveyAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-export default async function SurveyDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function SurveyDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
+  const createdCode = ((await searchParams).created ?? "").trim();
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  const [data, services, models, rates, categories] = await Promise.all([
+  await ensureBaseLocation(tenantId);
+  const [data, services, models, rates, categories, lineDefaults] = await Promise.all([
     getSurvey(tenantId, id),
     listServiceTypes(tenantId),
     listPricingModels(tenantId),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
+    getLineDefaults(tenantId, sl, id, "surveys"),
   ]);
   if (!data) notFound();
   const { header, lines } = data;
@@ -40,6 +44,13 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
 
   return (
     <div className="space-y-6">
+      {createdCode && header.customer_id && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          ✓ Customer <span className="font-semibold">{header.customer}</span> created with account number{" "}
+          <span className="font-mono font-semibold">{createdCode}</span> —{" "}
+          <Link href={`/customers/${header.customer_id}`} className="underline">complete their profile later</Link>.
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <Link href="/surveys" className="text-sm text-brand underline">← Surveys</Link>
@@ -123,8 +134,8 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
               <select name="category_id" required className="mt-1 block w-72 rounded-md border border-neutral-300 px-2 py-2 text-sm">
                 <option value="">Select…</option>
                 {categories.map((c) => (
-                  <option key={c.id} value={c.id} disabled={!c.default_pricing_model_id}>
-                    {c.name}{c.property_type ? ` (${c.property_type})` : ""}{!c.default_pricing_model_id ? " — no pricing set" : ""}
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.property_type ? ` (${c.property_type})` : ""}
                   </option>
                 ))}
               </select>
@@ -140,7 +151,7 @@ export default async function SurveyDetail({ params }: { params: Promise<{ id: s
           <LineForm action={addSurveyLineAction} entityId={header.id} idFieldName="survey_id" showObservedNotes
             services={services.map((s) => ({ id: s.id, name: s.name }))}
             models={models.map((m) => ({ id: m.id, name: m.name, model_type: m.model_type, formula_spec: m.formula_spec }))}
-            rates={rateProps} />
+            rates={rateProps} defaults={lineDefaults} />
         </div>
       ) : (
         <p className="text-sm text-neutral-500">This survey is {header.status} — reopen to draft to edit lines.</p>
