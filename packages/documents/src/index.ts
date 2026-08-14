@@ -5,5 +5,5 @@
 export * from "./brandChrome";
 export { renderServiceReportPdf } from "./serviceReportPdf";
 export type { ServiceReportPdfData } from "./serviceReportPdf";
-export { renderQuotationPdf } from "./quotationPdf";
+export { renderQuotationPdf, amountInWords } from "./quotationPdf";
 export type { QuotationPdfData } from "./quotationPdf";

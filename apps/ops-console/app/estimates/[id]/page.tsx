@@ -8,7 +8,7 @@ import { canSeeProfit } from "@/lib/auth";
 import { getEstimate, getPricingGuidance } from "@/lib/domain/estimation";
 import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
-import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction } from "../actions";
+import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction, generateQuotationAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -44,8 +44,7 @@ export default async function EstimateDetail({ params, searchParams }: { params:
     overheadOn: rates.overhead_enabled, overhead: Number(rates.overhead_rate ?? 0),
   };
   const nextStatuses: Record<string, { s: string; label: string }[]> = {
-    draft: [{ s: "quoted", label: "Mark quoted" }],
-    quoted: [{ s: "accepted", label: "Accept" }, { s: "rejected", label: "Reject" }, { s: "draft", label: "Back to draft" }],
+    quoted: [{ s: "rejected", label: "Reject" }, { s: "draft", label: "Back to draft" }],
     rejected: [{ s: "draft", label: "Reopen" }], expired: [{ s: "draft", label: "Reopen" }], accepted: [],
   };
 
@@ -63,10 +62,19 @@ export default async function EstimateDetail({ params, searchParams }: { params:
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Flow fix (refresh item 3): the quotation is VIEWABLE from draft —
-              generating/viewing never requires "mark as quoted"; sending or
-              accepting is what moves the status. */}
-          <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
+          {/* One primary action per stage (flow item 10): a draft estimate's only
+              next step is "Generate quotation" — it freezes the snapshot, assigns
+              the number, and lands you straight on the quotation. Once generated,
+              "View quotation" is available and Accept is primary. */}
+          {isDraft && lines.length > 0 && (
+            <form action={generateQuotationAction}>
+              <input type="hidden" name="estimate_id" value={header.id} />
+              <button className="rounded bg-brand px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-dark">Generate quotation →</button>
+            </form>
+          )}
+          {!isDraft && (
+            <Link href={`/estimates/${header.id}/quotation`} className="rounded border border-brand px-3 py-1.5 text-sm font-medium text-brand hover:bg-brand/5">View quotation</Link>
+          )}
           {header.status === "quoted" && !header.contract_id && (
             <form action={acceptAndConvertAction}>
               <input type="hidden" name="estimate_id" value={header.id} />
