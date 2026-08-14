@@ -299,6 +299,14 @@ Al Mumtaz Building Cleaning & Pest Control`,
       out.expiryNotices++;
     }
 
+    // (b3) day-close operations report (Vision P4) — idempotent per tenant+date
+    try {
+      const { queueDailyReports } = await import("./reports");
+      out.expiryNotices += await queueDailyReports(c);
+    } catch (e) {
+      console.error("[sweep] daily report queueing failed:", (e as Error).message);
+    }
+
     // (c) dispatch everything queued — branded HTML preferred, text always
     const { rows: q } = await c.query(
       `select id, tenant_id, customer_id, to_email, subject, body_text, body_html from outbound_notifications
