@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
-import { getContract, getScheduleSummary } from "@/lib/domain/contracts";
+import { getContract, getScheduleSummary, getFrequencyBasis } from "@/lib/domain/contracts";
 import { listFrequencies, listPricingModels } from "@/lib/domain/reference";
+import { TermDates } from "@/components/TermDates";
 import { scopedRead } from "@/lib/rls";
 import {
   activateContractAction, setContractBillingAction,
@@ -16,15 +17,17 @@ export const dynamic = "force-dynamic";
 const aed = (n: string | null, ccy = "AED") => (n == null ? "—" : `${ccy} ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
 const ipt = "mt-1 w-full rounded border border-neutral-300 px-2 py-2";
 
-export default async function ContractDetail({ params }: { params: Promise<{ id: string }> }) {
+export default async function ContractDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
+  const sp = await searchParams;
   const tenantId = await getTenantId();
   const ct = await getContract(tenantId, id);
   if (!ct) notFound();
-  const [sum, frequencies, pricingModels, attRows, episodes] = await Promise.all([
+  const [sum, frequencies, pricingModels, freqBasis, attRows, episodes] = await Promise.all([
     getScheduleSummary(tenantId, id),
     listFrequencies(tenantId),
     listPricingModels(tenantId),
+    getFrequencyBasis(tenantId, id),
     scopedRead(tenantId,
       `select ct.attestation_status, ct.attestation_submitted_at::text, ct.attested_at::text,
               ct.attestation_receipt_no, ct.attestation_employee_ref, ct.attestation_fee::text,
@@ -45,8 +48,25 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
   const locked = ct.financially_locked;
   const archived = !!ct.archived_at;
 
+  const cannotSchedule = (sp.cannot_schedule ?? "").split(",").filter(Boolean);
   return (
     <div className="space-y-6">
+      {cannotSchedule.length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <span className="font-semibold">Cannot activate yet — the scheduler needs:</span>{" "}
+          {cannotSchedule.map((m) => m === "frequency" ? "a visit frequency" : "a start date").join(" and ")}.
+          Set {cannotSchedule.length > 1 ? "them" : "it"} in <b>Contract terms</b> below, then activate again.
+          {freqBasis && cannotSchedule.includes("frequency") && (
+            <> Suggested: <b>{freqBasis.visits_per_year} visits/year</b> — {freqBasis.emirate} municipality requirement for {freqBasis.facility}.</>
+          )}
+        </div>
+      )}
+      {sp.activated === "pending" && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Contract activated. The visit schedule is still generating in the background — refresh in a moment.
+          If it stays empty, check the frequency and start date in Contract terms.
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <Link href={`/customers/${ct.customer_id}`} className="text-sm text-brand underline">← {ct.customer_name ?? "Customer"}</Link>
@@ -61,6 +81,15 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
             {ct.start_date && <> · {ct.start_date} → {ct.end_date ?? "?"}</>}
             {ct.source_estimate_id && <> · from <Link href={`/estimates/${ct.source_estimate_id}`} className="text-brand underline">estimate</Link></>}
           </p>
+          {/* The WHY behind the frequency — recomputed live from the sourced
+              municipality matrix; silent when the category is unknown. */}
+          {freqBasis && (
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {freqBasis.matches_contract
+                ? <>Frequency basis: <b>{freqBasis.visits_per_year} visits/year</b> — {freqBasis.emirate} municipality requirement for {freqBasis.facility} (sourced).</>
+                : <>Note: the {freqBasis.emirate} municipality requirement for {freqBasis.facility} is <b>{freqBasis.visits_per_year} visits/year</b>{ct.frequency_name ? <> — this contract&rsquo;s frequency differs</> : <> — no frequency set yet</>}.</>}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <a href={`/contracts/${ct.id}/agreement`}
@@ -129,10 +158,7 @@ export default async function ContractDetail({ params }: { params: Promise<{ id:
                   <input name="contract_value" type="number" step="0.01" defaultValue={ct.contract_value ?? ""} className="w-full rounded border border-neutral-300 px-2 py-2" />
                   <input name="currency" defaultValue={ct.currency ?? "AED"} className="w-20 rounded border border-neutral-300 px-2 py-2" />
                 </div></label>
-              <label className="text-sm"><span className="text-neutral-600">Start date</span>
-                <input name="start_date" type="date" defaultValue={ct.start_date ?? ""} className={ipt} /></label>
-              <label className="text-sm"><span className="text-neutral-600">End date</span>
-                <input name="end_date" type="date" defaultValue={ct.end_date ?? ""} className={ipt} /></label>
+              <TermDates startDefault={ct.start_date ?? ""} endDefault={ct.end_date ?? ""} className={ipt} />
               <div className="sm:col-span-2 lg:col-span-3"><button className="rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark">Save contract terms</button></div>
             </form>
           </>

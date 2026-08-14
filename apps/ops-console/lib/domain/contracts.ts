@@ -287,3 +287,55 @@ export async function activateContract(tenantId: string, id: string): Promise<vo
     });
   });
 }
+
+// Flow item 8 — the WHY behind the contract's frequency, recomputed live from
+// the municipality compliance matrix (mig 073). Returns null when the customer's
+// premises category is unknown or the matrix has no sourced rule — the UI then
+// says nothing rather than inventing a basis.
+export interface FrequencyBasis {
+  visits_per_year: number;
+  emirate: string | null;
+  facility: string | null;
+  matches_contract: boolean; // contract's frequency annualises to the same count
+}
+
+export async function getFrequencyBasis(tenantId: string, contractId: string): Promise<FrequencyBasis | null> {
+  const { rows } = await scopedRead(tenantId,
+    `with ct as (
+       select c.customer_id, c.service_line_id, c.frequency_id from contracts c
+        where c.id = $2 and c.tenant_id = $1
+     ), cust as (
+       select cu.emirate,
+              case cu.attributes->>'industry'
+                when 'restaurant' then 'restaurant' when 'cafe' then 'restaurant'
+                when 'supermarket' then 'supermarket' when 'office' then 'office'
+                when 'warehouse' then 'warehouse' when 'medical' then 'clinic'
+                when 'educational' then 'school' when 'worship' then 'mosque'
+                when 'construction' then 'construction'
+              end as ft_code
+         from customers cu where cu.id = (select customer_id from ct)
+     ), ft as (
+       select id, name from facility_types
+        where tenant_id = $1 and code = (select ft_code from cust) limit 1
+     ), v as (
+       select fn_visit_frequency($1, (select service_line_id from ct),
+                (select emirate from cust), (select id from ft), 'general') as n
+     )
+     select v.n as visits_per_year, (select emirate from cust) as emirate,
+            (select name from ft) as facility,
+            coalesce((select round(case f.period_unit
+                 when 'year'  then f.visits_per_period::numeric / f.period_count
+                 when 'month' then f.visits_per_period * 12.0 / f.period_count
+                 when 'week'  then f.visits_per_period * 52.0 / f.period_count
+                 when 'day'   then f.visits_per_period * 365.0 / f.period_count
+               end) = v.n
+              from frequencies f where f.id = (select frequency_id from ct)), false) as matches_contract
+       from v where v.n is not null`,
+    [tenantId, contractId]);
+  if (!rows[0]) return null;
+  return {
+    visits_per_year: Number(rows[0].visits_per_year),
+    emirate: rows[0].emirate, facility: rows[0].facility,
+    matches_contract: !!rows[0].matches_contract,
+  };
+}
