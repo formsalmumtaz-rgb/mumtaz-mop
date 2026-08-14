@@ -105,5 +105,24 @@ export async function GET(req: Request) {
     `select kind, code, label from inspection_options where tenant_id = $1 and is_active order by kind, sort_order`,
     [session.tenantId],
   );
-  return NextResponse.json({ jobs: rows, inspection_options: inspectionOptions }, { headers: cors });
+  // Vision P3: the technician's IN-HAND VAN STOCK — always visible on device,
+  // decremented optimistically as usage is recorded. The van is the team's van
+  // location ("<team name> Van", seeded 065); no team pin → empty list (honest).
+  const { rows: vanStock } = await scopedRead(
+    session.tenantId,
+    `select it.name as item, u_base.code as unit, sum(oh.qty_base)::float8 as qty
+       from technicians t
+       join team_assignments ta on ta.technician_id = t.id and ta.effective_to is null
+       join teams tm on tm.id = ta.team_id
+       join stock_locations sl on sl.tenant_id = t.tenant_id and sl.name = tm.name || ' Van'
+       join batch_stock_on_hand oh on oh.location_id = sl.id and oh.tenant_id = t.tenant_id
+       join items it on it.id = oh.item_id
+       left join units u_base on u_base.id = it.base_unit_id
+      where t.tenant_id = $1 and t.user_id = $2
+      group by it.name, u_base.code
+     having sum(oh.qty_base) > 0
+      order by it.name`,
+    [session.tenantId, session.userId],
+  ).catch(() => ({ rows: [] as { item: string; unit: string | null; qty: number }[] }));
+  return NextResponse.json({ jobs: rows, inspection_options: inspectionOptions, van_stock: vanStock }, { headers: cors });
 }

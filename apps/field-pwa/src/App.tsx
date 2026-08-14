@@ -107,6 +107,8 @@ export function App() {
         </div>
       )}
 
+      <VanStockBar />
+
       <div className="content">
         {!selected && (
           <>
@@ -137,6 +139,44 @@ export function App() {
           <JobDetail job={selected} onBack={() => setSelectedId(null)} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Vision P3 — the in-hand van stock bar, always visible. Base figures come from
+// the last sync; anything the technician has recorded but not yet synced
+// (job.completed doses waiting in the outbox) is subtracted OPTIMISTICALLY so
+// the bar moves the moment usage is recorded, not when the server confirms.
+function VanStockBar() {
+  const stock = useLiveQuery(async () =>
+    ((await db.meta.get("vanStock"))?.value as { item: string; unit: string | null; qty: number }[] | undefined) ?? [], [], []);
+  const pendingDoses = useLiveQuery(async () => {
+    const pending = await db.outbox.where("synced").equals(0).toArray();
+    const byItem: Record<string, number> = {};
+    for (const ev of pending) {
+      if (ev.event_type !== "job.completed") continue;
+      const dose = (ev.payload as { dose?: { amount: number; unit: string } | null })?.dose;
+      const job = await db.jobs.get(ev.job_id);
+      const product = job?.recipe?.name;
+      if (dose && product) byItem[product] = (byItem[product] ?? 0) + dose.amount;
+    }
+    return byItem;
+  }, [], {} as Record<string, number>);
+  if (!stock.length) return null;
+  return (
+    <div style={{ display: "flex", gap: ".9rem", overflowX: "auto", padding: ".45rem .9rem",
+                  background: "#faf7f2", borderBottom: "1px solid #eee5d8", fontSize: ".78rem", whiteSpace: "nowrap" }}>
+      <span style={{ color: "#8a6d3b", fontWeight: 700 }}>VAN</span>
+      {stock.map((s) => {
+        const used = pendingDoses[s.item] ?? 0;
+        const left = Math.max(0, Math.round((s.qty - used) * 100) / 100);
+        const low = s.qty > 0 && left / s.qty < 0.2;
+        return (
+          <span key={s.item} style={{ color: low ? "#b91c1c" : "#44403c" }}>
+            {s.item}: <b>{left}</b>{s.unit ? ` ${s.unit}` : ""}{used > 0 ? ` (−${used} pending)` : ""}
+          </span>
+        );
+      })}
     </div>
   );
 }

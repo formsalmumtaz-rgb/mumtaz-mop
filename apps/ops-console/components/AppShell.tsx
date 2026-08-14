@@ -1,6 +1,7 @@
 "use client";
 import { usePathname } from "next/navigation";
 import { SideNav } from "./SideNav";
+import { CommandK } from "./CommandK";
 import type { ServiceLine } from "@/lib/domain/reference";
 
 // Renders the navigation shell for authenticated pages. Login / auth routes are
@@ -18,6 +19,7 @@ export function AppShell({ children, divisions, activeDivision }: {
   return (
     <div className="min-h-screen lg:pl-60">
       <SideNav divisions={divisions} activeDivision={activeDivision} />
+      <CommandK />
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-8">{children}</main>
     </div>
   );
