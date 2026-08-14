@@ -107,6 +107,7 @@ export function App() {
         </div>
       )}
 
+      <ConfirmDayBanner online={online} />
       <VanStockBar />
 
       <div className="content">
@@ -139,6 +140,43 @@ export function App() {
           <JobDetail job={selected} onBack={() => setSelectedId(null)} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Vision P5.C — "Sign in for today". After sign-in the technician sees their
+// operations-assigned team and CONFIRMS it; the confirmation is the attendance
+// record (server-stamped, append-only). They never self-assign. Needs the
+// network (attendance is a server fact); offline it says so and waits.
+function ConfirmDayBanner({ online }: { online: boolean }) {
+  const me = useLiveQuery(async () =>
+    ((await db.meta.get("me"))?.value as { name: string; is_team_lead: boolean; team_name: string | null; confirmed_today: boolean } | null | undefined), [], undefined);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  if (!me || me.confirmed_today || done) return null;
+  const confirm = async () => {
+    setBusy(true);
+    try {
+      const res = await authedFetch(`${SYNC_BASE}/api/field/confirm-day`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ device_time: new Date().toISOString() }),
+      });
+      if (res.ok) {
+        setDone(true);
+        await db.meta.put({ key: "me", value: { ...me, confirmed_today: true } });
+      }
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ background: "#fff8eb", borderBottom: "1px solid #f1e3c2", padding: ".7rem .9rem" }}>
+      <div style={{ fontSize: ".95rem", fontWeight: 600, marginBottom: ".45rem" }}>
+        {me.team_name ? <>You&rsquo;re with <span style={{ color: "#A31E22" }}>{me.team_name}</span> today{me.is_team_lead ? " (team lead)" : ""} — confirm?</> : "No team assigned to you today — call the office."}
+      </div>
+      {me.team_name && (
+        online
+          ? <button onClick={confirm} disabled={busy} style={{ minHeight: 44 }}>{busy ? "Confirming…" : "Confirm — I'm in"}</button>
+          : <div className="muted" style={{ fontSize: ".8rem" }}>Connect to the internet to confirm attendance.</div>
+      )}
     </div>
   );
 }
