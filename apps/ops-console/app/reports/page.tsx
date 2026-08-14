@@ -3,6 +3,8 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 const REPORTS = [
+  ["Daily operations", "/reports/daily", "Jobs, revenue, cash, expenses, stock, attendance, exceptions — one day."],
+  ["Monthly pack", "/reports/monthly", "Revenue, collections, AR ageing, margins, consumption, renewals."],
   ["Trial balance", "/reports/trial-balance", "Every account's debit/credit totals — must balance."],
   ["Profit & loss", "/reports/profit-loss", "Income less expenses over a period."],
   ["Balance sheet", "/reports/balance-sheet", "Assets = liabilities + equity, as of a date."],
