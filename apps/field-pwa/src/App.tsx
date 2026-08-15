@@ -75,6 +75,27 @@ export function App() {
     }
   };
 
+  // Jobs PRELOAD (defect sweep item 1): today's work arrives on sign-in and on
+  // app open — the Sync button is a refresh, not the only way to get work.
+  // Throttled: skip when we synced in the last 5 minutes and already hold jobs.
+  useEffect(() => {
+    if (!online || !authed) return;
+    (async () => {
+      const last = (await db.meta.get("lastSync"))?.value as string | undefined;
+      const fresh = last && Date.now() - new Date(last).getTime() < 5 * 60_000;
+      const haveJobs = (await db.jobs.count()) > 0;
+      if (fresh && haveJobs) return;
+      try {
+        const r = await syncPull(SYNC_BASE);
+        setSyncMsg(`Loaded ${r.jobs} job(s)`);
+      } catch (e) {
+        if (e instanceof RevokedError) { await onRevoked(); }
+        // offline / flaky — the manual button and next open retry
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, authed]);
+
   if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
   if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
   if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;
@@ -574,46 +595,92 @@ interface ChecklistItem { kind: "ppe" | "equipment"; code: string; label: string
 function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => void }) {
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [ticks, setTicks] = useState<Record<string, boolean>>({});
-  const [vehicle, setVehicle] = useState("");
+  const [isLead, setIsLead] = useState<boolean | null>(null);
+  const [members, setMembers] = useState<{ id: string; name: string; code: string | null }[]>([]);
+  const [memberSearch, setMemberSearch] = useState("");
+  const [attendance, setAttendance] = useState<Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>>({});
+  const [vehicles, setVehicles] = useState<{ id: string; label: string }[]>([]);
+  const [vehicleId, setVehicleId] = useState("");
   const [odometer, setOdometer] = useState("");
+  const [fuelBand, setFuelBand] = useState<number | null>(null);
   const [fuelL, setFuelL] = useState("");
   const [fuelAed, setFuelAed] = useState("");
+  const [issued, setIssued] = useState<{ item_id: string; name: string; unit: string | null; issued_qty: number }[]>([]);
+  const [declared, setDeclared] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     (async () => {
-      // Prefer the server checklist (online); otherwise fall back to any locally
-      // saved pre-flight so the screen still works offline.
+      // Server data when online (roster, vehicles, issued stock, checklist);
+      // cached copy keeps the screen working offline.
       try {
         const res = await authedFetch(`${SYNC_BASE}/api/field/preflight`);
         if (res.ok) {
-          const data = (await res.json()) as { checklist: ChecklistItem[] };
+          const data = (await res.json()) as {
+            checklist: ChecklistItem[]; is_team_lead: boolean;
+            team_members: { id: string; name: string; code: string | null }[];
+            vehicles: { id: string; label: string }[];
+            issued_stock: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
+          };
           setItems(data.checklist ?? []);
+          setIsLead(!!data.is_team_lead);
+          setMembers(data.team_members ?? []);
+          setVehicles(data.vehicles ?? []);
+          setIssued(data.issued_stock ?? []);
+          // everyone starts present with uniform/hygiene OK — the lead flags exceptions
+          setAttendance((a) => Object.fromEntries((data.team_members ?? []).map((m) => [m.id, a[m.id] ?? { present: true, uniform_ok: true, hygiene_ok: true }])));
+          await db.meta.put({ key: "preflightData", value: data });
         }
       } catch { /* offline */ }
+      const cached = (await db.meta.get("preflightData"))?.value as {
+        checklist?: ChecklistItem[]; is_team_lead?: boolean;
+        team_members?: { id: string; name: string; code: string | null }[];
+        vehicles?: { id: string; label: string }[];
+        issued_stock?: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
+      } | undefined;
+      if (cached) {
+        setItems((v) => (v.length ? v : cached.checklist ?? []));
+        setIsLead((v) => (v === null ? !!cached.is_team_lead : v));
+        setMembers((v) => (v.length ? v : cached.team_members ?? []));
+        setVehicles((v) => (v.length ? v : cached.vehicles ?? []));
+        setIssued((v) => (v.length ? v : cached.issued_stock ?? []));
+        setAttendance((a) => Object.keys(a).length ? a : Object.fromEntries((cached.team_members ?? []).map((m) => [m.id, { present: true, uniform_ok: true, hygiene_ok: true }])));
+      }
       const local = await getLocalPreflight();
       if (local?.payload) {
         const p = local.payload as Record<string, unknown>;
         setTicks({ ...((p.ppe as Record<string, boolean>) ?? {}), ...((p.equipment as Record<string, boolean>) ?? {}) });
         if (p.odometer_km != null) setOdometer(String(p.odometer_km));
+        if (p.vehicle_id) setVehicleId(String(p.vehicle_id));
+        if (p.fuel_band != null) setFuelBand(Number(p.fuel_band));
+        if (p.attendance) setAttendance((a) => ({ ...a, ...(p.attendance as typeof a) }));
       }
     })();
   }, []);
 
   const ppe = items.filter((i) => i.kind === "ppe");
   const equip = items.filter((i) => i.kind === "equipment");
+  const visibleMembers = members.filter((m) =>
+    memberSearch.trim() === "" || m.name.toLowerCase().includes(memberSearch.toLowerCase()) || (m.code ?? "").toLowerCase().includes(memberSearch.toLowerCase()));
 
   const save = async () => {
     const pick = (list: ChecklistItem[]) => Object.fromEntries(list.map((i) => [i.code, !!ticks[i.code]]));
+    const stock = issued
+      .filter((s) => declared[s.item_id] !== undefined && declared[s.item_id] !== "")
+      .map((s) => ({ item_id: s.item_id, qty_base: Number(declared[s.item_id]) }))
+      .filter((s) => Number.isFinite(s.qty_base) && s.qty_base >= 0);
     await savePreflightLocal({
       present: true,
-      vehicle_id: vehicle || null,
+      vehicle_id: vehicleId || null,
       odometer_km: odometer ? Number(odometer) : null,
+      fuel_band: fuelBand,
       fuel_litres: fuelL ? Number(fuelL) : null,
       fuel_amount: fuelAed ? Number(fuelAed) : null,
       ppe: pick(ppe),
       equipment: pick(equip),
+      attendance,
+      stock,
       notes: notes || null,
     });
     setMsg("Saved.");
@@ -622,29 +689,127 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
   };
 
   const Toggle = ({ i }: { i: ChecklistItem }) => (
-    <label className="row" style={{ justifyContent: "space-between", padding: ".35rem 0" }}>
-      <span>{i.label}</span>
+    <label className="chk" key={i.code}>
       <input type="checkbox" checked={!!ticks[i.code]} onChange={(e) => setTicks((t) => ({ ...t, [i.code]: e.target.checked }))} />
+      {i.label}
     </label>
   );
+  const flagBtn = (on: boolean, label: string, onTap: () => void) => (
+    <button type="button" className={on ? "ghost" : ""}
+      style={{ width: "auto", padding: ".35rem .6rem", minHeight: 34, fontSize: ".78rem",
+               background: on ? undefined : "#b91c1c" }}
+      onClick={onTap}>{label}{on ? " ✓" : " ✗"}</button>
+  );
+
+  if (isLead === false) {
+    return (
+      <div className="app">
+        <div className="bar"><strong>Pre-flight</strong></div>
+        <div className="content">
+          <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
+          <div className="card">
+            <h3>Only the team lead submits the pre-flight</h3>
+            <p className="muted">Your part is done when you confirm your team for today on the jobs screen. Your team lead records attendance, vehicle and stock.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
       <div className="bar"><strong>Pre-flight</strong></div>
       <div className="content">
         <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
-        <h3>PPE</h3>
-        {ppe.length === 0 && <p className="muted">Checklist loads when online.</p>}
-        {ppe.map((i) => <Toggle key={i.code} i={i} />)}
-        <h3 style={{ marginTop: "1rem" }}>Equipment</h3>
-        {equip.map((i) => <Toggle key={i.code} i={i} />)}
-        <h3 style={{ marginTop: "1rem" }}>Vehicle</h3>
-        <label className="muted">Vehicle (code/plate)<input value={vehicle} onChange={(e) => setVehicle(e.target.value)} /></label>
-        <label className="muted">Odometer (km)<input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} /></label>
-        <div className="row" style={{ gap: ".5rem" }}>
-          <label className="muted" style={{ flex: 1 }}>Fuel added (litres)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
-          <label className="muted" style={{ flex: 1 }}>Fuel cost (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
+
+        <div className="card">
+          <h3>Team attendance</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: ".8rem" }}>Everyone starts marked present with uniform and hygiene OK — tap to flag exceptions.</p>
+          {members.length > 3 && (
+            <input placeholder="Find a team member…" value={memberSearch} onChange={(e) => setMemberSearch(e.target.value)} style={{ marginBottom: ".6rem" }} />
+          )}
+          {members.length === 0 && <p className="muted">Team roster loads when online.</p>}
+          {visibleMembers.map((m) => {
+            const a = attendance[m.id] ?? { present: true, uniform_ok: true, hygiene_ok: true };
+            const set = (patch: Partial<typeof a>) => setAttendance((all) => ({ ...all, [m.id]: { ...a, ...patch } }));
+            return (
+              <div key={m.id} style={{ padding: ".5rem 0", borderBottom: "1px solid #f0ece6" }}>
+                <div className="row" style={{ justifyContent: "space-between" }}>
+                  <span style={{ fontWeight: 600 }}>{m.name}{m.code ? ` (${m.code})` : ""}</span>
+                  <button type="button" className={a.present ? "secondary" : "ghost"}
+                    style={{ width: "auto", padding: ".4rem .7rem", minHeight: 36, fontSize: ".8rem" }}
+                    onClick={() => set({ present: !a.present })}>{a.present ? "Present ✓" : "Absent"}</button>
+                </div>
+                {a.present && (
+                  <div className="row" style={{ marginTop: ".35rem", gap: ".4rem" }}>
+                    {flagBtn(a.uniform_ok, "Uniform", () => set({ uniform_ok: !a.uniform_ok }))}
+                    {flagBtn(a.hygiene_ok, "Hygiene", () => set({ hygiene_ok: !a.hygiene_ok }))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
+
+        <div className="card">
+          <h3>Vehicle</h3>
+          <div className="row" style={{ flexWrap: "wrap", gap: ".4rem", marginBottom: ".5rem" }}>
+            {vehicles.map((v) => (
+              <button key={v.id} type="button" className={vehicleId === v.id ? "" : "ghost"}
+                style={{ width: "auto", padding: ".5rem .8rem", minHeight: 40 }}
+                onClick={() => setVehicleId(vehicleId === v.id ? "" : v.id)}>{v.label}</button>
+            ))}
+            {vehicles.length === 0 && <span className="muted">Vehicle list loads when online.</span>}
+          </div>
+          <label className="muted">Odometer (km)<input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} /></label>
+          <div className="muted" style={{ fontSize: ".85rem", marginTop: ".5rem" }}>Fuel tank level</div>
+          <div className="row" style={{ gap: ".4rem", marginTop: ".3rem" }}>
+            {[0, 25, 50, 75, 100].map((b) => (
+              <button key={b} type="button" className={fuelBand === b ? "" : "ghost"}
+                style={{ width: "auto", flex: 1, padding: ".5rem 0", minHeight: 40 }}
+                onClick={() => setFuelBand(fuelBand === b ? null : b)}>{b}%</button>
+            ))}
+          </div>
+          <div className="row" style={{ gap: ".5rem", marginTop: ".6rem" }}>
+            <label className="muted" style={{ flex: 1 }}>Fuel bought (litres)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
+            <label className="muted" style={{ flex: 1 }}>Fuel cost (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>PPE</h3>
+          {ppe.length === 0 && <p className="muted">Checklist loads when online.</p>}
+          {ppe.map((i) => <Toggle key={i.code} i={i} />)}
+          <h3 style={{ marginTop: ".8rem" }}>Equipment</h3>
+          {equip.map((i) => <Toggle key={i.code} i={i} />)}
+        </div>
+
+        {issued.length > 0 && (
+          <div className="card">
+            <h3>Chemical stock in the van</h3>
+            <p className="muted" style={{ marginTop: 0, fontSize: ".8rem" }}>Count what you physically have. A difference is recorded, never blocks you.</p>
+            {issued.map((s) => {
+              const d = declared[s.item_id];
+              const diff = d !== undefined && d !== "" ? Number(d) - s.issued_qty : null;
+              return (
+                <div key={s.item_id} style={{ padding: ".4rem 0" }}>
+                  <div className="row" style={{ justifyContent: "space-between", gap: ".6rem" }}>
+                    <span style={{ flex: 1 }}>{s.name}<span className="muted"> — issued {s.issued_qty}{s.unit ? ` ${s.unit}` : ""}</span></span>
+                    <input type="number" inputMode="decimal" placeholder="count" value={d ?? ""}
+                      onChange={(e) => setDeclared((all) => ({ ...all, [s.item_id]: e.target.value }))}
+                      style={{ width: "6.5rem" }} />
+                  </div>
+                  {diff !== null && diff !== 0 && (
+                    <div className="muted" style={{ fontSize: ".78rem", color: "#b45309" }}>
+                      {diff > 0 ? `+${diff}` : diff}{s.unit ? ` ${s.unit}` : ""} vs issued — recorded for the office.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         {msg && <p className="muted">{msg}</p>}
         <button onClick={save}>Save pre-flight</button>

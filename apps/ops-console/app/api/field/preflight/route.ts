@@ -32,7 +32,45 @@ export async function GET(req: Request) {
   const tech = await technicianForUser(auth.session);
   const checklist = await getPreflightChecklist(auth.session.tenantId);
   const today = tech ? await getTodayPreflight(auth.session.tenantId, tech.id) : null;
-  return NextResponse.json({ checklist, today, hasTechnician: !!tech }, { headers: cors });
+
+  // Defect sweep item 1 — everything the pre-flight screen needs, served here so
+  // the lead never types what the system knows: the team roster (attendance),
+  // the vehicle list, and the ISSUED van stock to compare declarations against.
+  const { scopedRead } = await import("@/lib/rls");
+  const t = auth.session.tenantId;
+  const [teamMembers, vehicles, issued] = tech
+    ? await Promise.all([
+        scopedRead(t,
+          `select t2.id, coalesce(t2.full_name, t2.code, 'Technician') as name, t2.code
+             from technicians t1
+             join team_assignments ta1 on ta1.technician_id = t1.id and ta1.effective_to is null
+             join team_assignments ta2 on ta2.team_id = ta1.team_id and ta2.effective_to is null
+             join technicians t2 on t2.id = ta2.technician_id and coalesce(t2.is_active, true)
+            where t1.tenant_id = $1 and t1.id = $2
+            order by t2.is_team_lead desc, name`, [t, tech.id]).then((r) => r.rows),
+        scopedRead(t,
+          `select id, coalesce(nullif(code,''), 'Vehicle') as label
+             from vehicles where tenant_id = $1 and coalesce(is_active, true) order by label`, [t]).then((r) => r.rows),
+        scopedRead(t,
+          `select it.id as item_id, it.name, u.code as unit, sum(oh.qty_base)::float8 as issued_qty
+             from technicians tt
+             join team_assignments ta on ta.technician_id = tt.id and ta.effective_to is null
+             join teams tm on tm.id = ta.team_id
+             join stock_locations sl on sl.tenant_id = tt.tenant_id and sl.name = tm.name || ' Van'
+             join batch_stock_on_hand oh on oh.location_id = sl.id and oh.tenant_id = tt.tenant_id
+             join items it on it.id = oh.item_id
+             left join units u on u.id = it.base_unit_id
+            where tt.tenant_id = $1 and tt.id = $2
+            group by it.id, it.name, u.code having sum(oh.qty_base) > 0 order by it.name`,
+          [t, tech.id]).then((r) => r.rows).catch(() => []),
+      ])
+    : [[], [], []];
+
+  return NextResponse.json({
+    checklist, today, hasTechnician: !!tech,
+    is_team_lead: !!tech?.is_team_lead,
+    team_members: teamMembers, vehicles, issued_stock: issued,
+  }, { headers: cors });
 }
 
 export async function POST(req: Request) {
@@ -65,6 +103,8 @@ export async function POST(req: Request) {
     fuel_amount: b.fuel_amount != null ? Number(b.fuel_amount) : null,
     ppe: (b.ppe as Record<string, boolean>) ?? {},
     equipment: (b.equipment as Record<string, boolean>) ?? {},
+    attendance: (b.attendance as Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>) ?? {},
+    fuel_band: b.fuel_band != null && [0, 25, 50, 75, 100].includes(Number(b.fuel_band)) ? Number(b.fuel_band) : null,
     notes: (b.notes as string) ?? null,
     client_uuid: (b.client_uuid as string) ?? null,
     device_time: (b.device_time as string) ?? null,
