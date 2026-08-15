@@ -4,7 +4,20 @@ import { authEnforced } from "@/lib/auth-flags";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceReportDocument } from "@/lib/domain/servicereports";
 import { resolveDocumentBrand, resolveDocumentBrandOrg } from "@/lib/domain/branding";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { renderServiceReportPdf, prepareQr, pngSize, type Asset } from "@mop/documents";
+
+async function loadAsset(key: string): Promise<Asset | null> {
+  try {
+    if (!/^[a-z0-9._-]+\.png$/i.test(key)) return null;
+    const buf = await fs.readFile(path.join(process.cwd(), "public", "brand", key));
+    const { w, h } = pngSize(buf);
+    return { dataUrl: `data:image/png;base64,${buf.toString("base64")}`, w, h };
+  } catch {
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,6 +44,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const [brand, org] = await Promise.all([
     resolveDocumentBrand(tenantId, rpt.service_line_code),
     resolveDocumentBrandOrg(tenantId),
+  ]);
+  // Real brand assets (item 2): the division wordmark + toll-free plate.
+  const [logo, tollFree] = await Promise.all([
+    loadAsset(brand.logo_key),
+    loadAsset("toll-free.png"),
   ]);
 
   const verifyUrl = `https://verify.almumtaz.ae/r/${id}`;
@@ -81,8 +99,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       trade_licence: org.trade_licence,
       offices: org.offices,
     },
-    logo: null,
-    tollFree: null,
+    logo,
+    tollFree,
   });
 
   return new NextResponse(Buffer.from(bytes), {
