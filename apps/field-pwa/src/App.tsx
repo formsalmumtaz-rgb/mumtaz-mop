@@ -139,6 +139,7 @@ export function App() {
         {selected && (
           <JobDetail job={selected} onBack={() => setSelectedId(null)} />
         )}
+        <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.4rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
       </div>
     </div>
   );
@@ -560,6 +561,7 @@ function LoginScreen({ revoked, onDone }: { revoked: boolean; onDone: () => void
           {!online && <p className="muted" style={{ fontSize: ".8rem" }}>You appear offline — sign-in needs a connection the first time.</p>}
           <button type="submit" disabled={busy || !authConfigured}>{busy ? "Signing in…" : "Sign in"}</button>
         </form>
+        <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
       </div>
     </div>
   );

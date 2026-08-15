@@ -154,7 +154,7 @@ function Brand() {
   );
 }
 
-export function SideNav({ divisions = [], activeDivision = null }: { divisions?: ServiceLine[]; activeDivision?: string | null }) {
+export function SideNav({ divisions = [], activeDivision = null, commit }: { divisions?: ServiceLine[]; activeDivision?: string | null; commit?: string }) {
   const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false);
 
@@ -189,7 +189,7 @@ export function SideNav({ divisions = [], activeDivision = null }: { divisions?:
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col bg-navy text-white lg:flex">
         <div className="border-b border-white/10"><Brand /><div className="pt-2"><DivisionSwitcher divisions={divisions} active={activeDivision} pathname={pathname} /></div></div>
         <NavList pathname={pathname} />
-        <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/40">Mumtaz Operations Platform</div>
+        <div className="border-t border-white/10 px-5 py-3 text-[11px] text-white/40">Mumtaz Operations Platform{commit ? ` · build ${commit}` : ""}</div>
       </aside>
     </>
   );
