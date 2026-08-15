@@ -307,9 +307,19 @@ Al Mumtaz Building Cleaning & Pest Control`,
       console.error("[sweep] daily report queueing failed:", (e as Error).message);
     }
 
+    // (b4) roll the job horizon: planned schedule rows entering the generation
+    // window become jobs (item 4 fix — without this, visits after the
+    // activation-time window never materialized).
+    try {
+      const { materializeDueScheduledJobs } = await import("./consumers");
+      await materializeDueScheduledJobs(c);
+    } catch (e) {
+      console.error("[sweep] job materialization failed:", (e as Error).message);
+    }
+
     // (c) dispatch everything queued — branded HTML preferred, text always
     const { rows: q } = await c.query(
-      `select id, tenant_id, customer_id, to_email, subject, body_text, body_html from outbound_notifications
+      `select id, tenant_id, kind, customer_id, to_email, subject, body_text, body_html from outbound_notifications
         where status = 'queued' order by created_at asc limit 200`);
     const configured = !!process.env.EMAIL_API_KEY && !!process.env.EMAIL_FROM;
     for (const n of q) {
@@ -319,7 +329,21 @@ Al Mumtaz Building Cleaning & Pest Control`,
         continue;
       }
       try {
-        const r = await sendViaProvider({ to: n.to_email, subject: n.subject, text: n.body_text, html: n.body_html });
+        // Item 8: the daily report carries its Excel pack (regenerated at send
+        // time from the same deterministic queries — identical numbers).
+        let attachments: { filename: string; content: string }[] | undefined;
+        if (n.kind === "daily_report") {
+          try {
+            const { buildDailyExcel } = await import("./reports");
+            const m = /—\s*(\d{4}-\d{2}-\d{2})/.exec(n.subject);
+            const day = m?.[1] ?? new Date().toISOString().slice(0, 10);
+            const xlsx = await buildDailyExcel(c, n.tenant_id, day);
+            attachments = [{ filename: `daily-operations-${day}.xlsx`, content: xlsx.toString("base64") }];
+          } catch (e) {
+            console.error("[sweep] daily excel failed:", (e as Error).message);
+          }
+        }
+        const r = await sendViaProvider({ to: n.to_email, subject: n.subject, text: n.body_text, html: n.body_html, attachments });
         if (r.ok) {
           await c.query(`update outbound_notifications set status='sent', provider_id=$2, sent_at=now() where id=$1`, [n.id, r.id ?? null]);
           out.dispatched++;
