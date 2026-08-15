@@ -12,7 +12,7 @@ export async function getPreflightChecklist(tenantId: string): Promise<Checklist
 
 export async function getTodayPreflight(tenantId: string, technicianId: string): Promise<Record<string, unknown> | null> {
   const { rows } = await scopedRead(tenantId,
-    `select id, check_date::text, present, vehicle_id, odometer_km, fuel_litres, fuel_amount, ppe, equipment, notes, time_suspect
+    `select id, check_date::text, present, vehicle_id, odometer_km, fuel_litres, fuel_amount, fuel_band, ppe, equipment, attendance, notes, time_suspect
        from preflight_checks where tenant_id = $1 and technician_id = $2 and check_date = current_date`,
     [tenantId, technicianId]);
   return rows[0] ?? null;
@@ -22,6 +22,10 @@ export interface PreflightInput {
   technicianId: string; serviceLineId: string | null; check_date?: string | null; present?: boolean;
   vehicle_id?: string | null; odometer_km?: number | null; fuel_litres?: number | null; fuel_amount?: number | null;
   ppe?: Record<string, boolean>; equipment?: Record<string, boolean>; notes?: string | null;
+  // Per-member attendance with uniform/hygiene flags (mig 088) and the tank
+  // fuel band 0/25/50/75/100 — bands, never free entry.
+  attendance?: Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>;
+  fuel_band?: number | null;
   client_uuid?: string | null; device_time?: string | null; time_suspect?: boolean;
   // Declared van stock (DOCUMENT 8 Part E, mig 072): what the team physically
   // holds, in the item's base unit. Recorded and compared against the issued
@@ -42,17 +46,20 @@ export async function upsertPreflight(tenantId: string, actorId: string, p: Pref
     const { rows } = await c.query(
       `insert into preflight_checks
          (tenant_id, service_line_id, technician_id, check_date, present, vehicle_id, odometer_km,
-          fuel_litres, fuel_amount, ppe, equipment, notes, client_uuid, device_time, time_suspect, created_by)
-       values ($1,$2,$3,coalesce($4::date,current_date),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          fuel_litres, fuel_amount, fuel_band, ppe, equipment, attendance, notes, client_uuid, device_time, time_suspect, created_by)
+       values ($1,$2,$3,coalesce($4::date,current_date),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        on conflict (tenant_id, technician_id, check_date) do update set
          present=excluded.present, vehicle_id=excluded.vehicle_id, odometer_km=excluded.odometer_km,
-         fuel_litres=excluded.fuel_litres, fuel_amount=excluded.fuel_amount, ppe=excluded.ppe,
-         equipment=excluded.equipment, notes=excluded.notes, device_time=excluded.device_time,
+         fuel_litres=excluded.fuel_litres, fuel_amount=excluded.fuel_amount, fuel_band=excluded.fuel_band,
+         ppe=excluded.ppe, equipment=excluded.equipment, attendance=excluded.attendance,
+         notes=excluded.notes, device_time=excluded.device_time,
          time_suspect=excluded.time_suspect, updated_by=excluded.created_by
        returning id`,
       [tenantId, p.serviceLineId, p.technicianId, p.check_date ?? null, p.present ?? true,
        p.vehicle_id ?? null, p.odometer_km ?? null, p.fuel_litres ?? null, p.fuel_amount ?? null,
-       JSON.stringify(p.ppe ?? {}), JSON.stringify(p.equipment ?? {}), p.notes ?? null,
+       p.fuel_band ?? null,
+       JSON.stringify(p.ppe ?? {}), JSON.stringify(p.equipment ?? {}), JSON.stringify(p.attendance ?? {}),
+       p.notes ?? null,
        p.client_uuid ?? null, p.device_time ?? null, p.time_suspect ?? false, actorId],
     );
     const preflightId = rows[0]?.id as string | undefined;
