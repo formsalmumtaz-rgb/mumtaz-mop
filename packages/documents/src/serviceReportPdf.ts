@@ -120,7 +120,9 @@ const BOILERPLATE = {
   footer: "NOTE: GUARANTEE VOID IF SERVICE RECORD IS MISPLACED | Al Mumtaz Bldg Clean & Pest Control · Al Estiqlal Street, Al Manakh, Sharjah, UAE",
 };
 
-const dash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : "—");
+// Display hygiene (defect sweep item 5): a filled form says "N/A" where a
+// human would write it — never an em-dash placeholder.
+const dash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : "N/A");
 
 export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
   const doc = new jsPDF({ unit: "pt", format: "a4", compress: true });
@@ -137,22 +139,35 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
     doc.setCharSpace(0);
   };
 
-  // ── Letterhead (page 1) — drawn wordmark, exactly like the template ─────
+  // ── Letterhead (page 1) — REAL brand assets first (defect sweep item 2:
+  // never draw text where a brand file exists); the drawn wordmark is only the
+  // fallback when no asset was supplied.
   const drawLetterhead = () => {
     y = 56;
-    // left: MUMTAZ wordmark between thin rules + PEST CONTROL
-    doc.setDrawColor(BURGUNDY); doc.setLineWidth(1.4);
-    doc.line(M, y - 20, M + 128, y - 20);
-    spaced("MUMTAZ", M, y + 4, 27, BURGUNDY, { serif: true, bold: true, spacing: 1.5 });
-    doc.setLineWidth(1.4); doc.line(M, y + 11, M + 128, y + 11);
-    spaced("PEST CONTROL", M + 8, y + 24, 8, BURGUNDY, { spacing: 2.6 });
+    if (d.logo) {
+      const targetH = 44;
+      const w = Math.min((d.logo.w / d.logo.h) * targetH, 170);
+      doc.addImage(d.logo.dataUrl, "PNG", M, y - 24, w, targetH, undefined, "FAST");
+    } else {
+      doc.setDrawColor(BURGUNDY); doc.setLineWidth(1.4);
+      doc.line(M, y - 20, M + 128, y - 20);
+      spaced("MUMTAZ", M, y + 4, 27, BURGUNDY, { serif: true, bold: true, spacing: 1.5 });
+      doc.setLineWidth(1.4); doc.line(M, y + 11, M + 128, y + 11);
+      spaced("PEST CONTROL", M + 8, y + 24, 8, BURGUNDY, { spacing: 2.6 });
+    }
     // centre: gold strap, serif title, grey strap
     spaced("P E S T   C O N T R O L   ·   U A E", PW / 2, y - 16, 6.5, GOLD, { align: "center", spacing: 1.2, bold: true });
     spaced("Service Completion Report", PW / 2, y + 4, 19, BURGUNDY, { serif: true, align: "center" });
     spaced("AL MUMTAZ BUILDING CLEANING & PEST CONTROL", PW / 2, y + 18, 6.3, MUTED, { align: "center", spacing: 1.6 });
-    // right: toll free + contact block
-    spaced("TOLL FREE", PW - M - 30, y - 18, 8, INK, { serif: true, align: "center", spacing: 1.2 });
-    spaced("800 688", PW - M - 30, y - 2, 17, INK, { serif: true, align: "center" });
+    // right: toll free (real asset when supplied) + contact block
+    if (d.tollFree) {
+      const th = 26;
+      const tw = Math.min((d.tollFree.w / d.tollFree.h) * th, 90);
+      doc.addImage(d.tollFree.dataUrl, "PNG", PW - M - tw, y - 22, tw, th, undefined, "FAST");
+    } else {
+      spaced("TOLL FREE", PW - M - 30, y - 18, 8, INK, { serif: true, align: "center", spacing: 1.2 });
+      spaced("800 688", PW - M - 30, y - 2, 17, INK, { serif: true, align: "center" });
+    }
     spaced("info@almumtaz.ae | www.almumtaz.ae", PW - M, y + 12, 5.6, MUTED, { align: "right" });
     spaced("06 565 4466 | PO Box 66575, Sharjah", PW - M, y + 21, 5.6, MUTED, { align: "right" });
     // certification strip
@@ -423,12 +438,12 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
       if (c) {
         doc.text(doc.splitTextToSize(c.product, 108) as string[], M + 12, y + 11);
         doc.text(doc.splitTextToSize(c.active_ingredient ?? "—", 112) as string[], cols[1] + 3, y + 11);
-        doc.text(c.concentration ?? "—", cols[2] + 3, y + 11);
+        doc.text(c.concentration ?? "N/A", cols[2] + 3, y + 11);
         doc.text(`${c.quantity} ${c.unit ?? ""}`.trim(), cols[3] + 3, y + 11);
-        doc.text(c.batch_no ?? "—", cols[4] + 3, y + 11);
-        doc.text(c.dilution ?? "—", cols[5] + 3, y + 11);
-        doc.text(c.application_method ?? "—", cols[6] + 3, y + 11);
-        doc.text(doc.splitTextToSize(c.target_pest ?? "—", 78) as string[], cols[7] + 3, y + 11);
+        doc.text(c.batch_no ?? "N/A", cols[4] + 3, y + 11);
+        doc.text(c.dilution ?? "N/A", cols[5] + 3, y + 11);
+        doc.text(c.application_method ?? "N/A", cols[6] + 3, y + 11);
+        doc.text(doc.splitTextToSize(c.target_pest ?? "N/A", 78) as string[], cols[7] + 3, y + 11);
       }
       doc.setDrawColor(BOX); doc.setLineWidth(0.6); doc.line(M, y + 16, PW - M, y + 16);
       y += 17;
@@ -522,11 +537,11 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
   sectionHeader(11, "Contract, Guarantee & Financials");
   {
     const f = d.financials;
-    const money = (n: number | null) => (n != null ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—");
+    const money = (n: number | null) => (n != null ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "N/A");
     const w5 = (CW - 4 * 6) / 5;
     fieldRow([
-      { label: "Months Guaranteed", value: f.months_guaranteed != null ? String(f.months_guaranteed) : "—", w: w5 },
-      { label: "Yearly Contract (Yes / No)", value: f.yearly_contract == null ? "—" : f.yearly_contract ? "Yes" : "No", w: w5 },
+      { label: "Months Guaranteed", value: f.months_guaranteed != null ? String(f.months_guaranteed) : "N/A", w: w5 },
+      { label: "Yearly Contract (Yes / No)", value: f.yearly_contract == null ? "N/A" : f.yearly_contract ? "Yes" : "No", w: w5 },
       { label: "Next Service Due Date", value: dash(f.next_service_due), w: w5 },
       { label: "Invoice No. (Ref.)", value: dash(d.invoiceNumber), w: w5 },
       { label: "Amount Excl. VAT (AED)", value: money(f.amount_excl_vat), w: w5 },
