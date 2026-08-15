@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
+import { buildCommit } from "@/lib/build-info";
 import { getTenantId } from "@/lib/tenant";
 import { listServiceLines, getActiveServiceLineCode, type ServiceLine } from "@/lib/domain/reference";
 
@@ -26,7 +27,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body>
-        <AppShell divisions={divisions} activeDivision={active}>{children}</AppShell>
+        <AppShell divisions={divisions} activeDivision={active} commit={buildCommit()}>{children}</AppShell>
       </body>
     </html>
   );

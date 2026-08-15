@@ -1,10 +1,19 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { execSync } from "node:child_process";
+
+// The commit this build was made from — shown in the app footer so a phone can
+// PROVE which build it is running (stale-cache disputes end here). Baked at
+// build time; "dev" when git is unavailable.
+const COMMIT = (() => {
+  try { return execSync("git rev-parse --short HEAD").toString().trim(); } catch { return "dev"; }
+})();
 
 // Offline-first PWA. The service worker precaches the whole app shell so the app
 // loads and runs with zero network (Constitution Art. III P1).
 export default defineConfig({
+  define: { __APP_COMMIT__: JSON.stringify(COMMIT) },
   plugins: [
     react(),
     VitePWA({
