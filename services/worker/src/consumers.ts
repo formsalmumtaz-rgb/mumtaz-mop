@@ -173,3 +173,42 @@ const renewalReminder: Consumer = {
 
 // Order matters: schedule commits before jobs read it.
 export const fanoutConsumers: Consumer[] = [scheduleGenerator, jobGenerator, renewalReminder];
+
+// Defect fix (verification crisis item 4): jobs only materialized AT ACTIVATION
+// for schedule rows inside the horizon — nothing ever rolled the horizon
+// forward, so later visits would never become jobs. The notification sweep now
+// calls this on every run: planned schedule rows of ACTIVE contracts that have
+// entered the job-generation window become jobs, idempotently (the status flip
+// to 'job_created' is the claim). Same SQL as the activation-time generator.
+export async function materializeDueScheduledJobs(c: PoolClient): Promise<number> {
+  const { rows } = await c.query(
+    `select cs.id, cs.tenant_id, cs.branch_id, cs.contract_id, cs.scheduled_date,
+            cs.recipe_version_id, cs.snapshot,
+            ct.service_line_id, ct.customer_id,
+            (select id from job_sources js where js.tenant_id = cs.tenant_id and js.code = 'contract_scheduled' limit 1) as job_source_id,
+            coalesce((select (s.value #>> '{}')::int from settings s
+                       where s.tenant_id = cs.tenant_id and s.key = 'job_generation_days'
+                       order by s.service_line_id nulls last limit 1), 30) as job_days
+       from contract_schedule cs
+       join contracts ct on ct.id = cs.contract_id and ct.lifecycle_status = 'active'
+      where cs.status = 'planned'
+      order by cs.scheduled_date
+      limit 500`);
+  let created = 0;
+  for (const s of rows) {
+    const due = new Date(s.scheduled_date) <= new Date(Date.now() + s.job_days * 86_400_000);
+    if (!due) continue;
+    const claim = await c.query(
+      `update contract_schedule set status = 'job_created' where id = $1 and status = 'planned' returning id`, [s.id]);
+    if (!claim.rowCount) continue; // another runner claimed it
+    await c.query(
+      `insert into jobs
+         (tenant_id, service_line_id, customer_id, branch_id, contract_id, contract_schedule_id,
+          job_source_id, scheduled_date, status, recipe_version_id, generation_snapshot)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,'scheduled',$9,$10)`,
+      [s.tenant_id, s.service_line_id, s.customer_id, s.branch_id, s.contract_id, s.id,
+       s.job_source_id, s.scheduled_date, s.recipe_version_id, s.snapshot]);
+    created++;
+  }
+  return created;
+}
