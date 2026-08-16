@@ -11,6 +11,20 @@ import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfig
 const SYNC_BASE = (import.meta.env.VITE_SYNC_BASE as string | undefined) ?? "";
 const CHECKLIST = ["Site accessible", "Treatment applied", "Bait stations checked", "Area cleaned", "Customer briefed"];
 
+// Best-effort device position (item 3, distance derivation): resolves null
+// rather than blocking — GPS is a bonus fact, never a gate.
+function getPosition(timeoutMs = 4000): Promise<{ lat: number; lng: number } | null> {
+  return new Promise((resolve) => {
+    if (!("geolocation" in navigator)) return resolve(null);
+    const t = setTimeout(() => resolve(null), timeoutMs);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { clearTimeout(t); resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+      () => { clearTimeout(t); resolve(null); },
+      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60_000 },
+    );
+  });
+}
+
 function useOnline() {
   const [online, setOnline] = useState(navigator.onLine);
   useEffect(() => {
@@ -33,6 +47,8 @@ export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [revoked, setRevoked] = useState(false);
   const [showPreflight, setShowPreflight] = useState(false);
+  const [showExpense, setShowExpense] = useState(false);
+  const [showFuel, setShowFuel] = useState(false);
 
   useEffect(() => {
     (async () => setAuthed(!!(await getSession())))();
@@ -99,6 +115,8 @@ export function App() {
   if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
   if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
   if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;
+  if (showExpense) return <AddExpenseScreen onBack={() => setShowExpense(false)} />;
+  if (showFuel) return <LogFuelScreen onBack={() => setShowFuel(false)} />;
 
   const selected = jobs.find((j) => j.id === selectedId) ?? null;
 
@@ -134,12 +152,42 @@ export function App() {
       <div className="content">
         {!selected && (
           <>
-            <div className="row" style={{ marginBottom: ".7rem", gap: ".5rem" }}>
+            {/* Item 3 — the technician dashboard strip: today at a glance */}
+            <div className="row" style={{ marginBottom: ".6rem", gap: ".6rem" }}>
+              {(() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const todays = jobs.filter((j) => j.scheduled_date === today);
+                const done = todays.filter((j) => j.local_status === "completed").length;
+                return (
+                  <>
+                    <div className="card" style={{ flex: 1, margin: 0, textAlign: "center", padding: ".6rem" }}>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 700 }}>{todays.length}</div>
+                      <div className="muted" style={{ fontSize: ".72rem" }}>jobs today</div>
+                    </div>
+                    <div className="card" style={{ flex: 1, margin: 0, textAlign: "center", padding: ".6rem" }}>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 700, color: done === todays.length && todays.length > 0 ? "#059669" : undefined }}>{done}</div>
+                      <div className="muted" style={{ fontSize: ".72rem" }}>completed</div>
+                    </div>
+                    <div className="card" style={{ flex: 1, margin: 0, textAlign: "center", padding: ".6rem" }}>
+                      <div style={{ fontSize: "1.4rem", fontWeight: 700 }}>{status.total}</div>
+                      <div className="muted" style={{ fontSize: ".72rem" }}>to sync</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            <div className="row" style={{ marginBottom: ".7rem", gap: ".5rem", flexWrap: "wrap" }}>
               <button className="ghost" onClick={doSync} disabled={!online} style={{ width: "auto" }}>
-                Sync today's jobs
+                Refresh
               </button>
               <button className="ghost" onClick={() => setShowPreflight(true)} style={{ width: "auto" }}>
                 Pre-flight
+              </button>
+              <button className="ghost" onClick={() => setShowExpense(true)} style={{ width: "auto" }}>
+                Add expense
+              </button>
+              <button className="ghost" onClick={() => setShowFuel(true)} style={{ width: "auto" }}>
+                Log fuel
               </button>
               {syncMsg && <span className="muted">{syncMsg}</span>}
             </div>
@@ -290,7 +338,11 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const start = async () => {
     const now = new Date().toISOString();
     await db.jobs.update(job.id, { local_status: "in_progress", device_started_at: now });
-    await enqueue("job.started", job.id, { device_started_at: now });
+    const pos = await getPosition();
+    await enqueue("job.started", job.id, {
+      device_started_at: now,
+      ...(pos ? { start_lat: pos.lat, start_lng: pos.lng } : {}),
+    });
   };
 
   const addPhoto = async (file: File) => {
@@ -309,6 +361,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
 
   const complete = async () => {
     const now = new Date().toISOString();
+    const completePos = await getPosition();
     const photos = media.filter((m) => m.kind === "photo").map((m) => m.id);
     const signature = media.find((m) => m.kind === "signature")?.id ?? null;
     const signatureTech = media.find((m) => m.kind === "signature_tech")?.id ?? null;
@@ -328,6 +381,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
       signature_id: signature,
       signature_tech_id: signatureTech,
       onsite_rep_name: repName.trim() || undefined,
+      ...(completePos ? { complete_lat: completePos.lat, complete_lng: completePos.lng } : {}),
       treatment_method: treatMethod || undefined,
       recommendations: recommend.trim() || undefined,
     });
@@ -601,10 +655,6 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
   const [attendance, setAttendance] = useState<Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>>({});
   const [vehicles, setVehicles] = useState<{ id: string; label: string }[]>([]);
   const [vehicleId, setVehicleId] = useState("");
-  const [odometer, setOdometer] = useState("");
-  const [fuelBand, setFuelBand] = useState<number | null>(null);
-  const [fuelL, setFuelL] = useState("");
-  const [fuelAed, setFuelAed] = useState("");
   const [issued, setIssued] = useState<{ item_id: string; name: string; unit: string | null; issued_qty: number }[]>([]);
   const [declared, setDeclared] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
@@ -622,12 +672,19 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
             team_members: { id: string; name: string; code: string | null }[];
             vehicles: { id: string; label: string }[];
             issued_stock: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
+            yesterday_declared?: { item_id: string; qty: number }[];
           };
           setItems(data.checklist ?? []);
           setIsLead(!!data.is_team_lead);
           setMembers(data.team_members ?? []);
           setVehicles(data.vehicles ?? []);
           setIssued(data.issued_stock ?? []);
+          // yesterday's count is today's starting point (item 2 preload) —
+          // still fully editable before saving
+          if (data.yesterday_declared?.length) {
+            setDeclared((d) => Object.keys(d).length ? d
+              : Object.fromEntries(data.yesterday_declared!.map((y) => [y.item_id, String(y.qty)])));
+          }
           // everyone starts present with uniform/hygiene OK — the lead flags exceptions
           setAttendance((a) => Object.fromEntries((data.team_members ?? []).map((m) => [m.id, a[m.id] ?? { present: true, uniform_ok: true, hygiene_ok: true }])));
           await db.meta.put({ key: "preflightData", value: data });
@@ -651,9 +708,7 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
       if (local?.payload) {
         const p = local.payload as Record<string, unknown>;
         setTicks({ ...((p.ppe as Record<string, boolean>) ?? {}), ...((p.equipment as Record<string, boolean>) ?? {}) });
-        if (p.odometer_km != null) setOdometer(String(p.odometer_km));
         if (p.vehicle_id) setVehicleId(String(p.vehicle_id));
-        if (p.fuel_band != null) setFuelBand(Number(p.fuel_band));
         if (p.attendance) setAttendance((a) => ({ ...a, ...(p.attendance as typeof a) }));
       }
     })();
@@ -673,10 +728,6 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
     await savePreflightLocal({
       present: true,
       vehicle_id: vehicleId || null,
-      odometer_km: odometer ? Number(odometer) : null,
-      fuel_band: fuelBand,
-      fuel_litres: fuelL ? Number(fuelL) : null,
-      fuel_amount: fuelAed ? Number(fuelAed) : null,
       ppe: pick(ppe),
       equipment: pick(equip),
       attendance,
@@ -761,19 +812,7 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
             ))}
             {vehicles.length === 0 && <span className="muted">Vehicle list loads when online.</span>}
           </div>
-          <label className="muted">Odometer (km)<input type="number" inputMode="numeric" value={odometer} onChange={(e) => setOdometer(e.target.value)} /></label>
-          <div className="muted" style={{ fontSize: ".85rem", marginTop: ".5rem" }}>Fuel tank level</div>
-          <div className="row" style={{ gap: ".4rem", marginTop: ".3rem" }}>
-            {[0, 25, 50, 75, 100].map((b) => (
-              <button key={b} type="button" className={fuelBand === b ? "" : "ghost"}
-                style={{ width: "auto", flex: 1, padding: ".5rem 0", minHeight: 40 }}
-                onClick={() => setFuelBand(fuelBand === b ? null : b)}>{b}%</button>
-            ))}
-          </div>
-          <div className="row" style={{ gap: ".5rem", marginTop: ".6rem" }}>
-            <label className="muted" style={{ flex: 1 }}>Fuel bought (litres)<input type="number" inputMode="decimal" value={fuelL} onChange={(e) => setFuelL(e.target.value)} /></label>
-            <label className="muted" style={{ flex: 1 }}>Fuel cost (AED)<input type="number" inputMode="decimal" value={fuelAed} onChange={(e) => setFuelAed(e.target.value)} /></label>
-          </div>
+          <p className="muted" style={{ fontSize: ".78rem" }}>Fuel is logged with the Log Fuel button on the jobs screen — not here.</p>
         </div>
 
         <div className="card">
@@ -813,6 +852,133 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
         {msg && <p className="muted">{msg}</p>}
         <button onClick={save}>Save pre-flight</button>
+      </div>
+    </div>
+  );
+}
+
+// Item 3A — Add Expense: photo of the bill REQUIRED, amount, reason, and who
+// approved the purchase (from the office staff list). Books a submitted
+// expense claim (offline-safe); the receipt photo uploads to R2 keyed by the
+// expense's client identity.
+function AddExpenseScreen({ onBack }: { onBack: () => void }) {
+  const staff = useLiveQuery(async () =>
+    ((await db.meta.get("staff"))?.value as { id: string; name: string }[] | undefined) ?? [], [], []);
+  const [amount, setAmount] = useState("");
+  const [reason, setReason] = useState("");
+  const [approvedBy, setApprovedBy] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!photo || !amount || Number(amount) <= 0) return;
+    setBusy(true);
+    const clientId = uuid();
+    const compressed = await imageCompression(photo, { maxWidthOrHeight: 1600, maxSizeMB: 0.2, fileType: "image/jpeg" });
+    // receipt file rides the media queue under the expense's client identity
+    await db.media.add({ id: uuid(), job_id: clientId, kind: "expense_receipt", blob: compressed, created_at: new Date().toISOString(), synced: 0 });
+    await enqueue("expense.recorded", clientId, {
+      client_uuid: clientId,
+      amount: Number(amount),
+      description: reason.trim() || null,
+      approved_by_name: approvedBy || null,
+    });
+    setBusy(false);
+    setMsg("Expense saved — it will sync and go for approval.");
+    setTimeout(onBack, 900);
+  };
+
+  return (
+    <div className="app">
+      <div className="bar"><strong>Add expense</strong></div>
+      <div className="content">
+        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Back</button>
+        <div className="card">
+          <label className="muted">Photo of the bill (required)
+            <input type="file" accept="image/*" capture="environment"
+              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+          </label>
+          {photo && <p className="muted" style={{ fontSize: ".78rem" }}>✓ {photo.name || "photo attached"}</p>}
+          <label className="muted">Amount (AED)
+            <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </label>
+          <label className="muted">What was it for?
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. gloves from hardware store" />
+          </label>
+          <label className="muted">Approved by
+            <select value={approvedBy} onChange={(e) => setApprovedBy(e.target.value)}
+              style={{ font: "inherit", padding: ".8rem", border: "1px solid #d4d4d4", borderRadius: ".55rem", width: "100%", minHeight: 48, background: "#fff" }}>
+              <option value="">Choose who approved this…</option>
+              {staff.map((st) => <option key={st.id} value={st.name}>{st.name}</option>)}
+            </select>
+          </label>
+          {msg && <p className="muted">{msg}</p>}
+          <button onClick={save} disabled={busy || !photo || !amount || Number(amount) <= 0}>Save expense</button>
+          {!photo && <p className="muted" style={{ fontSize: ".75rem" }}>The bill photo is required before saving.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Item 3B — Log Fuel: amount, litres, which vehicle, receipt photo. Posts to
+// the vehicle fuel ledger (offline-safe, idempotent).
+function LogFuelScreen({ onBack }: { onBack: () => void }) {
+  const pf = useLiveQuery(async () =>
+    (await db.meta.get("preflightData"))?.value as { vehicles?: { id: string; label: string }[] } | undefined, [], undefined);
+  const vehicles = pf?.vehicles ?? [];
+  const [vehicleId, setVehicleId] = useState("");
+  const [litres, setLitres] = useState("");
+  const [amount, setAmount] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const save = async () => {
+    if (!vehicleId || !litres || !amount) return;
+    const clientId = uuid();
+    if (photo) {
+      const compressed = await imageCompression(photo, { maxWidthOrHeight: 1600, maxSizeMB: 0.2, fileType: "image/jpeg" });
+      await db.media.add({ id: uuid(), job_id: clientId, kind: "expense_receipt", blob: compressed, created_at: new Date().toISOString(), synced: 0 });
+    }
+    await enqueue("fuel.logged", clientId, {
+      client_uuid: clientId,
+      vehicle_id: vehicleId,
+      litres: Number(litres),
+      amount: Number(amount),
+    });
+    setMsg("Fuel logged — it will sync to the vehicle ledger.");
+    setTimeout(onBack, 900);
+  };
+
+  return (
+    <div className="app">
+      <div className="bar"><strong>Log fuel</strong></div>
+      <div className="content">
+        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Back</button>
+        <div className="card">
+          <div className="muted" style={{ fontSize: ".85rem" }}>Which vehicle?</div>
+          <div className="row" style={{ flexWrap: "wrap", gap: ".4rem", margin: ".4rem 0 .6rem" }}>
+            {vehicles.map((v) => (
+              <button key={v.id} type="button" className={vehicleId === v.id ? "" : "ghost"}
+                style={{ width: "auto", padding: ".5rem .8rem", minHeight: 40 }}
+                onClick={() => setVehicleId(vehicleId === v.id ? "" : v.id)}>{v.label}</button>
+            ))}
+            {vehicles.length === 0 && <span className="muted">Open Pre-flight once online to load the vehicle list.</span>}
+          </div>
+          <div className="row" style={{ gap: ".5rem" }}>
+            <label className="muted" style={{ flex: 1 }}>Litres filled
+              <input type="number" inputMode="decimal" value={litres} onChange={(e) => setLitres(e.target.value)} /></label>
+            <label className="muted" style={{ flex: 1 }}>Amount paid (AED)
+              <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+          </div>
+          <label className="muted">Receipt photo
+            <input type="file" accept="image/*" capture="environment"
+              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
+          </label>
+          {msg && <p className="muted">{msg}</p>}
+          <button onClick={save} disabled={!vehicleId || !litres || !amount}>Log fuel</button>
+        </div>
       </div>
     </div>
   );

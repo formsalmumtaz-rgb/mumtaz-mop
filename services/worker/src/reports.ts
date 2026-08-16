@@ -149,8 +149,8 @@ export async function runDailyReportNow(pool: Pool, tenantId: string, date: stri
 // One sheet per fact table for the day — the raw rows behind every figure.
 // Deterministic queries; zero AI in the numbers.
 export async function buildDailyExcel(c: PoolClient, tenantId: string, date: string): Promise<Buffer> {
-  const mod = await import("exceljs");
-  const ExcelJS = (mod as { default?: typeof mod }).default ?? mod;
+  const mod = (await import("exceljs")) as unknown as { default?: unknown };
+  const ExcelJS = (mod.default ?? mod) as typeof import("exceljs");
   const wb = new ExcelJS.Workbook();
   wb.creator = "Mumtaz Operations Platform";
 

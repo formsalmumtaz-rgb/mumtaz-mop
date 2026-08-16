@@ -38,7 +38,7 @@ export async function GET(req: Request) {
   // the vehicle list, and the ISSUED van stock to compare declarations against.
   const { scopedRead } = await import("@/lib/rls");
   const t = auth.session.tenantId;
-  const [teamMembers, vehicles, issued] = tech
+  const [teamMembers, vehicles, issued, yesterday] = tech
     ? await Promise.all([
         scopedRead(t,
           `select t2.id, coalesce(t2.full_name, t2.code, 'Technician') as name, t2.code
@@ -63,13 +63,23 @@ export async function GET(req: Request) {
             where tt.tenant_id = $1 and tt.id = $2
             group by it.id, it.name, u.code having sum(oh.qty_base) > 0 order by it.name`,
           [t, tech.id]).then((r) => r.rows).catch(() => []),
+        // Yesterday's declared stock — today's starting point (item 2 preload)
+        scopedRead(t,
+          `select d.item_id, d.declared_qty_base::float8 as qty
+             from preflight_stock_declarations d
+             join preflight_checks pc on pc.id = d.preflight_check_id
+            where d.tenant_id = $1 and pc.technician_id = $2
+              and pc.check_date = (select max(check_date) from preflight_checks
+                                    where tenant_id = $1 and technician_id = $2 and check_date < current_date)`,
+          [t, tech.id]).then((r) => r.rows).catch(() => []),
       ])
-    : [[], [], []];
+    : [[], [], [], []];
 
   return NextResponse.json({
     checklist, today, hasTechnician: !!tech,
     is_team_lead: !!tech?.is_team_lead,
     team_members: teamMembers, vehicles, issued_stock: issued,
+    yesterday_declared: yesterday,
   }, { headers: cors });
 }
 

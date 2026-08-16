@@ -138,8 +138,17 @@ export async function GET(req: Request) {
       where t.tenant_id = $1 and t.user_id = $2 limit 1`,
     [session.tenantId, session.userId],
   );
+  // Item 3A: office staff for the technician's "approved by" picker.
+  const { rows: staff } = await scopedRead(
+    session.tenantId,
+    `select id, coalesce(full_name, email, 'Staff') as name
+       from app_users where tenant_id = $1 and is_active and technician_id is null
+      order by name limit 50`,
+    [session.tenantId],
+  ).catch(() => ({ rows: [] as { id: string; name: string }[] }));
+
   return NextResponse.json({
     jobs: rows, inspection_options: inspectionOptions, van_stock: vanStock,
-    me: me[0] ?? null,
+    me: me[0] ?? null, staff,
   }, { headers: cors });
 }

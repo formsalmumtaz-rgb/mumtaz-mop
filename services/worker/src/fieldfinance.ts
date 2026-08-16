@@ -31,25 +31,58 @@ export const expenseRecorder: Consumer = {
     const p = ev.payload as {
       job_id?: string; client_uuid?: string; amount?: number; category_id?: string | null;
       description?: string; expense_date?: string; vehicle_id?: string | null;
+      approved_by_name?: string | null; receipt_media_id?: string | null;
     };
     if (!p.amount || p.amount <= 0) return;
     const jobId = p.job_id ?? (ev.envelope.entity_id as string | null);
     // Submitted expense claim by the technician who incurred it. Dedup on
-    // client_uuid so an offline re-sync never double-books.
-    await c.query(
+    // client_uuid so an offline re-sync never double-books. The job link is
+    // OPTIONAL — a standalone purchase (item 3A) still books.
+    const { rows } = await c.query(
       `insert into expenses
          (tenant_id, service_line_id, category_id, expense_date, amount, description,
-          vehicle_id, job_id, technician_id, status, client_uuid, created_by)
-       select $1, j.service_line_id, $2, coalesce($3::date, current_date), $4, $5,
-              $6, j.id, t.id, 'submitted', $7, $8
-         from jobs j
-         left join technicians t on t.tenant_id = $1 and t.user_id = $8
-        where j.id = $9 and j.tenant_id = $1
-       on conflict (tenant_id, client_uuid) do nothing`,
+          approved_by_name, vehicle_id, job_id, technician_id, status, client_uuid, created_by)
+       select $1, coalesce(j.service_line_id, t.service_line_id), $2, coalesce($3::date, current_date), $4, $5,
+              $6, $7, j.id, t.id, 'submitted', $8, $9
+         from (select 1) one
+         left join jobs j on j.id = $10 and j.tenant_id = $1
+         left join technicians t on t.tenant_id = $1 and t.user_id = $9
+       on conflict (tenant_id, client_uuid) do nothing
+       returning id`,
       [ev.envelope.tenant_id, p.category_id ?? null, p.expense_date ?? null, p.amount,
-       p.description ?? null, p.vehicle_id ?? null, p.client_uuid ?? null, ev.envelope.actor_id ?? null, jobId],
+       p.description ?? null, p.approved_by_name ?? null, p.vehicle_id ?? null,
+       p.client_uuid ?? null, ev.envelope.actor_id ?? null, jobId],
     );
+    // Link the receipt photo file captured on device (uploaded separately to R2
+    // under the expense's client identity).
+    if (rows[0] && p.client_uuid) {
+      await c.query(
+        `update expense_receipt_files set expense_id = $2
+          where tenant_id = $1 and client_uuid = $3 and expense_id is null`,
+        [ev.envelope.tenant_id, rows[0].id, p.client_uuid]);
+    }
   },
 };
 
-export const fieldFinanceConsumers: Consumer[] = [cashCollector, expenseRecorder];
+// Item 3B — Log Fuel: a fuel purchase recorded on device posts straight to the
+// vehicle fuel ledger (append-only), idempotent by the device capture id.
+export const fuelLogger: Consumer = {
+  name: "fuel-logger",
+  handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "fuel.logged") return;
+    const p = ev.payload as {
+      client_uuid?: string; vehicle_id?: string; litres?: number; amount?: number;
+    };
+    if (!p.vehicle_id || !p.litres || p.litres <= 0 || p.amount == null || p.amount < 0) return;
+    await c.query(
+      `insert into vehicle_fuel_purchases
+         (tenant_id, service_line_id, vehicle_id, purchase_date, litres, amount, note, client_uuid, snapshot, created_by)
+       select $1, v.service_line_id, v.id, current_date, $2, $3, 'Logged on device (Log Fuel)', $4,
+              jsonb_build_object('source', 'field_fuel_log'), $5
+         from vehicles v where v.id = $6 and v.tenant_id = $1
+       on conflict (tenant_id, client_uuid) where client_uuid is not null do nothing`,
+      [ev.envelope.tenant_id, p.litres, p.amount, p.client_uuid ?? null, ev.envelope.actor_id ?? null, p.vehicle_id]);
+  },
+};
+
+export const fieldFinanceConsumers: Consumer[] = [cashCollector, expenseRecorder, fuelLogger];

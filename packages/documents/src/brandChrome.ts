@@ -75,9 +75,6 @@ export function drawLetterhead(doc: jsPDF, skin: BrandSkin, logo: Asset | null):
     doc.setFont("helvetica", "bold"); doc.setFontSize(7.5); doc.setTextColor(accent); doc.setCharSpace(1.2);
     doc.text(skin.label.toUpperCase(), M, y + 50); doc.setCharSpace(0);
   }
-  doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(LABEL);
-  doc.text(skin.name.toUpperCase(), PW - M, y + 12, { align: "right" });
-  if (skin.tagline) doc.text(skin.tagline, PW - M, y + 24, { align: "right" });
   y += 60;
   doc.setDrawColor(accent); doc.setLineWidth(2); doc.line(M, y, PW - M, y);
   doc.setDrawColor(HAIR); doc.setLineWidth(0.5); doc.line(M, y + 3, PW - M, y + 3);
@@ -97,11 +94,10 @@ export function drawLegalFooter(doc: jsPDF, skin: BrandSkin, org: DocOrg, tollFr
     doc.addImage(tollFree.dataUrl, "PNG", PW - M - Math.min(tw, 120), fy - 16, Math.min(tw, 120), th, undefined, "FAST");
   }
   doc.setDrawColor(HAIR); doc.setLineWidth(0.5); doc.line(M, fy, PW - M, fy); fy += 12;
-  doc.setFont("times", "normal"); doc.setFontSize(8.5); doc.setTextColor(accent);
-  const legal = [org.legal_name, org.group_line,
-                 org.established ? `Est. ${org.established}` : null,
-                 org.trade_licence ? `Trade Licence ${org.trade_licence}` : null]
-                .filter(Boolean).join("    ·    ");
+  // ONE legal line per document (item 1): entity + licence, small, here only.
+  doc.setFont("times", "normal"); doc.setFontSize(8); doc.setTextColor(accent);
+  const legal = [org.legal_name, org.trade_licence ? `TL ${org.trade_licence}` : null]
+                .filter(Boolean).join(", ");
   doc.text(legal, M, fy); fy += 13;
   const ow = CW / Math.max(offices.length, 1);
   offices.forEach((o, i) => {
