@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listAllContracts } from "@/lib/domain/contracts";
 import { Badge, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
+import { ExportButtons, FilterChips } from "@/components/ListControls";
 
 // Contracts list (Release 1 item 1). Contracts previously had no list page and no
 // nav entry — reachable only via a customer, an estimate, or the billing table.
@@ -10,9 +11,12 @@ export const dynamic = "force-dynamic";
 const aed = (n: string | null, ccy: string | null) =>
   n == null ? "—" : `${ccy ?? "AED"} ${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-export default async function ContractsPage() {
+export default async function ContractsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
   const tenantId = await getTenantId();
-  const contracts = await listAllContracts(tenantId);
+  const all = await listAllContracts(tenantId);
+  const statusFilter = (sp.status ?? "").trim();
+  const contracts = statusFilter ? all.filter((c) => c.lifecycle_status === statusFilter) : all;
   const active = contracts.filter((c) => c.lifecycle_status === "active").length;
 
   return (
@@ -21,6 +25,12 @@ export default async function ContractsPage() {
         title="Contracts"
         description={`${contracts.length} contracts · ${active} active. A contract is created from an accepted estimate (or from a customer profile); activating it generates the schedule and jobs.`}
       />
+      <div className="flex flex-wrap items-center gap-3">
+        <FilterChips basePath="/contracts" params={sp} name="status" allLabel="All statuses"
+          options={[{ value: "draft", label: "Draft" }, { value: "active", label: "Active" },
+                    { value: "expired", label: "Expired" }, { value: "cancelled", label: "Cancelled" }]} />
+        <div className="ml-auto"><ExportButtons dataset="contracts" params={sp} /></div>
+      </div>
       <TableWrap>
         <table className="w-full min-w-[760px] text-sm">
           <Thead>

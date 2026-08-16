@@ -4,7 +4,7 @@ import { can } from "@/lib/auth";
 import { listExpensesPaged, getExpenseStatusCounts, listExpenseCategories, EXPENSE_STATUSES, PAYMENT_METHODS } from "@/lib/domain/expenses";
 import { listTechnicians } from "@/lib/domain/technicians";
 import { parseListParams } from "@/lib/list";
-import { ListToolbar, Pagination } from "@/components/ListControls";
+import { ListToolbar, Pagination, ExportButtons, DateRangeFilter } from "@/components/ListControls";
 import { Card, Badge, Button, Field, Input, Select, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
 import {
   createExpenseAction, approveExpenseAction, rejectExpenseAction, payExpenseAction,
@@ -50,7 +50,11 @@ export default async function ExpensesPage({ searchParams }: { searchParams: Pro
         ))}
       </div>
 
-      <ListToolbar basePath="/expenses" params={sp} showArchived={false} placeholder="Search description or category…" />
+      <div className="flex flex-wrap items-center gap-3">
+        <ListToolbar basePath="/expenses" params={sp} showArchived={false} placeholder="Search description or category…" />
+        <DateRangeFilter basePath="/expenses" params={sp} label="Expense date" />
+        <div className="ml-auto"><ExportButtons dataset="expenses" params={sp} /></div>
+      </div>
 
       <Card>
         <details open={total === 0}>

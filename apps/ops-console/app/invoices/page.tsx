@@ -3,7 +3,7 @@ import { getTenantId } from "@/lib/tenant";
 import { listInvoicesPaged } from "@/lib/domain/invoices";
 import { listCustomers } from "@/lib/domain/customers";
 import { parseListParams } from "@/lib/list";
-import { ListToolbar, Pagination } from "@/components/ListControls";
+import { ListToolbar, Pagination, ExportButtons, DateRangeFilter, FilterChips } from "@/components/ListControls";
 import { createInvoiceAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,14 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
         <p className="mt-1 text-sm text-neutral-600">Numbering is assigned on issue: contract → AMTX, ad-hoc → AMTX/OW. Numbers are never reused; cancelled invoices keep their number.</p>
       </div>
 
-      <ListToolbar basePath="/invoices" params={sp} showArchived={false} placeholder="Search invoice #, customer, or status…" />
+      <div className="flex flex-wrap items-center gap-3">
+        <ListToolbar basePath="/invoices" params={sp} showArchived={false} placeholder="Search invoice #, customer, or status…" />
+        <DateRangeFilter basePath="/invoices" params={sp} label="Issued" />
+        <div className="ml-auto"><ExportButtons dataset="invoices" params={sp} /></div>
+      </div>
+      <FilterChips basePath="/invoices" params={sp} name="status" allLabel="All statuses"
+        options={[{ value: "draft", label: "Draft" }, { value: "issued", label: "Issued" },
+                  { value: "paid", label: "Paid" }, { value: "cancelled", label: "Cancelled" }]} />
 
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={invoices.length === 0}>
         <summary className="cursor-pointer font-medium">New manual invoice</summary>
