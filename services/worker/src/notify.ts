@@ -192,7 +192,61 @@ Al Mumtaz Building Cleaning & Pest Control`,
   },
 };
 
-export const notifyConsumers: Consumer[] = [annualScheduleNotifier, jobCompletionNotifier];
+// job.rescheduled → tell the customer their visit moved. Emitted by the console
+// only when the DAY changed on still-future work; if the customer has no
+// contactable email the notification is queued unaddressed (visible in the
+// console) rather than silently dropped.
+export const scheduleChangeNotifier: Consumer = {
+  name: "schedule-change-notifier",
+  handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "job.rescheduled") return;
+    const p = ev.payload as { job_id: string; from_date?: string | null; to_date: string; start_time?: string | null };
+    const t = ev.envelope.tenant_id;
+    const { rows: j } = await c.query(
+      `select j.id, j.customer_id, j.branch_id, cu.trade_name, cu.legal_name,
+              b.name as branch_name, b.address, sl.code as sl_code, st.name as service_type,
+              (select string_agg(coalesce(tt.full_name, tt.code), ', ')
+                 from job_assignments ja join technicians tt on tt.id = ja.technician_id
+                where ja.job_id = j.id) as team,
+              (select tl.phone from job_assignments ja join technicians tl on tl.id = ja.technician_id
+                where ja.job_id = j.id and tl.is_team_lead limit 1) as lead_phone
+         from jobs j join customers cu on cu.id = j.customer_id
+         left join customer_branches b on b.id = j.branch_id
+         left join service_lines sl on sl.id = j.service_line_id
+         left join service_types st on st.id = j.service_type_id
+        where j.id = $1 and j.tenant_id = $2`, [p.job_id, t]);
+    if (!j[0]) return;
+    const email = await pickEmail(c, t, j[0].customer_id);
+    const name = j[0].trade_name ?? j[0].legal_name ?? "Customer";
+    await queue(c, {
+      tenantId: t, kind: "schedule_change", customerId: j[0].customer_id, branchId: j[0].branch_id, jobId: j[0].id,
+      toEmail: email, serviceLineCode: j[0].sl_code,
+      subject: `Your service visit has moved to ${p.to_date}`,
+      title: "Your visit has been rescheduled",
+      card: {
+        heading: "Updated visit",
+        rows: [
+          { label: "Customer", value: name },
+          ...(j[0].branch_name || j[0].address ? [{ label: "Site", value: [j[0].branch_name, j[0].address].filter(Boolean).join(" — ") }] : []),
+          ...(j[0].service_type ? [{ label: "Service", value: j[0].service_type }] : []),
+          ...(p.from_date ? [{ label: "Was", value: p.from_date }] : []),
+          { label: "Now", value: `${p.to_date}${p.start_time ? ` at ${p.start_time}` : ""}` },
+          ...(j[0].team ? [{ label: "Team", value: j[0].team }] : []),
+        ],
+      },
+      body:
+`Dear ${name},
+
+Your scheduled service visit has been moved${p.from_date ? ` from ${p.from_date}` : ""} to ${p.to_date}${p.start_time ? ` at ${p.start_time}` : ""}.
+
+If this date does not suit you, please call us on 800 688${j[0].lead_phone ? ` or your team lead on ${j[0].lead_phone}` : ""} and we will arrange an alternative.
+
+Al Mumtaz Building Cleaning & Pest Control`,
+    });
+  },
+};
+
+export const notifyConsumers: Consumer[] = [annualScheduleNotifier, jobCompletionNotifier, scheduleChangeNotifier];
 
 // ── Cron sweep: time-driven queuing + dispatch ──────────────────────────────
 
