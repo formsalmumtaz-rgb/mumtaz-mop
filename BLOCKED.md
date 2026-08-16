@@ -1,92 +1,99 @@
 # BLOCKED — items needing the owner
 
-## ▶ THE LIVE SYSTEM RIGHT NOW (run of 16 Aug)
+## ▶ THE LIVE SYSTEM RIGHT NOW (run 7, 17 Aug)
 
-**Field app:** https://cards-shaw-das-rejected.trycloudflare.com
-**Console:** https://serial-export-midwest-pipe.trycloudflare.com
-**Both serve commit `ff477c4`** — check the footer/sign-in screen shows that
-hash before judging anything. (Old links from previous runs are dead — a
-tunnel dies whenever this machine's session ends. The PERMANENT fix is the
-Vercel deployment, item 2 below.)
+**Field app:** https://vegas-attractive-copying-republic.trycloudflare.com
+**Console:** https://pixel-depends-lives-absolute.trycloudflare.com
+**Both serve commit `018e3af`** — the field sign-in screen prints `build 018e3af`
+and the console sidebar footer prints the same. Check that hash before judging
+anything; earlier links are dead (a tunnel dies with this machine's session).
 
 ---
 
 ## YOUR TASKS — in order, with exact steps
 
-### 1. Enable the assistant (2 minutes)
-"Ask the business" is built and waiting for a key.
-1. Go to console.anthropic.com → sign in → **API keys** → Create key.
-2. Copy the key (starts `sk-ant-`).
-3. On this machine open `apps/ops-console/.env.local`, find the line
-   `# ANTHROPIC_API_KEY=sk-ant-...`, remove the `#` and paste your key.
-4. Also add the same variable in Vercel → mumtaz-mop-ops-console →
-   Settings → Environment Variables.
-5. In the console sidebar: **Admin → Ask the business**. Ask
-   "How many technicians attended today?"
+### 1. Enable the assistant (2 minutes) — unlocks four features
+"Ask the business", quotation-scope drafting, report commentary and
+draft-to-estimate are all built and waiting on one key.
+1. console.anthropic.com → sign in → **API keys** → Create key.
+2. Copy it (starts `sk-ant-`).
+3. Open `apps/ops-console/.env.local`, find `# ANTHROPIC_API_KEY=sk-ant-...`,
+   delete the `#`, paste your key.
+4. Add the same variable in Vercel → Settings → Environment Variables.
+5. Console → **Admin → Ask the business**. Ask "How many technicians
+   attended today?" Then open **Reports → Report preview & send** — a
+   *Commentary* block now appears above the email.
 
-### 2. Maps key (5 minutes) — unblocks map previews AND address autocomplete
-1. Go to console.cloud.google.com → APIs & Services → Credentials.
-2. You already have a browser key (from the earlier setup). Click it.
-3. Under "API restrictions" make sure **Maps JavaScript API** and
-   **Places API** are enabled for it.
-4. Add to `apps/ops-console/.env.local`:
-   `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=<the key>` — and the same in Vercel.
-5. Customer → site → the map pin preview renders; the address field gains
-   autocomplete.
+Without the key everything still works; the AI parts just stay hidden.
 
-### 3. Service-role key (2 minutes) — unblocks office-user invites + instant revocation
-1. supabase.com → project → Project Settings → API → copy the
-   **service_role** secret.
-2. Add `SUPABASE_SERVICE_ROLE_KEY=<secret>` to `apps/ops-console/.env.local`
-   and Vercel.
+### 2. Maps key (5 minutes) — map previews + address autocomplete
+1. console.cloud.google.com → APIs & Services → Credentials → your browser key.
+2. Under "API restrictions" enable **Maps JavaScript API** and **Places API**.
+3. Add `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=<key>` to
+   `apps/ops-console/.env.local` **and** Vercel.
+
+### 3. Service-role key (2 minutes) — office invites + instant revocation
+supabase.com → project → Settings → API → copy **service_role** → add
+`SUPABASE_SERVICE_ROLE_KEY=<secret>` to `.env.local` and Vercel.
 
 ### 4. Phone re-test (10 minutes)
-1. Delete the old home-screen icon; Safari → Settings → Apps → Safari →
-   Advanced → Website Data → delete "trycloudflare" entries.
-2. Open the FIELD URL above; sign-in screen must say **build ff477c4**.
-3. Walk: confirm-day banner → jobs preload → Pre-flight (lead): roster,
-   vehicle chips, declared stock preloaded from yesterday — NO odometer, NO
-   fuel → back → **Add expense** (photo forced) → **Log fuel** (vehicle
-   chips) → run a job (GPS captured silently) → CHECK.
+1. Delete the old home-screen icon. Safari → Settings → Apps → Safari →
+   Advanced → Website Data → delete every "trycloudflare" entry.
+2. Open the FIELD URL. The sign-in screen must read **build 018e3af**.
+3. Walk it: confirm-day banner → jobs load → **swipe a job card right** (it
+   should say "Swipe to start", turn green at "Release to start", and the job
+   goes to In progress) → Pre-flight (team lead) → Add expense → Log fuel →
+   run a job → CHECK.
 
-### 5. Answers I need (reply in chat, no clicking)
-- One address where the geocoded pin lands wrong (for the accuracy fix).
-- Cleaning + FM quotation wording: reuse the pest terms or give me yours?
-- A19: 76 imported customers + 176 contracts are HELD in staging — say
-  "commit" or give corrections.
-- A20: Dubai/Abu Dhabi municipality attestation rules + the unified
-  contract question (details in ledger below).
-- Recipes/PPE/inspection lists (A5/A6/A8) are still ASSUMED seeds —
-  confirm or correct when convenient; nothing is blocked.
+### 5. Answers I still need (reply in chat)
+- One address whose map pin lands wrong, for the geocoding fix.
+- Cleaning + FM quotation wording: reuse the pest terms, or give me yours?
+- **A19:** 76 imported customers + 176 contracts are still HELD in staging —
+  open **Admin → Import customers**, click into the batch, and either press
+  approve or tell me the corrections.
+- **A20:** Dubai / Abu Dhabi municipality attestation rules.
+- Recipes / PPE / inspection lists (A5/A6/A8) are still ASSUMED seeds.
 
-### 6. Real-device checklist (release gate — end of ledger)
-Airplane-mode completion, PDF on phone, photo capture, map tiles: only you
-can run these; the release is not accepted until ticked
+### 6. Real-device checklist (release gate — end of this file)
+Airplane-mode completion, PDF on the phone, photo capture, map tiles. Only you
+can run these; the release is not accepted until they are ticked
 (ARCHITECTURE-BASELINE.md).
 
 ---
 
-## Reconciliation addendum (16 Aug run)
+## Run 7 — what shipped, and how to check it
 
-| Instruction | Status | Verify |
+| Instruction | Status | Where to look |
 |---|---|---|
-| Real logos everywhere, no drawn text | DONE | report header + any email = PNG wordmark |
-| Legal line once, PDFs only; killed "· UAE" | DONE | footer of any PDF; emails carry none |
-| Pre-flight v3 (no odometer/fuel, yesterday preload) | DONE | field → Pre-flight |
-| Technician dashboard strip | DONE | jobs screen: today/completed/to-sync |
-| Add Expense (photo required, approver) | DONE | field → Add expense |
-| Log Fuel → vehicle ledger + month-end price notice | DONE | field → Log fuel; sweep notice on month end |
-| Vehicles 1+2 registered | DONE (mig 089) | vehicle chips |
-| GPS distance derivation | DONE (capture+aggregate) | /reports/monthly → Distance by team (fills as jobs complete) |
-| Monthly profitability additions | PARTIAL (fuel/distance/below-70% shipped; full per-customer/team pack pending) | /reports/monthly |
-| AMC 90/30/10 reminders + last-service closeout email + PDF | DONE | fires via sweep; internal notices in Notifications |
-| Claude assistant phase 1 | DONE (needs your key, task 1) | Admin → Ask the business |
-| Debug sweep | DONE | gates: 25/25 worker, invariants/RLS/preflight PASS |
+| Calendar month view + drag-drop reschedule | DONE | Schedule → Month; drag a job to another day |
+| Customer told when a visit moves | DONE | the move queues a "your visit has moved" email (was/now dates + team lead's number) |
+| Excel + PDF export on every major list | DONE | Excel/PDF buttons on Customers, Contracts, Jobs, Invoices, Expenses |
+| Filters everywhere | DONE | emirate/type, status, and date-range filters on those lists; the export obeys them |
+| Bulk customer import UI | DONE | Admin → Import customers (template → upload → report → approve) |
+| Weekly + yearly report packs | DONE | queued Mondays 07:00 and 1 January, Dubai time |
+| Report preview before filing | DONE | Reports → Report preview & send (all four cadences + "Send this now") |
+| Swipe gestures in the field app | DONE | swipe a scheduled job card right |
+| Agreement generator rebuilt | DONE | any contract → Agreement (.docx): bilingual clauses, correct entity per emirate |
+| Assistant phases 2–4 | DONE (needs the key) | report commentary + "Create a draft estimate from this" |
 
-**NOT DONE (carry-over backlog):** calendar drag-drop, per-list XLS/PDF
-exports + filters, bulk-import UI, weekly/yearly email packs, report
-preview-before-filing, swipe gestures, agreement generator rebuild (task #8),
-assistant phases 2-4 (ROADMAP-AMENDMENT.md).
+**Defects found and fixed while verifying:** the console could not start from a
+clean checkout (root `.env.local` was never loaded by Next); **every branded
+email's logo redirected to the login page** and rendered broken in inboxes;
+the Vercel build was failing on a lockfile I had left uncommitted; a nameless
+import row silently matched a live customer instead of being rejected; a masked
+SQL error blanked the agreement's emirate; a stale service worker could leave
+the field app on a **blank screen** (updates are now self-healing).
+
+**Known flake, not a regression:** two worker tests (`fieldfinance`,
+`inventory`) intermittently fail with a Supabase pooler connection timeout
+inside `drainOnce`. Each passes on re-run, and the same failure reproduces on
+the pre-run-7 commit, so nothing in this run caused it. It needs a proper look
+when the staging database is quiet — staging now carries 81 tenants and 2,100+
+events from months of test runs, and the seeding hooks are getting slow.
+
+**Still not built:** per-line draft-to-estimate (prices need a pricing model
+per line), narration inside the scheduled emails (deliberately excluded — it
+would put a model call on a scheduled path), and the older backlog below.
 
 ---
 
