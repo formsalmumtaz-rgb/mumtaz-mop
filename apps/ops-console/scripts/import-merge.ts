@@ -151,6 +151,7 @@ async function stageAndValidate(): Promise<void> {
          from customers cu
         where s.batch_id=$1 and s.disposition='pending'
           and cu.tenant_id=s.tenant_id
+          and coalesce(s.trade_name, s.legal_name, '') <> ''
           and (lower(coalesce(cu.trade_name,'')) = lower(coalesce(s.trade_name, s.legal_name, ''))
             or lower(coalesce(cu.legal_name,'')) = lower(coalesce(s.legal_name, s.trade_name, '')))`, [batch]);
     // 5. rejected: no name at all
