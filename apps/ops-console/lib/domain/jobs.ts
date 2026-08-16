@@ -278,7 +278,48 @@ export async function rescheduleJob(tenantId: string, id: string, date: string, 
     if (!before) throw new Error("Job not found");
     await c.query(`update jobs set scheduled_date=$1::date, scheduled_start=$2::time, est_duration_minutes=$3 where id=$4`,
       [d, clean(startTime), durN, id]);
+    // A moved visit is news the customer needs. The event is emitted only when
+    // the DAY actually changed (retiming inside the same day is internal), and
+    // only for work still ahead — the consumer decides whether a contactable
+    // recipient exists. Never blocks the reschedule.
+    if (before.scheduled_date !== d && d >= new Date().toISOString().slice(0, 10)) {
+      await c.query(
+        `insert into outbox_events (tenant_id, event_type, aggregate_type, entity_id, payload)
+         values ($1, 'job.rescheduled', 'job', $2, $3)`,
+        [tenantId, id, JSON.stringify({ job_id: id, from_date: before.scheduled_date, to_date: d, start_time: clean(startTime) })]);
+    }
     await audit(c, tenantId, { table: "jobs", rowId: id, action: "update", oldValue: before, newValue: { scheduled_date: d, scheduled_start: startTime, est_duration_minutes: durN }, note: "job rescheduled" });
+  });
+}
+
+// Calendar drag-and-drop: move a job to another DAY, keeping whatever start
+// time and duration it already has. Separate from rescheduleJob because that
+// function takes an explicit (possibly null) time — passing nothing there would
+// silently CLEAR the slot, which a drag across days must never do.
+export async function moveJobToDate(tenantId: string, id: string, date: string): Promise<void> {
+  const d = clean(date);
+  if (!d) throw new Error("A date is required");
+  await withTenantTx(tenantId, async (c) => {
+    const before = (await c.query(
+      `select scheduled_date::text, to_char(scheduled_start,'HH24:MI') as st, status
+         from jobs where id=$1 and tenant_id=$2 for update`, [id, tenantId])).rows[0];
+    if (!before) throw new Error("Job not found");
+    if (["completed", "cancelled"].includes(before.status)) {
+      throw new Error(`Cannot move a job that is ${before.status}`);
+    }
+    if (before.scheduled_date === d) return; // no-op drop onto the same day
+    await c.query(`update jobs set scheduled_date=$1::date where id=$2`, [d, id]);
+    if (d >= new Date().toISOString().slice(0, 10)) {
+      await c.query(
+        `insert into outbox_events (tenant_id, event_type, aggregate_type, entity_id, payload)
+         values ($1, 'job.rescheduled', 'job', $2, $3)`,
+        [tenantId, id, JSON.stringify({ job_id: id, from_date: before.scheduled_date, to_date: d, start_time: before.st })]);
+    }
+    await audit(c, tenantId, {
+      table: "jobs", rowId: id, action: "update",
+      oldValue: { scheduled_date: before.scheduled_date }, newValue: { scheduled_date: d },
+      note: "job moved on the calendar (drag and drop)",
+    });
   });
 }
 

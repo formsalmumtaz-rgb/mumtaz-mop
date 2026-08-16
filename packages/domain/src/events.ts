@@ -11,6 +11,7 @@ export const EVENT_TYPES = [
   "quotation.accepted",
   "contract.activated",
   "job.scheduled",
+  "job.rescheduled",
   "route.optimised",
   "job.started",
   "job.arrived",
@@ -65,6 +66,12 @@ export const payloadSchemas = {
     contract_id: z.string().uuid().nullish(),
     branch_id: z.string().uuid().nullish(),
     scheduled_date: z.string(),
+  }),
+  "job.rescheduled": z.object({
+    job_id: z.string().uuid(),
+    from_date: z.string().nullish(),
+    to_date: z.string(),
+    start_time: z.string().nullish(),
   }),
   "job.started": z.object({
     job_id: z.string().uuid(),
