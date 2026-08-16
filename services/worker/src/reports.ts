@@ -6,7 +6,9 @@ import { renderEmailHtml } from "./emailTemplate";
 // the formula for each figure is stated alongside it wherever it is shown.
 
 export interface DailyReport {
-  date: string;
+  date: string;   // the last day of the period (the day itself for a daily report)
+  from: string;
+  to: string;
   jobs_scheduled: number;
   jobs_completed: number;
   jobs_failed: number;
@@ -19,35 +21,48 @@ export interface DailyReport {
   exceptions: { held_for_review: number; failed_jobs: number; bounced_emails: number };
 }
 
+// A daily report is the one-day case of a period report — one implementation,
+// so the day-close email and the weekly/yearly packs can never drift apart.
 export async function computeDailyReport(c: PoolClient, tenantId: string, date: string): Promise<DailyReport> {
+  return computeRangeReport(c, tenantId, date, date);
+}
+
+export async function computeRangeReport(c: PoolClient, tenantId: string, from: string, to: string): Promise<DailyReport> {
   const one = async (sql: string, params: unknown[] = []): Promise<Record<string, unknown>> =>
-    (await c.query(sql, [tenantId, date, ...params])).rows[0] ?? {};
+    (await c.query(sql, [tenantId, from, to, ...params])).rows[0] ?? {};
 
   const jobs = await one(
-    `select count(*) filter (where scheduled_date = $2::date)::int as scheduled,
-            count(*) filter (where status = 'completed' and coalesce(completed_at::date, scheduled_date) = $2::date)::int as completed,
-            count(*) filter (where status in ('failed','cancelled') and scheduled_date = $2::date)::int as failed
+    `select count(*) filter (where scheduled_date between $2::date and $3::date)::int as scheduled,
+            count(*) filter (where status = 'completed'
+                              and coalesce(completed_at::date, scheduled_date) between $2::date and $3::date)::int as completed,
+            count(*) filter (where status in ('failed','cancelled') and scheduled_date between $2::date and $3::date)::int as failed
        from jobs where tenant_id = $1`);
   const money = await one(
-    `select (select coalesce(sum(total),0)::float8 from invoices where tenant_id=$1 and created_at::date=$2::date) as invoiced,
-            (select coalesce(sum(amount),0)::float8 from receipts where tenant_id=$1 and receipt_date=$2::date) as collected,
-            (select coalesce(sum(amount),0)::float8 from expenses where tenant_id=$1 and expense_date=$2::date) as expenses`);
+    `select (select coalesce(sum(total),0)::float8 from invoices where tenant_id=$1 and created_at::date between $2::date and $3::date) as invoiced,
+            (select coalesce(sum(amount),0)::float8 from receipts where tenant_id=$1 and receipt_date between $2::date and $3::date) as collected,
+            (select coalesce(sum(amount),0)::float8 from expenses where tenant_id=$1 and expense_date between $2::date and $3::date) as expenses`);
   const { rows: stock } = await c.query(
     `select it.name as item, sum(sm.quantity)::float8 as qty, u.code as unit
        from stock_movements sm join items it on it.id = sm.item_id
        left join units u on u.id = sm.unit_id
-      where sm.tenant_id = $1 and sm.movement_type = 'consumption' and sm.created_at::date = $2::date
-      group by it.name, u.code order by qty desc limit 10`, [tenantId, date]);
+      where sm.tenant_id = $1 and sm.movement_type = 'consumption'
+        and sm.created_at::date between $2::date and $3::date
+      group by it.name, u.code order by qty desc limit 10`, [tenantId, from, to]);
   const att = await one(
-    `select (select count(distinct technician_id)::int from preflight_checks where tenant_id=$1 and check_date=$2::date) as reported,
+    `select (select count(distinct technician_id)::int from preflight_checks
+              where tenant_id=$1 and check_date between $2::date and $3::date) as reported,
             (select count(*)::int from technicians where tenant_id=$1 and coalesce(is_active,true)) as active`);
   const exc = await one(
     `select (select count(*)::int from outbox_events where tenant_id=$1 and needs_review and processed_at is null) as held,
-            (select count(*)::int from jobs where tenant_id=$1 and status='failed' and scheduled_date=$2::date) as failed,
-            (select count(*)::int from outbound_notifications where tenant_id=$1 and status='bounced' and created_at::date=$2::date) as bounced`);
+            (select count(*)::int from jobs where tenant_id=$1 and status='failed'
+              and scheduled_date between $2::date and $3::date) as failed,
+            (select count(*)::int from outbound_notifications where tenant_id=$1 and status='bounced'
+              and created_at::date between $2::date and $3::date) as bounced`);
 
   return {
-    date,
+    date: to,
+    from,
+    to,
     jobs_scheduled: Number(jobs.scheduled ?? 0),
     jobs_completed: Number(jobs.completed ?? 0),
     jobs_failed: Number(jobs.failed ?? 0),
@@ -149,6 +164,10 @@ export async function runDailyReportNow(pool: Pool, tenantId: string, date: stri
 // One sheet per fact table for the day — the raw rows behind every figure.
 // Deterministic queries; zero AI in the numbers.
 export async function buildDailyExcel(c: PoolClient, tenantId: string, date: string): Promise<Buffer> {
+  return buildRangeExcel(c, tenantId, date, date);
+}
+
+export async function buildRangeExcel(c: PoolClient, tenantId: string, from: string, to: string): Promise<Buffer> {
   const mod = (await import("exceljs")) as unknown as { default?: unknown };
   const ExcelJS = (mod.default ?? mod) as typeof import("exceljs");
   const wb = new ExcelJS.Workbook();
@@ -172,22 +191,26 @@ export async function buildDailyExcel(c: PoolClient, tenantId: string, date: str
          join customers cu on cu.id = j.customer_id
          left join customer_branches b on b.id = j.branch_id
          left join service_types st on st.id = j.service_type_id
-        where j.tenant_id = $1 and (j.scheduled_date = $2::date or coalesce(j.completed_at::date, '1900-01-01') = $2::date)
-        order by j.scheduled_start nulls last`, [tenantId, date]),
+        where j.tenant_id = $1 and (j.scheduled_date between $2::date and $3::date
+                                or coalesce(j.completed_at::date, '1900-01-01') between $2::date and $3::date)
+        order by j.scheduled_date, j.scheduled_start nulls last`, [tenantId, from, to]),
     c.query(
       `select i.invoice_number, cu.trade_name as customer, i.status,
               i.subtotal::float8 as subtotal, i.vat_total::float8 as vat, i.total::float8 as total
          from invoices i join customers cu on cu.id = i.customer_id
-        where i.tenant_id = $1 and i.created_at::date = $2::date order by i.created_at`, [tenantId, date]),
+        where i.tenant_id = $1 and i.created_at::date between $2::date and $3::date
+        order by i.created_at`, [tenantId, from, to]),
     c.query(
       `select r.receipt_number, cu.trade_name as customer, r.method, r.amount::float8 as amount
          from receipts r left join customers cu on cu.id = r.customer_id
-        where r.tenant_id = $1 and r.receipt_date = $2::date order by r.created_at`, [tenantId, date]),
+        where r.tenant_id = $1 and r.receipt_date between $2::date and $3::date
+        order by r.created_at`, [tenantId, from, to]),
     c.query(
       `select e.expense_date::text as date, coalesce(t.full_name, t.code) as technician,
               e.amount::float8 as amount, e.description, e.status
          from expenses e left join technicians t on t.id = e.technician_id
-        where e.tenant_id = $1 and e.expense_date = $2::date order by e.created_at`, [tenantId, date]),
+        where e.tenant_id = $1 and e.expense_date between $2::date and $3::date
+        order by e.created_at`, [tenantId, from, to]),
     c.query(
       `select it.name as item, sm.movement_type, sm.quantity::float8 as qty, u.code as unit,
               cu.trade_name as job_customer
@@ -196,7 +219,8 @@ export async function buildDailyExcel(c: PoolClient, tenantId: string, date: str
          left join units u on u.id = sm.unit_id
          left join jobs j on j.id = sm.job_id
          left join customers cu on cu.id = j.customer_id
-        where sm.tenant_id = $1 and sm.created_at::date = $2::date order by sm.created_at`, [tenantId, date]),
+        where sm.tenant_id = $1 and sm.created_at::date between $2::date and $3::date
+        order by sm.created_at`, [tenantId, from, to]),
   ]);
 
   addSheet("Jobs", [
@@ -252,4 +276,186 @@ export async function computeDailyAnalysis(c: PoolClient, tenantId: string, r: D
   if (varc[0].n > 0) flags.push(`${varc[0].n} declared-stock variance(s) at pre-flight today — check the van counts.`);
   if (flags.length === 0) flags.push("No exceptions triggered by today's rules.");
   return flags;
+}
+
+// ── Item 4: weekly + yearly packs ───────────────────────────────────────────
+// The same deterministic figures over a longer window, plus a comparison with
+// the previous equivalent period. Cadences: weekly on Monday (the week just
+// ended), yearly on 1 January (the year just ended). Monthly is available on
+// demand from the console. Every cadence is idempotent by subject.
+
+export type Period = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface PeriodRange { period: Period; from: string; to: string; label: string }
+
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
+const shiftDays = (d: string, n: number) => isoDate(new Date(Date.parse(d + "T00:00:00Z") + n * 864e5));
+
+// The period that ENDED most recently before `today` (Asia/Dubai date string).
+export function previousPeriod(period: Period, today: string): PeriodRange {
+  if (period === "daily") {
+    const d = shiftDays(today, -1);
+    return { period, from: d, to: d, label: d };
+  }
+  if (period === "weekly") {
+    // Monday-start weeks; on a Monday this is last Monday..Sunday.
+    const dow = (new Date(today + "T00:00:00Z").getUTCDay() + 6) % 7; // 0 = Monday
+    const thisMonday = shiftDays(today, -dow);
+    const from = shiftDays(thisMonday, -7), to = shiftDays(thisMonday, -1);
+    return { period, from, to, label: `${from} to ${to}` };
+  }
+  if (period === "monthly") {
+    const y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
+    const from = isoDate(new Date(Date.UTC(y, m - 2, 1)));
+    const to = isoDate(new Date(Date.UTC(y, m - 1, 0)));
+    return { period, from, to, label: from.slice(0, 7) };
+  }
+  const y = Number(today.slice(0, 4)) - 1;
+  return { period: "yearly", from: `${y}-01-01`, to: `${y}-12-31`, label: String(y) };
+}
+
+// The period immediately before a given range — the comparison window. Same
+// length for weekly/daily; the previous calendar month/year otherwise.
+function comparisonRange(r: PeriodRange): { from: string; to: string } {
+  if (r.period === "monthly") {
+    const y = Number(r.from.slice(0, 4)), m = Number(r.from.slice(5, 7));
+    return { from: isoDate(new Date(Date.UTC(y, m - 2, 1))), to: isoDate(new Date(Date.UTC(y, m - 1, 0))) };
+  }
+  if (r.period === "yearly") {
+    const y = Number(r.from.slice(0, 4)) - 1;
+    return { from: `${y}-01-01`, to: `${y}-12-31` };
+  }
+  const days = Math.round((Date.parse(r.to) - Date.parse(r.from)) / 864e5) + 1;
+  return { from: shiftDays(r.from, -days), to: shiftDays(r.from, -1) };
+}
+
+const TITLES: Record<Period, string> = {
+  daily: "Daily operations report", weekly: "Weekly operations report",
+  monthly: "Monthly operations report", yearly: "Annual operations report",
+};
+
+export interface PeriodReport { range: PeriodRange; current: DailyReport; previous: DailyReport }
+
+export async function computePeriodReport(c: PoolClient, tenantId: string, range: PeriodRange): Promise<PeriodReport> {
+  const cmp = comparisonRange(range);
+  const [current, previous] = await Promise.all([
+    computeRangeReport(c, tenantId, range.from, range.to),
+    computeRangeReport(c, tenantId, cmp.from, cmp.to),
+  ]);
+  return { range, current, previous };
+}
+
+const delta = (now: number, before: number): string => {
+  if (before === 0) return now === 0 ? "no change" : "no comparable figure last period";
+  const pct = ((now - before) / Math.abs(before)) * 100;
+  const dir = pct >= 0 ? "up" : "down";
+  return `${dir} ${Math.abs(pct).toFixed(0)}% on the previous period`;
+};
+
+// Rule-based analysis for a period: movement against the previous period plus
+// the standing exception rules. Fixed rules over the same tables the figures
+// come from — no model call anywhere near a number.
+export async function computePeriodAnalysis(c: PoolClient, tenantId: string, p: PeriodReport): Promise<string[]> {
+  const { current: r, previous: prev } = p;
+  const flags: string[] = [];
+  flags.push(`Jobs completed: ${r.jobs_completed} (${delta(r.jobs_completed, prev.jobs_completed)}).`);
+  flags.push(`Revenue invoiced: ${aed(r.revenue_invoiced)} (${delta(r.revenue_invoiced, prev.revenue_invoiced)}).`);
+  flags.push(`Cash collected: ${aed(r.cash_collected)} (${delta(r.cash_collected, prev.cash_collected)}).`);
+  if (r.expenses > 0) flags.push(`Expenses: ${aed(r.expenses)} (${delta(r.expenses, prev.expenses)}).`);
+  if (r.revenue_invoiced > 0 && r.expenses > r.revenue_invoiced * 0.3) {
+    flags.push(`Expenses are ${((r.expenses / r.revenue_invoiced) * 100).toFixed(0)}% of invoiced revenue this period.`);
+  }
+  if (r.jobs_scheduled > 0) {
+    const rate = (r.jobs_completed / r.jobs_scheduled) * 100;
+    if (rate < 90) flags.push(`Completion rate ${rate.toFixed(0)}% — ${r.jobs_scheduled - r.jobs_completed} scheduled job(s) not completed.`);
+  }
+  if (r.jobs_failed > 0) flags.push(`${r.jobs_failed} job(s) failed or cancelled in the period.`);
+  const { rows: overdue } = await c.query(
+    `select count(*)::int n, coalesce(sum(balance),0)::float8 amt from invoice_ar
+      where tenant_id = $1 and balance > 0 and days_overdue > 0`, [tenantId]);
+  if (overdue[0].n > 0) flags.push(`${overdue[0].n} invoice(s) past due totalling ${aed(Number(overdue[0].amt))} (position today, not period-bound).`);
+  const { rows: expiring } = await c.query(
+    `select count(*)::int n from contracts
+      where tenant_id=$1 and lifecycle_status='active' and end_date is not null
+        and end_date <= current_date + 90`, [tenantId]);
+  if (expiring[0].n > 0) flags.push(`${expiring[0].n} active contract(s) expire within 90 days — renewal conversations due.`);
+  if (r.exceptions.held_for_review > 0) flags.push(`${r.exceptions.held_for_review} field event(s) held for review.`);
+  if (r.exceptions.bounced_emails > 0) flags.push(`${r.exceptions.bounced_emails} customer email(s) bounced in the period — fix the addresses.`);
+  return flags;
+}
+
+export function periodReportEmail(p: PeriodReport, analysis: string[]): { subject: string; text: string; html: string } {
+  const { range: g, current: r, previous: prev } = p;
+  const subject = `${TITLES[g.period]} — ${g.label}`;
+  const rows = [
+    { label: "Period", value: g.from === g.to ? g.from : `${g.from} to ${g.to}` },
+    { label: "Jobs", value: `${r.jobs_completed} completed of ${r.jobs_scheduled} scheduled${r.jobs_failed ? ` · ${r.jobs_failed} failed` : ""}` },
+    { label: "Revenue invoiced", value: `${aed(r.revenue_invoiced)} (previous ${aed(prev.revenue_invoiced)})` },
+    { label: "Cash collected", value: `${aed(r.cash_collected)} (previous ${aed(prev.cash_collected)})` },
+    { label: "Expenses", value: `${aed(r.expenses)} (previous ${aed(prev.expenses)})` },
+    ...(r.stock_consumed_lines.length
+      ? [{ label: "Stock consumed", value: r.stock_consumed_lines.slice(0, 5).map((s) => `${s.item} ${s.qty}${s.unit ? " " + s.unit : ""}`).join(" · ") }]
+      : []),
+    { label: "Exceptions", value: `${r.exceptions.held_for_review} held for review · ${r.exceptions.failed_jobs} failed jobs · ${r.exceptions.bounced_emails} bounced emails` },
+  ];
+  const text =
+`${TITLES[g.period]} — ${g.label}
+Period: ${g.from} to ${g.to}
+
+Jobs: ${r.jobs_completed}/${r.jobs_scheduled} completed${r.jobs_failed ? `, ${r.jobs_failed} failed` : ""}
+Revenue invoiced: ${aed(r.revenue_invoiced)} (previous period ${aed(prev.revenue_invoiced)})
+Cash collected: ${aed(r.cash_collected)} (previous period ${aed(prev.cash_collected)})
+Expenses: ${aed(r.expenses)} (previous period ${aed(prev.expenses)})
+
+Analysis:
+${analysis.map((a) => `- ${a}`).join("\n")}
+
+Every figure is a deterministic aggregate over the ledger and job records. The attached workbook holds the raw rows behind each one.`;
+  const html = renderEmailHtml({
+    serviceLineCode: null,
+    title: `${TITLES[g.period]} — ${g.label}`,
+    paragraphs: [
+      `This covers ${g.from} to ${g.to}, compared with the previous period. Every figure is computed directly from the ledger and job records — nothing estimated.`,
+      ...analysis,
+    ],
+    card: { heading: "The period at a glance", rows },
+    footnote: "The attached workbook holds every row behind these figures. Drill-downs: Reports in the console.",
+  });
+  return { subject, text, html };
+}
+
+// Queue the weekly and yearly packs. Weekly fires on Monday from 07:00 Dubai
+// for the week just ended; yearly on 1 January from 07:00 for the year just
+// ended. Idempotent per tenant+period via the subject, exactly like the daily.
+export async function queuePeriodReports(c: PoolClient): Promise<number> {
+  const { rows: due } = await c.query(
+    `select t.id as tenant_id,
+            (now() at time zone 'Asia/Dubai')::date::text as today,
+            extract(isodow from (now() at time zone 'Asia/Dubai'))::int as dow,
+            extract(hour   from (now() at time zone 'Asia/Dubai'))::int as hour,
+            (select value #>> '{}' from settings s where s.tenant_id = t.id and s.key = 'reports.daily_recipient' limit 1) as rcpt
+       from tenants t`);
+  let queued = 0;
+  for (const t of due) {
+    if (!t.rcpt || t.hour < 7) continue;
+    const cadences: Period[] = [];
+    if (t.dow === 1) cadences.push("weekly");
+    if (t.today.slice(5) === "01-01") cadences.push("yearly");
+    for (const period of cadences) {
+      const range = previousPeriod(period, t.today);
+      const subject = `${TITLES[period]} — ${range.label}`;
+      const { rows: dup } = await c.query(
+        `select 1 from outbound_notifications where tenant_id=$1 and kind='daily_report' and subject=$2`,
+        [t.tenant_id, subject]);
+      if (dup.length) continue;
+      const p = await computePeriodReport(c, t.tenant_id, range);
+      const mail = periodReportEmail(p, await computePeriodAnalysis(c, t.tenant_id, p));
+      await c.query(
+        `insert into outbound_notifications (tenant_id, kind, to_email, subject, body_text, body_html, status)
+         values ($1,'daily_report',$2,$3,$4,$5,'queued')`,
+        [t.tenant_id, t.rcpt, mail.subject, mail.text, mail.html]);
+      queued++;
+    }
+  }
+  return queued;
 }

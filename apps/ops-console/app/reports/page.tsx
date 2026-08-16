@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 const REPORTS = [
   ["Daily operations", "/reports/daily", "Jobs, revenue, cash, expenses, stock, attendance, exceptions — one day."],
+  ["Report preview & send", "/reports/preview", "See the exact daily, weekly, monthly or yearly email before it goes out — and send it now if you want it early."],
   ["Monthly pack", "/reports/monthly", "Revenue, collections, AR ageing, margins, consumption, renewals."],
   ["Trial balance", "/reports/trial-balance", "Every account's debit/credit totals — must balance."],
   ["Profit & loss", "/reports/profit-loss", "Income less expenses over a period."],

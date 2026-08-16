@@ -12,3 +12,8 @@ export { costingConsumers, jobCoster } from "./costing";
 export { runContractBilling, runAllContractBilling } from "./billing";
 export { notifyConsumers, runNotificationSweep, resendNotification } from "./notify";
 export type { SweepResult } from "./notify";
+export {
+  previousPeriod, computePeriodReport, computePeriodAnalysis, periodReportEmail,
+  computeRangeReport, buildRangeExcel,
+} from "./reports";
+export type { Period, PeriodRange, PeriodReport, DailyReport } from "./reports";
