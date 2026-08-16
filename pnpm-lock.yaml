@@ -111,6 +111,9 @@ importers:
       docx:
         specifier: ^9.0.0
         version: 9.7.1
+      exceljs:
+        specifier: ^4.4.0
+        version: 4.4.0
       jspdf:
         specifier: ^2.5.2
         version: 2.5.2
