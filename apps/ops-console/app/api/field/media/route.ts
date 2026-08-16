@@ -23,7 +23,7 @@ interface MediaUpload {
   id: string;
   job_id: string;
   // "signature" = customer representative, "signature_tech" = technician (item 20)
-  kind: "photo" | "signature" | "signature_tech";
+  kind: "photo" | "signature" | "signature_tech" | "expense_receipt";
   content_type?: string;
   data_base64: string;
 }
@@ -53,6 +53,20 @@ export async function POST(req: Request) {
   let rejected = 0;
 
   for (const m of items) {
+    // Expense receipts are not job-bound (item 3A): the authenticated session
+    // is the authority; the file links to the expense by its client identity.
+    if (m.kind === "expense_receipt") {
+      const contentType = m.content_type ?? "image/webp";
+      const ext = EXT_BY_TYPE[contentType] ?? "webp";
+      const key = `receipts/${session.tenantId}/${m.id}.${ext}`;
+      await putObject(key, Buffer.from(m.data_base64, "base64"), contentType);
+      await pool.query(
+        `insert into expense_receipt_files (tenant_id, client_uuid, storage_key)
+         values ($1, $2, $3) on conflict (tenant_id, client_uuid) do nothing`,
+        [session.tenantId, m.job_id || m.id, key]);
+      accepted.push(m.id);
+      continue;
+    }
     if (!mine.has(m.job_id)) {
       rejected++;
       continue;

@@ -16,7 +16,7 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
   const month = (sp.month ?? "").match(/^\d{4}-\d{2}$/) ? sp.month! : new Date().toISOString().slice(0, 7);
   const start = `${month}-01`;
 
-  const [topline, ageing, margin, chem, renewals, severe, topCustomers] = await Promise.all([
+  const [topline, ageing, margin, chem, renewals, severe, topCustomers, fuel, distance, belowTarget] = await Promise.all([
     scopedRead(tenantId,
       `select (select coalesce(sum(total),0)::float8 from invoices
                 where tenant_id=$1 and created_at >= $2::date and created_at < ($2::date + interval '1 month')) as invoiced,
@@ -68,6 +68,53 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
              from invoices i join customers cu on cu.id = i.customer_id
             where i.tenant_id = $1 and i.created_at >= $2::date and i.created_at < ($2::date + interval '1 month')
             group by cu.id, name order by revenue desc limit 10`, [tenantId, start]).then((r) => r.rows)
+      : Promise.resolve([]),
+    // Item 3B: fuel per vehicle for the month (ledger truth)
+    scopedRead(tenantId,
+      `select coalesce(v.name, v.code, 'Vehicle') as vehicle,
+              sum(f.litres)::float8 as litres, sum(f.amount)::float8 as amount
+         from vehicle_fuel_purchases f join vehicles v on v.id = f.vehicle_id
+        where f.tenant_id = $1 and f.purchase_date >= $2::date and f.purchase_date < ($2::date + interval '1 month')
+        group by vehicle order by amount desc`, [tenantId, start]).then((r) => r.rows),
+    // Item 3: distance derived from job GPS captures — Σ haversine between
+    // consecutive completed jobs per team per day (no live tracking).
+    scopedRead(tenantId,
+      `with pts as (
+         select j.team_id, j.scheduled_date,
+                (j.attributes->>'complete_lat')::float8 as lat,
+                (j.attributes->>'complete_lng')::float8 as lng,
+                row_number() over (partition by j.team_id, j.scheduled_date order by coalesce(j.completed_at, j.created_at)) as rn
+           from jobs j
+          where j.tenant_id = $1 and j.status = 'completed'
+            and j.scheduled_date >= $2::date and j.scheduled_date < ($2::date + interval '1 month')
+            and j.attributes ? 'complete_lat'
+       )
+       select coalesce(tm.name, 'No team') as team,
+              round(sum(st_distancesphere(
+                st_setsrid(st_makepoint(a.lng, a.lat), 4326)::geometry,
+                st_setsrid(st_makepoint(b.lng, b.lat), 4326)::geometry)) / 1000.0, 1)::float8 as km
+         from pts a
+         join pts b on b.team_id is not distinct from a.team_id
+                   and b.scheduled_date = a.scheduled_date and b.rn = a.rn + 1
+         left join teams tm on tm.id = a.team_id
+        group by team order by km desc`, [tenantId, start]).then((r) => r.rows).catch(() => []),
+    // Contracts running below the 70% target margin (annualised, from job costs)
+    showProfit
+      ? scopedRead(tenantId,
+          `select ct.id, ct.contract_number, cu.trade_name,
+                  ct.contract_value::float8 as value,
+                  coalesce(sum(jc.total_cost), 0)::float8 as cost_to_date,
+                  count(j.id)::int as jobs_done
+             from contracts ct
+             join customers cu on cu.id = ct.customer_id
+             left join jobs j on j.contract_id = ct.id and j.status = 'completed'
+             left join job_cost_current jc on jc.job_id = j.id
+            where ct.tenant_id = $1 and ct.lifecycle_status = 'active' and ct.contract_value > 0
+            group by ct.id, ct.contract_number, cu.trade_name, ct.contract_value
+           having count(j.id) > 0
+              and 1 - (coalesce(sum(jc.total_cost),0) / nullif(ct.contract_value * count(j.id) /
+                    greatest((select count(*) from contract_schedule cs where cs.contract_id = ct.id), 1), 0)) < 0.70
+            order by cost_to_date desc limit 10`, [tenantId, start]).then((r) => r.rows).catch(() => [])
       : Promise.resolve([]),
   ]);
 
@@ -165,6 +212,45 @@ export default async function MonthlyReportPage({ searchParams }: { searchParams
           )}
         </section>
       </div>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section className="rounded-lg border border-neutral-200 bg-white">
+          <div className="border-b border-neutral-100 px-4 py-2.5 text-sm font-medium">Fuel by vehicle (month) <span className="text-xs font-normal text-neutral-400">Σ vehicle_fuel_purchases</span></div>
+          <ul className="divide-y divide-neutral-100">
+            {fuel.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">No fuel logged this month.</li>}
+            {fuel.map((f: { vehicle: string; litres: number; amount: number }) => (
+              <li key={f.vehicle} className="flex justify-between px-4 py-2.5 text-sm">
+                <span>{f.vehicle}</span><span><b>{f.litres}</b> L · {aed(f.amount)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section className="rounded-lg border border-neutral-200 bg-white">
+          <div className="border-b border-neutral-100 px-4 py-2.5 text-sm font-medium">Distance by team (month) <span className="text-xs font-normal text-neutral-400">Σ between consecutive job GPS points per day</span></div>
+          <ul className="divide-y divide-neutral-100">
+            {distance.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">No GPS-captured jobs yet — distance builds as devices record job locations.</li>}
+            {distance.map((d: { team: string; km: number }) => (
+              <li key={d.team} className="flex justify-between px-4 py-2.5 text-sm">
+                <span>{d.team}</span><span><b>{d.km}</b> km</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      {showProfit && belowTarget.length > 0 && (
+        <section className="rounded-lg border border-amber-200 bg-amber-50">
+          <div className="border-b border-amber-100 px-4 py-2.5 text-sm font-medium text-amber-900">Contracts running below the 70% target margin <span className="text-xs font-normal text-amber-700">per-visit value vs job costs to date</span></div>
+          <ul className="divide-y divide-amber-100">
+            {belowTarget.map((b: { id: string; contract_number: string | null; trade_name: string | null; cost_to_date: number; jobs_done: number }) => (
+              <li key={b.id} className="flex justify-between px-4 py-2.5 text-sm">
+                <Link href={`/contracts/${b.id}`} className="text-brand underline">{b.contract_number ?? "(no number)"} — {b.trade_name}</Link>
+                <span>{b.jobs_done} visits · {aed(b.cost_to_date)} cost</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <p className="text-xs text-neutral-500">Complaint counts await the complaints module (not built — tracked in ROADMAP). Yearly P&amp;L, trial balance and revenue-by-customer live under Financial reports.</p>
     </div>
   );

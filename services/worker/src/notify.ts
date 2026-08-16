@@ -307,6 +307,28 @@ Al Mumtaz Building Cleaning & Pest Control`,
       console.error("[sweep] daily report queueing failed:", (e as Error).message);
     }
 
+    // (b3b) month-end fuel price reminder (item 3B): on the last day of the
+    // month, tell operations to set next month's fuel price. Internal notice,
+    // idempotent per month via the subject.
+    const { rows: eom } = await c.query(
+      `select t.id as tenant_id, to_char(now() at time zone 'Asia/Dubai', 'YYYY-MM') as m
+         from tenants t
+        where (now() at time zone 'Asia/Dubai')::date
+              = (date_trunc('month', now() at time zone 'Asia/Dubai') + interval '1 month - 1 day')::date`);
+    for (const t of eom) {
+      const subject = `Update fuel price for next month (${t.m})`;
+      const { rows: dup } = await c.query(
+        `select 1 from outbound_notifications where tenant_id = $1 and kind = 'manual' and subject = $2`,
+        [t.tenant_id, subject]);
+      if (dup.length) continue;
+      await queue(c, {
+        tenantId: t.tenant_id, kind: "manual", toEmail: null,
+        subject,
+        body: `Today is the last day of the month. Set next month's fuel price in Cost setup (cost.fuel_price_per_litre) — all fuel cost calculations use the current month's price.`,
+      });
+      out.expiryNotices++;
+    }
+
     // (b4) roll the job horizon: planned schedule rows entering the generation
     // window become jobs (item 4 fix — without this, visits after the
     // activation-time window never materialized).

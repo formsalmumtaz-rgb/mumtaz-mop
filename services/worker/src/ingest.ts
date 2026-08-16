@@ -82,6 +82,17 @@ export async function ingestDeviceEvents(
             where id=$1 and tenant_id=$3`,
           [ev.job_id, ev.device_time, tenantId],
         );
+        // GPS at start (item 3 distance derivation) — numeric capture keys
+        const sp = (ev.payload ?? {}) as Record<string, unknown>;
+        const gps: Record<string, number> = {};
+        for (const k of ["start_lat", "start_lng"]) {
+          if (typeof sp[k] === "number" && Number.isFinite(sp[k] as number)) gps[k] = sp[k] as number;
+        }
+        if (Object.keys(gps).length === 2) {
+          await client.query(
+            `update jobs set attributes = attributes || $2::jsonb where id=$1 and tenant_id=$3`,
+            [ev.job_id, JSON.stringify(gps), tenantId]);
+        }
       }
       if (ev.event_type === "job.completed" && !needsReview) {
         await client.query(
@@ -100,10 +111,15 @@ export async function ingestDeviceEvents(
           "onsite_rep_designation", "onsite_rep_contact",
           "specific_areas_treated", "access_restrictions", "recommendations", "ppe_used",
         ];
-        const captured: Record<string, string> = {};
+        const NUMERIC_KEYS = ["complete_lat", "complete_lng"];
+        const captured: Record<string, string | number> = {};
         for (const k of CAPTURE_KEYS) {
           const v = p[k];
           if (typeof v === "string" && v.trim() !== "") captured[k] = v.trim();
+        }
+        for (const k of NUMERIC_KEYS) {
+          const v = p[k];
+          if (typeof v === "number" && Number.isFinite(v)) captured[k] = v;
         }
         if (Object.keys(captured).length > 0) {
           await client.query(

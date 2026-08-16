@@ -1,16 +1,17 @@
-// Vision P2 — the ONE branded HTML email layout, division-skinned.
-// Table-based markup (email clients), no remote assets (the wordmark is text —
-// deliverability over decoration), colors inline. Every customer notification
-// renders through this shell; the summary card is optional structured content.
+// Branding rules (defect run item 1): the REAL division logo image carries the
+// brand — served from the deployed console's /brand assets. No text-drawn
+// wordmark, no "<division> · UAE" filler, and NO legal-entity line in emails
+// (the legal line lives once, in official PDF footers only).
+export interface DivisionSkin { name: string; accent: string; logoFile: string }
 
-export interface DivisionSkin { name: string; accent: string; sub: string }
+const ASSET_BASE = process.env.EMAIL_ASSET_BASE ?? "https://mumtaz-mop-ops-console.vercel.app/brand";
 
 export const SKINS: Record<string, DivisionSkin> = {
-  pest_control: { name: "MUMTAZ PEST CONTROL", accent: "#A31E22", sub: "Pest Control · UAE" },
-  cleaning: { name: "MUMTAZ CLEANING CREW", accent: "#235B3C", sub: "Cleaning Crew · UAE" },
-  facilities_management: { name: "MUMTAZ FACILITIES MANAGEMENT", accent: "#12294A", sub: "Facilities Management · UAE" },
+  pest_control: { name: "Mumtaz Pest Control", accent: "#A31E22", logoFile: "mumtaz-pest-control.png" },
+  cleaning: { name: "Mumtaz Cleaning Crew", accent: "#235B3C", logoFile: "mumtaz-cleaning-crew.png" },
+  facilities_management: { name: "Mumtaz Facilities Management", accent: "#12294A", logoFile: "mumtaz-facilities-management.png" },
 };
-const DEFAULT_SKIN: DivisionSkin = { name: "MUMTAZ INTEGRATED SERVICES GROUP", accent: "#A31E22", sub: "Integrated Services Group · UAE" };
+const DEFAULT_SKIN: DivisionSkin = { name: "Mumtaz Integrated Services Group", accent: "#A31E22", logoFile: "mumtaz-isg.png" };
 
 const GOLD = "#BF9F60";
 const INK = "#1C1C1C";
@@ -22,10 +23,10 @@ const esc = (s: string) =>
 export interface EmailCardRow { label: string; value: string }
 export interface EmailContent {
   serviceLineCode?: string | null;
-  title: string;                    // e.g. "Your service is complete"
-  paragraphs: string[];             // body copy, plain text (escaped)
-  card?: { heading?: string; rows: EmailCardRow[] };  // CTA-style summary card
-  footnote?: string | null;         // small print above the footer
+  title: string;
+  paragraphs: string[];
+  card?: { heading?: string; rows: EmailCardRow[] };
+  footnote?: string | null;
 }
 
 export function renderEmailHtml(c: EmailContent): string {
@@ -56,29 +57,26 @@ export function renderEmailHtml(c: EmailContent): string {
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#F2F0EC;padding:24px 0;">
 <tr><td align="center">
 <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="max-width:600px;width:100%;background:#FFFFFF;border-radius:10px;overflow:hidden;">
-  <!-- header band -->
-  <tr><td style="background:${skin.accent};padding:26px 32px 22px;">
-    <div style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#FFFFFF;letter-spacing:.08em;">MUMTAZ</div>
-    <div style="font-family:Arial,Helvetica,sans-serif;font-size:10px;font-weight:700;color:${GOLD};letter-spacing:.28em;padding-top:4px;">${esc(skin.name.replace(/^MUMTAZ\\s*/, "") || "INTEGRATED SERVICES GROUP")}</div>
+  <!-- header: the real division logo, nothing else -->
+  <tr><td style="padding:24px 32px 16px;">
+    <img src="${ASSET_BASE}/${skin.logoFile}" alt="${esc(skin.name)}" height="44" style="height:44px;max-width:260px;display:block;">
   </td></tr>
   <tr><td style="height:3px;background:${GOLD};font-size:0;line-height:0;">&nbsp;</td></tr>
   <!-- body -->
-  <tr><td style="padding:30px 32px 8px;font-family:Arial,Helvetica,sans-serif;">
+  <tr><td style="padding:28px 32px 8px;font-family:Arial,Helvetica,sans-serif;">
     <div style="font-family:Georgia,'Times New Roman',serif;font-size:21px;color:${skin.accent};padding-bottom:14px;">${esc(c.title)}</div>
     ${paragraphs}
     ${card}
     ${c.footnote ? `<p style="margin:6px 0 0;font-size:11px;color:${MUTED};">${esc(c.footnote)}</p>` : ""}
   </td></tr>
-  <!-- footer -->
-  <tr><td style="padding:22px 32px 26px;font-family:Arial,Helvetica,sans-serif;border-top:1px solid #EEE9E2;">
-    <div style="font-family:Georgia,serif;font-size:12px;color:${skin.accent};padding-bottom:4px;">Al Mumtaz Bldg Clean &amp; Pest Control</div>
+  <!-- footer: contact only — no legal-entity line in emails -->
+  <tr><td style="padding:20px 32px 24px;font-family:Arial,Helvetica,sans-serif;border-top:1px solid #EEE9E2;">
     <div style="font-size:11px;color:${MUTED};line-height:1.7;">
       Toll free <b style="color:${INK};">800 688</b> &nbsp;·&nbsp; info@almumtaz.ae &nbsp;·&nbsp; www.almumtaz.ae<br>
-      Dubai: Office F313, Al Hashmi Tower, Deira &nbsp;·&nbsp; Sharjah: Office 4, Al Estiqlal Street, Al Manakh &nbsp;·&nbsp; Abu Dhabi: Office 504, Cont Building, Musaffah
+      Dubai · Sharjah · Abu Dhabi
     </div>
   </td></tr>
 </table>
-<div style="font-family:Arial,sans-serif;font-size:10px;color:#A8A29A;padding-top:14px;">${esc(skin.sub)}</div>
 </td></tr>
 </table>
 </body></html>`;

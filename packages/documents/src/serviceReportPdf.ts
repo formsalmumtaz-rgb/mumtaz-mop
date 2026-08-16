@@ -76,7 +76,6 @@ export interface ServiceReportPdfData {
 
 // Template palette (sampled from AlMumtaz_ServiceReport_v2)
 const BURGUNDY = "#8A1E2E";
-const GOLD = "#BF9F60";
 const INK = "#1C1C1C";
 const MUTED = "#8C8781";
 const BOX = "#DDD8D2";
@@ -155,10 +154,9 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
       doc.setLineWidth(1.4); doc.line(M, y + 11, M + 128, y + 11);
       spaced("PEST CONTROL", M + 8, y + 24, 8, BURGUNDY, { spacing: 2.6 });
     }
-    // centre: gold strap, serif title, grey strap
-    spaced("P E S T   C O N T R O L   ·   U A E", PW / 2, y - 16, 6.5, GOLD, { align: "center", spacing: 1.2, bold: true });
-    spaced("Service Completion Report", PW / 2, y + 4, 19, BURGUNDY, { serif: true, align: "center" });
-    spaced("AL MUMTAZ BUILDING CLEANING & PEST CONTROL", PW / 2, y + 18, 6.3, MUTED, { align: "center", spacing: 1.6 });
+    // centre: the title alone — the logo says the division, the footer carries
+    // the one legal line (item 1: no repeated brand text).
+    spaced("Service Completion Report", PW / 2, y + 2, 19, BURGUNDY, { serif: true, align: "center" });
     // right: toll free (real asset when supplied) + contact block
     if (d.tollFree) {
       const th = 26;

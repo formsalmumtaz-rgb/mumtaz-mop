@@ -48,7 +48,7 @@ export interface MediaItem {
   job_id: string;
   // "signature" = customer representative (historic name kept for stored rows);
   // "signature_tech" = technician/supervisor. Item 20: a signature says WHOSE.
-  kind: "photo" | "signature" | "signature_tech";
+  kind: "photo" | "signature" | "signature_tech" | "expense_receipt";
   blob: Blob;
   created_at: string;
   synced: 0 | 1;
@@ -112,6 +112,7 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
     jobs: LocalJob[]; inspection_options?: InspectionOption[];
     van_stock?: { item: string; unit: string | null; qty: number }[];
     me?: { name: string; is_team_lead: boolean; team_name: string | null; confirmed_today: boolean } | null;
+    staff?: { id: string; name: string }[];
   };
   await db.transaction("rw", db.jobs, db.meta, async () => {
     for (const j of data.jobs) {
@@ -126,6 +127,7 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
     if (data.van_stock) await db.meta.put({ key: "vanStock", value: data.van_stock });
     // Who am I today (Vision P5.C): team + confirmation state for the banner.
     if (data.me !== undefined) await db.meta.put({ key: "me", value: data.me });
+    if (data.staff) await db.meta.put({ key: "staff", value: data.staff });
     await db.meta.put({ key: "lastSync", value: new Date().toISOString() });
   });
   return { jobs: data.jobs.length };
