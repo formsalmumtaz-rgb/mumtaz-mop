@@ -77,7 +77,24 @@ export interface AgreementDocxData {
   signatory: { name: string; title: string };
   logo: DocxImage | null;
   tollFree: DocxImage | null;
+  // Item 7 — the real content, resolved per emirate from settings (mig 092).
+  entity: { legal_name_en: string; legal_name_ar: string; trade_licence: string; phone: string } | null;
+  entityEmirate: string | null;
+  client2: {
+    trade_licence: string | null; activity: string | null; contact: string | null; emirate: string | null;
+  };
+  conditions: { en: string; ar: string }[];
+  pests: { en: string; ar: string }[];
+  premises: string | null;
+  missing: string[];
 }
+
+// Arabic runs must be marked right-to-left or Word lays them out as LTR and the
+// punctuation lands on the wrong side.
+const ar = (text: string, o: RunOpts = {}) => new TextRun({
+  text: String(text), font: o.font || SANS, size: o.size || 18, bold: !!o.bold,
+  color: o.color || INK, rightToLeft: true,
+});
 
 const img = (a: DocxImage, targetWpx: number) =>
   new ImageRun({ type: "png", data: a.data, transformation: { width: targetWpx, height: Math.round((a.h / a.w) * targetWpx) } });
@@ -144,14 +161,24 @@ export async function buildAgreementDocx(d: AgreementDocxData): Promise<Buffer> 
     width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: [mm(89), mm(89)], borders: noBorders,
     rows: [new TableRow({ children: [
       cell([
-        new Paragraph({ children: [run("The Service Provider", { size: 14, color: MUTED, caps: true, spacing: 20 })], spacing: { after: 30 } }),
-        new Paragraph({ children: [run(d.org.legal_name, { font: SERIF, size: 21, bold: true })], spacing: { after: 0, line: 250 } }),
+        new Paragraph({ children: [run("The Service Provider (First Party)", { size: 14, color: MUTED, caps: true, spacing: 20 })], spacing: { after: 30 } }),
+        // The signing entity DIFFERS BY EMIRATE (Sharjah 546486 / Dubai 996625).
+        // Printing the group name on a municipality-registered contract would be
+        // a legal defect, so this comes from settings, resolved by the site.
+        new Paragraph({ children: [run(d.entity?.legal_name_en ?? d.org.legal_name, { font: SERIF, size: 21, bold: true })], spacing: { after: 0, line: 250 } }),
+        ...(d.entity ? [new Paragraph({ children: [ar(d.entity.legal_name_ar, { size: 16 })], alignment: AlignmentType.RIGHT, bidirectional: true, spacing: { after: 0, line: 240 } })] : []),
         new Paragraph({ children: [run(d.brand.name, { size: 16, color: ACCENT })], spacing: { after: 0, line: 240 } }),
+        ...(d.entity ? [new Paragraph({ children: [run(`Trade Licence ${d.entity.trade_licence}  ·  ${d.entity.phone}`, { size: 15, color: MUTED })], spacing: { after: 0, line: 240 } })] : []),
       ], { w: mm(89), borders: { top: NO_B, bottom: NO_B, right: NO_B, left: { style: BorderStyle.SINGLE, size: 18, color: ACCENT } }, margins: { top: 0, bottom: 0, left: mm(4), right: mm(4) } }),
       cell([
-        new Paragraph({ children: [run("The Client", { size: 14, color: MUTED, caps: true, spacing: 20 })], spacing: { after: 30 } }),
+        new Paragraph({ children: [run("The Contracted Establishment (Second Party)", { size: 14, color: MUTED, caps: true, spacing: 20 })], spacing: { after: 30 } }),
         new Paragraph({ children: [run(d.client.name, { font: SERIF, size: 21, bold: true })], spacing: { after: 0, line: 250 } }),
         ...d.client.addressLines.map((l) => new Paragraph({ children: [run(l, { size: 16, color: "3A3A3A" })], spacing: { after: 0, line: 240 } })),
+        ...([
+          d.client2.trade_licence ? `Trade Licence ${d.client2.trade_licence}` : null,
+          d.client2.activity ? `Activity: ${d.client2.activity}` : null,
+          d.client2.contact ? `Contact: ${d.client2.contact}` : null,
+        ].filter(Boolean) as string[]).map((l) => new Paragraph({ children: [run(l, { size: 15, color: MUTED })], spacing: { after: 0, line: 240 } })),
       ], { w: mm(89), borders: { top: NO_B, bottom: NO_B, right: NO_B, left: { style: BorderStyle.SINGLE, size: 18, color: ACCENT } }, margins: { top: 0, bottom: 0, left: mm(4), right: mm(4) } }),
     ] })],
   });
@@ -186,10 +213,56 @@ export async function buildAgreementDocx(d: AgreementDocxData): Promise<Buffer> 
   const sigTable = new Table({
     width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: [mm(89), mm(89)], borders: noBorders,
     rows: [new TableRow({ children: [
-      sigCell(`For ${d.org.legal_name}`, d.signatory.name, d.signatory.title, mm(83)),
+      // The signature block names the SIGNING entity for this emirate, not the
+      // group — it must match the first party named at the top of the document.
+      sigCell(`For ${d.entity?.legal_name_en ?? d.org.legal_name}`, d.signatory.name, d.signatory.title, mm(83)),
       sigCell("Accepted for and on behalf of the Client", "", "Authorised Signatory", mm(83)),
     ] })],
   });
+
+  // ── Targeted pests + Special conditions, English left / Arabic right ────
+  // Two columns in one table so each clause sits beside its own translation,
+  // exactly as the signed municipality contracts are laid out.
+  const bilingualRow = (en: string, arText: string) => new TableRow({
+    children: [
+      cell([new Paragraph({ children: [run(en, { size: 17 })], spacing: { after: 0, line: 250 } })],
+        { w: mm(89), borders: { top: NO_B, bottom: thin(LINE, 3), left: NO_B, right: NO_B }, margins: { top: mm(1.4), bottom: mm(1.4), left: 0, right: mm(3) } }),
+      cell([new Paragraph({ children: [ar(arText, { size: 17 })], alignment: AlignmentType.RIGHT, bidirectional: true, spacing: { after: 0, line: 250 } })],
+        { w: mm(89), borders: { top: NO_B, bottom: thin(LINE, 3), left: NO_B, right: NO_B }, margins: { top: mm(1.4), bottom: mm(1.4), left: mm(3), right: 0 } }),
+    ],
+  });
+  const bilingualTable = (lines: { en: string; ar: string }[]) => new Table({
+    width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: [mm(89), mm(89)], borders: noBorders,
+    rows: lines.map((l) => bilingualRow(l.en, l.ar)),
+  });
+
+  const pestsBlock: (Paragraph | Table)[] = d.pests.length ? [
+    new Paragraph({
+      children: [
+        run("Targeted pests", { font: SERIF, size: 21, bold: true, color: ACCENT, caps: true, spacing: 12 }),
+        run("          "),
+        ar("نوع الآفات المستهدفة", { size: 19, bold: true, color: ACCENT }),
+      ],
+      spacing: { before: 200, after: 90, line: 250 }, border: { bottom: thin(LINE, 4) },
+    }),
+    bilingualTable(d.pests),
+  ] : [];
+
+  const conditionsBlock: (Paragraph | Table)[] = d.conditions.length ? [
+    new Paragraph({
+      children: [
+        run("Special conditions", { font: SERIF, size: 21, bold: true, color: ACCENT, caps: true, spacing: 12 }),
+        run("          "),
+        ar("شروط خاصة", { size: 19, bold: true, color: ACCENT }),
+      ],
+      spacing: { before: 200, after: 90, line: 250 }, border: { bottom: thin(LINE, 4) },
+    }),
+    bilingualTable(d.conditions),
+    para(run(d.entityEmirate
+      ? `These are the ${d.entityEmirate} conditions on record. Amend in Settings, not in this file, so every future agreement carries the change.`
+      : "No emirate-specific conditions could be resolved for this contract.",
+      { size: 14, color: MUTED, italics: true }), { before: 60, after: 0 }),
+  ] : [];
 
   const body: (Paragraph | Table)[] = [
     metaTable,
@@ -199,8 +272,18 @@ export async function buildAgreementDocx(d: AgreementDocxData): Promise<Buffer> 
     heading("Scope of services", ACCENT),
     scopeTable,
     para([run("Contract value: ", { bold: true }), run(`${d.currency} ${d.contractValue}`, { bold: true, color: ACCENT }), run(`   (${d.frequency}; term ${d.term})`, { size: 16, color: MUTED })], { before: 140, after: 60 }),
-    heading("Terms and conditions", ACCENT),
-    para(run("The agreed terms and conditions — including the bilingual Sharjah Municipality schedule where applicable — are to be attached / inserted here before execution. This document is an editable draft generated from the contract record; figures above are drawn from that record and must not be re-keyed.", { size: 17, color: MUTED, italics: true }), { align: AlignmentType.JUSTIFIED, after: 160 }),
+    ...(d.premises ? [para([run("Premises covered: ", { bold: true }), run(d.premises), run("     "), ar("المناطق المشتملة", { size: 16, color: MUTED })], { after: 60 })] : []),
+    ...pestsBlock,
+    ...conditionsBlock,
+    ...(d.missing.length ? [
+      heading("Before this agreement is signed", ACCENT),
+      ...d.missing.map((m) => para(run(`• ${m}`, { size: 17, color: "B3261E" }), { after: 60 })),
+    ] : []),
+    para([
+      run("Both parties acknowledge the accuracy of the information stated herein.", { size: 17 }),
+      run("     "),
+      ar("اقر الطرفان بصحة المعلومات الواردة بهذا العقد", { size: 17 }),
+    ], { before: 200, after: 140 }),
     sigTable,
   ];
 
