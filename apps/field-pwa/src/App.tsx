@@ -193,14 +193,7 @@ export function App() {
             </div>
             {jobs.length === 0 && <p className="muted">No jobs yet. Tap “Sync” while online.</p>}
             {jobs.map((j) => (
-              <div key={j.id} className="card" onClick={() => setSelectedId(j.id)} role="button">
-                <div className="row" style={{ justifyContent: "space-between" }}>
-                  <h3>{j.customer_name}</h3>
-                  <StatusPill s={j.local_status} />
-                </div>
-                <div className="muted">{j.branch_name ?? ""}{j.address ? ` · ${j.address}` : ""}</div>
-                <div className="muted">{j.scheduled_date ?? ""}{j.service_type ? ` · ${j.service_type}` : ""}</div>
-              </div>
+              <JobCard key={j.id} job={j} onOpen={() => setSelectedId(j.id)} />
             ))}
           </>
         )}
@@ -289,6 +282,88 @@ function VanStockBar() {
   );
 }
 
+// Starting a job is one operation wherever it is triggered from — the button on
+// the job screen or a swipe on the card. Local write first, event queued after:
+// nothing here waits on the network.
+async function startJob(jobId: string): Promise<void> {
+  const now = new Date().toISOString();
+  await db.jobs.update(jobId, { local_status: "in_progress", device_started_at: now });
+  const pos = await getPosition();
+  await enqueue("job.started", jobId, {
+    device_started_at: now,
+    ...(pos ? { start_lat: pos.lat, start_lng: pos.lng } : {}),
+  });
+}
+
+// Swipe right on a scheduled job to start it — the fastest possible action with
+// gloves on, in the sun, one-handed. Only STARTING is swipeable: completing
+// needs the checklist and signatures, so a swipe on an in-progress job opens it
+// instead of pretending the work is done. A short drag is still a tap.
+const SWIPE_THRESHOLD = 96;
+
+function JobCard({ job, onOpen }: { job: LocalJob; onOpen: () => void }) {
+  const [dx, setDx] = useState(0);
+  const [firing, setFiring] = useState(false);
+  const startX = useRef<number | null>(null);
+  const canSwipe = job.local_status === "scheduled";
+  const armed = dx >= SWIPE_THRESHOLD;
+
+  const onTouchStart = (e: React.TouchEvent) => { startX.current = e.touches[0].clientX; };
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (startX.current == null || !canSwipe) return;
+    // right-drag only, with resistance past the threshold
+    const raw = e.touches[0].clientX - startX.current;
+    setDx(raw <= 0 ? 0 : raw > SWIPE_THRESHOLD ? SWIPE_THRESHOLD + (raw - SWIPE_THRESHOLD) * 0.25 : raw);
+  };
+  const onTouchEnd = () => {
+    const moved = dx;
+    startX.current = null;
+    setDx(0);
+    if (canSwipe && moved >= SWIPE_THRESHOLD) {
+      setFiring(true);
+      navigator.vibrate?.(30);
+      void startJob(job.id).finally(() => setFiring(false));
+      return;
+    }
+    if (moved < 10) onOpen();   // a drag that went nowhere is a tap
+  };
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderRadius: "12px", marginBottom: ".6rem" }}>
+      {canSwipe && (
+        <div aria-hidden style={{
+          position: "absolute", inset: 0, display: "flex", alignItems: "center", paddingLeft: "1.1rem",
+          background: armed ? "#1E7A4B" : "#E8EDE9", color: armed ? "#fff" : "#5B6B60",
+          fontWeight: 700, fontSize: ".95rem", transition: "background .12s",
+        }}>
+          {armed ? "Release to start" : "Swipe to start →"}
+        </div>
+      )}
+      <div
+        className="card"
+        role="button"
+        onClick={() => { if (dx === 0) onOpen(); }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+        style={{
+          position: "relative", margin: 0,
+          transform: `translateX(${dx}px)`,
+          transition: dx === 0 ? "transform .18s ease-out" : "none",
+          opacity: firing ? 0.6 : 1,
+        }}
+      >
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h3>{job.customer_name}</h3>
+          <StatusPill s={job.local_status} />
+        </div>
+        <div className="muted">{job.branch_name ?? ""}{job.address ? ` · ${job.address}` : ""}</div>
+        <div className="muted">{job.scheduled_date ?? ""}{job.service_type ? ` · ${job.service_type}` : ""}</div>
+      </div>
+    </div>
+  );
+}
+
 function StatusPill({ s }: { s: LocalJob["local_status"] }) {
   const cls = s === "completed" ? "done" : s === "in_progress" ? "prog" : "sched";
   const label = s === "completed" ? "Completed" : s === "in_progress" ? "In progress" : "Scheduled";
@@ -335,15 +410,7 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
     setExpAmt(""); setExpDesc(""); setMoneyMsg("Expense queued (needs approval).");
   };
 
-  const start = async () => {
-    const now = new Date().toISOString();
-    await db.jobs.update(job.id, { local_status: "in_progress", device_started_at: now });
-    const pos = await getPosition();
-    await enqueue("job.started", job.id, {
-      device_started_at: now,
-      ...(pos ? { start_lat: pos.lat, start_lng: pos.lng } : {}),
-    });
-  };
+  const start = () => startJob(job.id);
 
   const addPhoto = async (file: File) => {
     const compressed = await imageCompression(file, { maxWidthOrHeight: 1600, maxSizeMB: 0.15, fileType: "image/webp" });

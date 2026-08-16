@@ -35,6 +35,14 @@ export default defineConfig({
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
         navigateFallback: "index.html",
+        // A stale precache is how a phone ends up showing an old build — or, if
+        // the cached shell points at bundles that no longer exist, a BLANK
+        // SCREEN. These three lines make an update self-healing: drop caches
+        // from older revisions, activate the new worker immediately, and take
+        // over the open tab without waiting for every tab to close.
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
       },
       devOptions: { enabled: true },
     }),
