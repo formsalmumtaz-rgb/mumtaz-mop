@@ -7,6 +7,8 @@ import {
   previousPeriod, computePeriodReport, computePeriodAnalysis, periodReportEmail, type Period,
 } from "@mop/worker";
 import { sendReportNowAction } from "./actions";
+import { narrateReport } from "@/lib/assistant";
+import { getSession } from "@/lib/auth";
 
 // Item 5 — see the report BEFORE it is filed. This renders the exact email the
 // scheduler would send for the chosen cadence, from live figures, so the owner
@@ -32,13 +34,21 @@ export default async function ReportPreviewPage({ searchParams }: { searchParams
   const c = await pool.connect();
   let mail: { subject: string; text: string; html: string };
   let analysis: string[];
+  let figures: Record<string, unknown>;
   try {
     const report = await computePeriodReport(c, tenantId, range);
     analysis = await computePeriodAnalysis(c, tenantId, report);
     mail = periodReportEmail(report, analysis);
+    figures = { period: range, current: report.current, previous: report.previous };
   } finally {
     c.release();
   }
+
+  // Phase 2/3 commentary. The report above is already complete and sendable;
+  // this only turns the computed figures and the rule-flagged exceptions into
+  // prose. Null (no key, refusal, any error) simply renders nothing.
+  const session = await getSession();
+  const narration = await narrateReport(tenantId, session?.userId ?? null, mail.subject, figures, analysis);
 
   const chip = (active: boolean) =>
     `rounded-full border px-3 py-1 text-xs font-medium ${active ? "border-brand bg-brand/5 text-brand" : "border-neutral-300 text-neutral-600 hover:bg-neutral-50"}`;
@@ -79,6 +89,20 @@ export default async function ReportPreviewPage({ searchParams }: { searchParams
           </form>
         </CardBody>
       </Card>
+
+      {narration && (
+        <Card>
+          <CardBody className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-brand/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-brand">Commentary</span>
+              <span className="text-xs text-neutral-500">
+                Written by the assistant from the figures and flags above — the numbers themselves are computed, never generated.
+              </span>
+            </div>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{narration}</p>
+          </CardBody>
+        </Card>
+      )}
 
       <Card>
         <CardBody className="p-0 sm:p-0">

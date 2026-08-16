@@ -179,3 +179,43 @@ NEVER include prices, amounts, or quantities — pricing is computed elsewhere. 
     [tenantId, userId, brief, text, MODEL, response.usage.input_tokens, response.usage.output_tokens]);
   return { draft };
 }
+
+// ── Phase 2 + 3: narration and anomaly explanation ──────────────────────────
+// The FIGURES and the FLAGS are computed deterministically before this runs;
+// Claude only puts them into sentences. It lives in the console, never in the
+// scheduler: a report still sends, in full, with no model call anywhere near it
+// (Art. IV — delete this layer and the business runs identically). A missing key
+// or a refusal returns null and the caller simply shows nothing.
+export async function narrateReport(
+  tenantId: string, userId: string | null,
+  subject: string, figures: Record<string, unknown>, analysis: string[],
+): Promise<string | null> {
+  const client = getClient();
+  if (!client) return null;
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 700,
+      system: `You write the commentary paragraph for an operations report at a UAE facility services company, addressed to the owner.
+Rules:
+- The figures and the flagged exceptions are given to you already computed. Use ONLY those. Never introduce a number that is not in the input, and never recompute one.
+- Two short paragraphs at most: what the period says, then what deserves attention first.
+- Plain, direct English. No greeting, no sign-off, no bullet points, no headings.`,
+      messages: [{
+        role: "user",
+        content: `REPORT: ${subject}\n\nFIGURES:\n${JSON.stringify(figures, null, 1)}\n\nFLAGGED BY THE RULES:\n${analysis.map((a) => `- ${a}`).join("\n")}`,
+      }],
+    });
+    if (response.stop_reason === "refusal") return null;
+    const text = response.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
+    if (!text) return null;
+    await pool.query(
+      `insert into assistant_log (tenant_id, user_id, kind, question, answer, model, input_tokens, output_tokens)
+       values ($1,$2,'ask',$3,$4,$5,$6,$7)`,
+      [tenantId, userId, `[narration] ${subject}`, text, MODEL, response.usage.input_tokens, response.usage.output_tokens]);
+    return text;
+  } catch (e) {
+    console.error("[assistant] narration failed:", (e as Error).message);
+    return null; // the report is complete without it
+  }
+}
