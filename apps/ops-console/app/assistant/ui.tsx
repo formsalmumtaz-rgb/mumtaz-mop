@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createEstimateFromDraftAction } from "./actions";
 
 interface Turn { role: "you" | "assistant"; text: string }
 interface Draft { intro: string; scope_of_work: string[]; line_items: { description: string }[] }
@@ -85,9 +86,17 @@ export function AssistantChat() {
             <div className="font-medium">Line items</div>
             <ol className="mt-1 list-decimal pl-5">{draft.line_items.map((l, i) => <li key={i}>{l.description}</li>)}</ol>
           </div>
-          <p className="text-xs text-neutral-500">
-            Next: create the estimate in Sales → Estimates using these line descriptions — the engines (or your manual entry) price it, and the quotation PDF renders with our numbering and brand as usual.
-          </p>
+          <form action={createEstimateFromDraftAction} className="flex flex-wrap items-center gap-3 border-t border-neutral-100 pt-3">
+            <input type="hidden" name="intro" value={draft.intro} />
+            {draft.scope_of_work.map((s, i) => <input key={`s${i}`} type="hidden" name="scope" value={s} />)}
+            {draft.line_items.map((l, i) => <input key={`l${i}`} type="hidden" name="line" value={l.description} />)}
+            <button type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white">
+              Create a draft estimate from this
+            </button>
+            <span className="text-xs text-neutral-500">
+              Creates a DRAFT estimate carrying this wording and no prices — you price the lines through the engines, then issue the quotation as usual.
+            </span>
+          </form>
         </div>
       )}
 

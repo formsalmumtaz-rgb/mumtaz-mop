@@ -35,18 +35,35 @@ business. AI shall only explain the business.**
 - Config: `ANTHROPIC_API_KEY` in `apps/ops-console/.env.local` + Vercel;
   `ASSISTANT_MODEL` optional override (default `claude-opus-5`).
 
+## Phases 2–4 — SHIPPED (run 7)
+
+- **Phase 2 — report narration.** `/reports/preview` shows a *Commentary*
+  block written from the already-computed figures and the rule-flagged
+  exceptions, clearly labelled as commentary. It lives in the CONSOLE, not in
+  the scheduler: the daily/weekly/yearly emails are assembled and sent with no
+  model call anywhere near them. No key, a refusal, or any error → the block
+  simply does not render and the report is unchanged (verified: preview
+  returns 200 with the full report and zero commentary when no key is set).
+- **Phase 3 — anomaly explanation.** The same narration is given the exception
+  flags (completion rate, expenses vs revenue, overdue invoices, expiring
+  contracts, held events, bounced email) and asked what deserves attention
+  first — so the flags arrive explained, not just listed.
+- **Phase 4 — draft to estimate.** 'Create a draft estimate from this' on the
+  assistant's quotation draft creates a real DRAFT estimate carrying the
+  wording in its notes, with **no lines and no prices**, opened straight into
+  the estimate screen. The office prices it through the engines as usual —
+  nothing Claude wrote can become a number on a customer document.
+
 ## Later phases (NOT built — logged for the roadmap)
 
-- **Phase 2 — report narration.** The daily/monthly report emails gain a
-  short narrative paragraph generated FROM the computed figures (figures stay
-  deterministic; narration clearly marked as commentary).
-- **Phase 3 — anomaly explanation.** When the rule-based analysis flags an
-  exception (stock variance, margin below target, failed jobs), the
-  assistant drafts a one-paragraph explanation from the drill-down rows,
-  shown in the console next to the flag.
-- **Phase 4 — draft-to-record plumbing.** One-click "create estimate from
-  draft": the drafted lines land as a draft estimate with prices empty,
-  flagged `content_source = 'assistant'`, never auto-issued.
+- **Narration in the emails themselves.** Deliberately NOT done: it would put
+  a model call on a scheduled path. If it is ever wanted, it must be
+  pre-generated in the console and stored on the notification, never called
+  from the sweep.
+- **Per-line draft-to-estimate.** Today the drafted wording lands in the
+  estimate's notes. Structured lines (description per row, prices empty) need
+  a pricing model chosen per line, which is a real decision — worth building
+  once the category engine covers the untemplated services.
 - Cost control: per-tenant monthly token budget in settings; the panel shows
   spend from `assistant_log` token counts.
 
