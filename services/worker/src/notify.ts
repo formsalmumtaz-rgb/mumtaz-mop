@@ -329,6 +329,14 @@ Al Mumtaz Building Cleaning & Pest Control`,
       out.expiryNotices++;
     }
 
+    // (b3c) AMC lifecycle (item 4): expiry reminders + last-service closeout
+    try {
+      const { sweepContractLifecycle } = await import("./lifecycle");
+      out.expiryNotices += await sweepContractLifecycle(c, (n) => queue(c, n));
+    } catch (e) {
+      console.error("[sweep] contract lifecycle failed:", (e as Error).message);
+    }
+
     // (b4) roll the job horizon: planned schedule rows entering the generation
     // window become jobs (item 4 fix — without this, visits after the
     // activation-time window never materialized).
@@ -341,7 +349,7 @@ Al Mumtaz Building Cleaning & Pest Control`,
 
     // (c) dispatch everything queued — branded HTML preferred, text always
     const { rows: q } = await c.query(
-      `select id, tenant_id, kind, customer_id, to_email, subject, body_text, body_html from outbound_notifications
+      `select id, tenant_id, kind, customer_id, contract_id, to_email, subject, body_text, body_html from outbound_notifications
         where status = 'queued' order by created_at asc limit 200`);
     const configured = !!process.env.EMAIL_API_KEY && !!process.env.EMAIL_FROM;
     for (const n of q) {
@@ -354,6 +362,15 @@ Al Mumtaz Building Cleaning & Pest Control`,
         // Item 8: the daily report carries its Excel pack (regenerated at send
         // time from the same deterministic queries — identical numbers).
         let attachments: { filename: string; content: string }[] | undefined;
+        if (n.kind === "contract_closeout" && n.contract_id) {
+          try {
+            const { buildCloseoutPdf } = await import("./lifecycle");
+            const pdf = await buildCloseoutPdf(c, n.tenant_id, n.contract_id);
+            if (pdf) attachments = [{ filename: "contract-service-summary.pdf", content: pdf.toString("base64") }];
+          } catch (e) {
+            console.error("[sweep] closeout pdf failed:", (e as Error).message);
+          }
+        }
         if (n.kind === "daily_report") {
           try {
             const { buildDailyExcel } = await import("./reports");
