@@ -113,15 +113,15 @@ export function renderQuotationPdf(d: QuotationPdfData): Uint8Array {
   // Meta grid
   const rows: [string, string][] = [
     ["Customer", d.customer], ["Division", d.divisionName],
-    ["Customer TRN", d.customerTrn || "—"], ["Date", d.date],
-    ["Valid until", d.validUntil], ["Account no.", d.accountNumber ?? "—"],
+    ["Customer TRN", d.customerTrn || "N/A"], ["Date", d.date],
+    ["Valid until", d.validUntil], ["Account no.", d.accountNumber ?? "N/A"],
   ];
   const colW = CW / 2;
   const cell = (label: string, value: string, x: number, yy: number) => {
     doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(LABEL); doc.setCharSpace(0.4);
     doc.text(label.toUpperCase(), x, yy); doc.setCharSpace(0);
     doc.setFont("helvetica", "normal"); doc.setFontSize(10.5); doc.setTextColor(INK);
-    doc.text(value || "—", x, yy + 14);
+    doc.text(value || "N/A", x, yy + 14);
   };
   for (let i = 0; i < rows.length; i += 2) {
     cell(rows[i][0], rows[i][1], M, y);

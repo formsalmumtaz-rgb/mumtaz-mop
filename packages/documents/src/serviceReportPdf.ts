@@ -296,7 +296,7 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
     { label: "On-site Representative Name", value: dash(cu.rep_name ?? cu.contact_name), w: CW * 0.30 },
     { label: "Designation / Department", value: dash(cu.rep_designation), w: CW * 0.24 },
     { label: "Rep. Contact No.", value: dash(cu.rep_contact), w: CW * 0.20 },
-    { label: "Rep. Signature", value: d.signatureCustomerCaptured ? "(signed — see Section 12)" : "—", w: CW * 0.20 },
+    { label: "Rep. Signature", value: d.signatureCustomerCaptured ? "(signed — see Section 12)" : "N/A", w: CW * 0.20 },
   ], 28);
 
   // S3 — Service Team Details
@@ -306,8 +306,8 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
     { label: "Supervisor Name", value: dash(d.supervisor?.name ?? null), w: CW * 0.30 },
     { label: "Supervisor ID / Badge No.", value: dash(d.supervisor?.code ?? null), w: CW * 0.20 },
     { label: "Supervisor Contact No.", value: dash(d.supervisor?.phone ?? null), w: CW * 0.20 },
-    { label: "Team Size", value: teamSize > 0 ? String(teamSize) : "—", w: CW * 0.11 },
-    { label: "Supervisor Initials", value: d.supervisor?.name ? d.supervisor.name.split(/\s+/).map((p) => p[0]).join(".").toUpperCase() : "—", w: CW * 0.13 },
+    { label: "Team Size", value: teamSize > 0 ? String(teamSize) : "N/A", w: CW * 0.11 },
+    { label: "Supervisor Initials", value: d.supervisor?.name ? d.supervisor.name.split(/\s+/).map((p) => p[0]).join(".").toUpperCase() : "N/A", w: CW * 0.13 },
   ], 30);
   {
     const t = d.team;
@@ -435,7 +435,7 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
       doc.text(`${i + 1}.`, M + 2, y + 11);
       if (c) {
         doc.text(doc.splitTextToSize(c.product, 108) as string[], M + 12, y + 11);
-        doc.text(doc.splitTextToSize(c.active_ingredient ?? "—", 112) as string[], cols[1] + 3, y + 11);
+        doc.text(doc.splitTextToSize(c.active_ingredient ?? "N/A", 112) as string[], cols[1] + 3, y + 11);
         doc.text(c.concentration ?? "N/A", cols[2] + 3, y + 11);
         doc.text(`${c.quantity} ${c.unit ?? ""}`.trim(), cols[3] + 3, y + 11);
         doc.text(c.batch_no ?? "N/A", cols[4] + 3, y + 11);
@@ -463,7 +463,7 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
       ...d.findings.filter((f) => f.notes).map((f) => `${f.area}: ${f.notes}`),
       d.recommendations ? `Recommended: ${d.recommendations}` : null,
     ].filter(Boolean) as string[];
-    const text = obsParts.length ? obsParts.join("  ·  ") : "—";
+    const text = obsParts.length ? obsParts.join("  ·  ") : "N/A";
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(INK);
     const lines = doc.splitTextToSize(text, CW - 22) as string[];
     const boxH = Math.max(44, lines.length * 10 + 24);
@@ -484,7 +484,7 @@ export function renderServiceReportPdf(d: ServiceReportPdfData): Uint8Array {
     const boxW = CW * 0.47, boxH = 128;
     doc.setDrawColor(BOX); doc.setLineWidth(0.8); doc.rect(M, y, boxW, boxH);
     const latest = d.trend[d.trend.length - 1];
-    spaced(`HYGIENE ${latest?.hygiene != null ? latest.hygiene + "/5" : "—"}    STRUCTURAL ${latest?.structural != null ? latest.structural + "/5" : "—"}    INFESTATION ${dash(d.infestationLevel).toUpperCase()}`,
+    spaced(`HYGIENE ${latest?.hygiene != null ? latest.hygiene + "/5" : "N/A"}    STRUCTURAL ${latest?.structural != null ? latest.structural + "/5" : "N/A"}    INFESTATION ${dash(d.infestationLevel).toUpperCase()}`,
       M + 8, y + 13, 6.4, INK, { bold: true, spacing: 0.5 });
     if (d.trend.length >= 2) {
       const chartH = 62, base = y + 88;
