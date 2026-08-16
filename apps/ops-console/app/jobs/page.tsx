@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listJobsPaged, getJobStatusCounts, JOB_STATUSES } from "@/lib/domain/jobs";
 import { parseListParams } from "@/lib/list";
-import { ListToolbar, Pagination } from "@/components/ListControls";
+import { ListToolbar, Pagination, ExportButtons, DateRangeFilter } from "@/components/ListControls";
 import { Badge, TableWrap, Thead, Tbody, PageHeader, ButtonLink } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +64,11 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         ))}
       </div>
 
-      <ListToolbar basePath="/jobs" params={sp} showArchived={false} placeholder="Search by customer…" />
+      <div className="flex flex-wrap items-center gap-3">
+        <ListToolbar basePath="/jobs" params={sp} showArchived={false} placeholder="Search by customer…" />
+        <DateRangeFilter basePath="/jobs" params={sp} label="Scheduled" />
+        <div className="ml-auto"><ExportButtons dataset="jobs" params={sp} /></div>
+      </div>
 
       <TableWrap minWidth={860}>
         <Thead>

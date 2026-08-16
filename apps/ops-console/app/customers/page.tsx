@@ -3,7 +3,7 @@ import { getTenantId } from "@/lib/tenant";
 import { listCustomersPaged } from "@/lib/domain/customers";
 import { listFacilityTypes } from "@/lib/domain/reference";
 import { parseListParams } from "@/lib/list";
-import { ListToolbar, Pagination } from "@/components/ListControls";
+import { ListToolbar, Pagination, ExportButtons, FilterChips } from "@/components/ListControls";
 import { NewCustomerForm } from "@/components/NewCustomerForm";
 import { createCustomerAction, archiveCustomerAction, restoreCustomerAction } from "./actions";
 
@@ -25,7 +25,17 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
           <h1 className="text-2xl font-semibold">Customers</h1>
           <p className="mt-1 text-sm text-neutral-600">{total} customer(s)</p>
         </div>
-        <ListToolbar basePath="/customers" params={sp} placeholder="Search name or code" />
+        <div className="flex flex-wrap items-center gap-2">
+          <ListToolbar basePath="/customers" params={sp} placeholder="Search name or code" />
+          <ExportButtons dataset="customers" params={sp} />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <FilterChips basePath="/customers" params={sp} name="emirate" allLabel="All emirates"
+          options={["Sharjah", "Dubai", "Abu Dhabi", "Ajman"].map((e) => ({ value: e, label: e }))} />
+        <FilterChips basePath="/customers" params={sp} name="type" allLabel="All types"
+          options={[{ value: "b2b", label: "B2B" }, { value: "b2c", label: "B2C" }]} />
       </div>
 
       {/* Create — items 14-17: same-name checkbox, B2B/Sharjah defaults,
