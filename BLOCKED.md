@@ -1,66 +1,94 @@
 # BLOCKED — items needing the owner
 
-## ▶ FIRST — your device checklist (defect-sweep run, 15 Aug)
+## ▶ THE LIVE SYSTEM RIGHT NOW (run of 16 Aug)
 
-**Field app:** https://carlos-delivering-prizes-importantly.trycloudflare.com
-**Console:** https://tub-gotten-sorted-hospitality.trycloudflare.com
-**Commit both serve: `f88d10a`** — and the FOOTER of each app now shows its
-build hash, so you can confirm on-screen what you are looking at.
-
-**One-time phone reset (your PWA was serving a stale cached build — that is
-what contradicted the run summaries):**
-1. Delete the old "MOP Field" icon from the home screen.
-2. Safari → Settings → Apps → Safari → Advanced → Website Data → search
-   "trycloudflare" → delete all.
-3. Open the NEW field URL above, check the sign-in screen says
-   **build f88d10a**, then Add to Home Screen.
-
-Then walk: sign in → "You're with Team A — confirm?" → jobs PRELOAD by
-themselves → open Pre-flight (as team lead): attendance roster with
-uniform/hygiene flags, vehicle chips, fuel band 0/25/50/75/100, PPE/equipment,
-declared chemical stock vs issued → run a Calicut job (checklist, treated
-area, method chip, rep name, recommendation, both signatures) → CHECK.
-
-**Three live emails are in your inbox (all provider-confirmed delivered):**
-24h visit notice (426f7c67…), branded service report with the cloned PDF
-(6f8dadb7…), and today's daily report WITH the Excel pack (1ca99ee7…).
-
-## Reconciliation — instruction vs where it lives vs how you verify
-
-| Instruction | Status | Where | Verify on the tunnel |
-|---|---|---|---|
-| Stale-build proof | DONE | footers, both apps | hash on sign-in screen |
-| Jobs sync + preload | DONE (fixed) | field app | sign in → jobs appear unprompted |
-| Pre-flight full spec | DONE (rebuilt) | field Pre-flight | roster/flags/vehicle/band/stock |
-| Service report clone + real assets | DONE | /service-reports/:id/pdf | header = real wordmark PNG |
-| Report N/A hygiene | DONE | generated PDFs | no em-dashes |
-| Report preview+edit before filing | NOT BUILT | — | office files notes only today |
-| Maps preview | BLOCKED (key) | PinPicker | add NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY to apps/ops-console/.env.local + Vercel |
-| Pin accuracy | NEEDS your repro | server geocode | give one wrong-pin address |
-| Auto-scheduling e2e | PROVEN + defect fixed | activation + sweep | contract TEST-SCHED/26: 6 visits |
-| 24h notice | PROVEN live | sweep | inbox: "Service visit tomorrow at 09:30" |
-| Daily email + Excel + analysis | DONE, delivered | worker reports.ts | inbox attachment |
-| Weekly/monthly/yearly + analysis emails | PARTIAL | daily done; monthly screen; weekly/yearly email packs not built | — |
-| Calendar drag-drop | NOT BUILT | — | — |
-| Exports (XLS/PDF) every list | NOT BUILT (daily Excel only) | — | — |
-| Filters every list | PARTIAL (search/paging on big lists) | — | — |
-| Bulk import UI | NOT BUILT (CLI pipeline exists, Art. VII §5 compliant) | scripts/import-merge.ts | — |
-| Admin = ops UI | ALREADY TRUE | one AppShell, role-gated | margin hidden for operations role |
-| Field job cards/swipe/stack | PARTIAL (cards+celebration+stock bar; no swipe/stack) | — | — |
-| Email slop audit | PARTIAL (cards carry data; wording pass pending) | — | — |
-
-**NOT DONE this run (next run's backlog):** report preview/edit step, calendar,
-list exports+filters, bulk-import UI, weekly/yearly email packs, swipe
-interactions, full copy audit, pre/post-service split inspection screens.
-
-**Needs YOU:**
-- NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY into apps/ops-console/.env.local + Vercel
-  (the map preview renders its key-missing state until then) + A21a Places API.
-- One address where the pin lands wrong (for the accuracy fix).
-- A22/A2 service-role key for office invites; A21b; A19; A20 — unchanged.
+**Field app:** https://cards-shaw-das-rejected.trycloudflare.com
+**Console:** https://serial-export-midwest-pipe.trycloudflare.com
+**Both serve commit `ff477c4`** — check the footer/sign-in screen shows that
+hash before judging anything. (Old links from previous runs are dead — a
+tunnel dies whenever this machine's session ends. The PERMANENT fix is the
+Vercel deployment, item 2 below.)
 
 ---
 
+## YOUR TASKS — in order, with exact steps
+
+### 1. Enable the assistant (2 minutes)
+"Ask the business" is built and waiting for a key.
+1. Go to console.anthropic.com → sign in → **API keys** → Create key.
+2. Copy the key (starts `sk-ant-`).
+3. On this machine open `apps/ops-console/.env.local`, find the line
+   `# ANTHROPIC_API_KEY=sk-ant-...`, remove the `#` and paste your key.
+4. Also add the same variable in Vercel → mumtaz-mop-ops-console →
+   Settings → Environment Variables.
+5. In the console sidebar: **Admin → Ask the business**. Ask
+   "How many technicians attended today?"
+
+### 2. Maps key (5 minutes) — unblocks map previews AND address autocomplete
+1. Go to console.cloud.google.com → APIs & Services → Credentials.
+2. You already have a browser key (from the earlier setup). Click it.
+3. Under "API restrictions" make sure **Maps JavaScript API** and
+   **Places API** are enabled for it.
+4. Add to `apps/ops-console/.env.local`:
+   `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=<the key>` — and the same in Vercel.
+5. Customer → site → the map pin preview renders; the address field gains
+   autocomplete.
+
+### 3. Service-role key (2 minutes) — unblocks office-user invites + instant revocation
+1. supabase.com → project → Project Settings → API → copy the
+   **service_role** secret.
+2. Add `SUPABASE_SERVICE_ROLE_KEY=<secret>` to `apps/ops-console/.env.local`
+   and Vercel.
+
+### 4. Phone re-test (10 minutes)
+1. Delete the old home-screen icon; Safari → Settings → Apps → Safari →
+   Advanced → Website Data → delete "trycloudflare" entries.
+2. Open the FIELD URL above; sign-in screen must say **build ff477c4**.
+3. Walk: confirm-day banner → jobs preload → Pre-flight (lead): roster,
+   vehicle chips, declared stock preloaded from yesterday — NO odometer, NO
+   fuel → back → **Add expense** (photo forced) → **Log fuel** (vehicle
+   chips) → run a job (GPS captured silently) → CHECK.
+
+### 5. Answers I need (reply in chat, no clicking)
+- One address where the geocoded pin lands wrong (for the accuracy fix).
+- Cleaning + FM quotation wording: reuse the pest terms or give me yours?
+- A19: 76 imported customers + 176 contracts are HELD in staging — say
+  "commit" or give corrections.
+- A20: Dubai/Abu Dhabi municipality attestation rules + the unified
+  contract question (details in ledger below).
+- Recipes/PPE/inspection lists (A5/A6/A8) are still ASSUMED seeds —
+  confirm or correct when convenient; nothing is blocked.
+
+### 6. Real-device checklist (release gate — end of ledger)
+Airplane-mode completion, PDF on phone, photo capture, map tiles: only you
+can run these; the release is not accepted until ticked
+(ARCHITECTURE-BASELINE.md).
+
+---
+
+## Reconciliation addendum (16 Aug run)
+
+| Instruction | Status | Verify |
+|---|---|---|
+| Real logos everywhere, no drawn text | DONE | report header + any email = PNG wordmark |
+| Legal line once, PDFs only; killed "· UAE" | DONE | footer of any PDF; emails carry none |
+| Pre-flight v3 (no odometer/fuel, yesterday preload) | DONE | field → Pre-flight |
+| Technician dashboard strip | DONE | jobs screen: today/completed/to-sync |
+| Add Expense (photo required, approver) | DONE | field → Add expense |
+| Log Fuel → vehicle ledger + month-end price notice | DONE | field → Log fuel; sweep notice on month end |
+| Vehicles 1+2 registered | DONE (mig 089) | vehicle chips |
+| GPS distance derivation | DONE (capture+aggregate) | /reports/monthly → Distance by team (fills as jobs complete) |
+| Monthly profitability additions | PARTIAL (fuel/distance/below-70% shipped; full per-customer/team pack pending) | /reports/monthly |
+| AMC 90/30/10 reminders + last-service closeout email + PDF | DONE | fires via sweep; internal notices in Notifications |
+| Claude assistant phase 1 | DONE (needs your key, task 1) | Admin → Ask the business |
+| Debug sweep | DONE | gates: 25/25 worker, invariants/RLS/preflight PASS |
+
+**NOT DONE (carry-over backlog):** calendar drag-drop, per-list XLS/PDF
+exports + filters, bulk-import UI, weekly/yearly email packs, report
+preview-before-filing, swipe gestures, agreement generator rebuild (task #8),
+assistant phases 2-4 (ROADMAP-AMENDMENT.md).
+
+---
 
 ## Ledger (historic — technician app T1–T6 autonomous run onward)
 
@@ -148,7 +176,7 @@ manual reversing fuel entry. Acceptable; noted.
 **Do:** confirm/replace per your operation; the form is driven entirely off these.
 **Blocks:** nothing — the form renders whatever is configured.
 
-## 🟠 A9 — Field expense category + receipt-photo link (T5) — PARTIAL (schema done, UI remains)
+## ✅ A9 — Field expense capture — RESOLVED 16 Aug (Add Expense button: photo required, approver picker, receipt→R2 link, standalone or job-bound)
 **Done this session:**
 - (b) receipt link — **`expense_receipts` table added (mig 064)** linking an expense claim
   to its receipt photo (`job_photos`), RLS-isolated. The durable schema is ready.
