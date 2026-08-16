@@ -355,8 +355,9 @@ Al Mumtaz Building Cleaning & Pest Control`,
 
     // (b3) day-close operations report (Vision P4) — idempotent per tenant+date
     try {
-      const { queueDailyReports } = await import("./reports");
+      const { queueDailyReports, queuePeriodReports } = await import("./reports");
       out.expiryNotices += await queueDailyReports(c);
+      out.expiryNotices += await queuePeriodReports(c);
     } catch (e) {
       console.error("[sweep] daily report queueing failed:", (e as Error).message);
     }
@@ -427,11 +428,21 @@ Al Mumtaz Building Cleaning & Pest Control`,
         }
         if (n.kind === "daily_report") {
           try {
-            const { buildDailyExcel } = await import("./reports");
-            const m = /—\s*(\d{4}-\d{2}-\d{2})/.exec(n.subject);
-            const day = m?.[1] ?? new Date().toISOString().slice(0, 10);
-            const xlsx = await buildDailyExcel(c, n.tenant_id, day);
-            attachments = [{ filename: `daily-operations-${day}.xlsx`, content: xlsx.toString("base64") }];
+            const { buildRangeExcel } = await import("./reports");
+            // Subjects carry their own window: '— 2026-08-16' (daily),
+            // '— 2026-08-10 to 2026-08-16' (weekly), '— 2026-07' (monthly),
+            // '— 2026' (yearly). The workbook always matches the email.
+            const dates = n.subject.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+            const month = /—\s*(\d{4}-\d{2})\s*$/.exec(n.subject);
+            const year = /—\s*(\d{4})\s*$/.exec(n.subject);
+            let from: string, to: string;
+            if (dates.length >= 2) { from = dates[0]; to = dates[1]; }
+            else if (dates.length === 1) { from = to = dates[0]; }
+            else if (month) { from = `${month[1]}-01`; to = new Date(Date.UTC(+month[1].slice(0,4), +month[1].slice(5,7), 0)).toISOString().slice(0,10); }
+            else if (year) { from = `${year[1]}-01-01`; to = `${year[1]}-12-31`; }
+            else { from = to = new Date().toISOString().slice(0, 10); }
+            const xlsx = await buildRangeExcel(c, n.tenant_id, from, to);
+            attachments = [{ filename: `operations-${from}${from === to ? "" : `_to_${to}`}.xlsx`, content: xlsx.toString("base64") }];
           } catch (e) {
             console.error("[sweep] daily excel failed:", (e as Error).message);
           }

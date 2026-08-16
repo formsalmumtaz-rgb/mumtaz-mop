@@ -7,7 +7,11 @@ import { authEnforced } from "@/lib/auth-flags";
 // (/login, /auth/*) are exempt; /api/* is excluded by the matcher (those system
 // routes self-authorize via their own secrets/device tokens). Also refreshes the
 // session cookies on each request (standard @supabase/ssr pattern).
-const PUBLIC = ["/login", "/auth"];
+// /brand holds the company logo files that branded EMAILS reference by URL.
+// They must be reachable without a session: mail clients fetch them anonymously,
+// and until this exemption existed every email logo redirected to /login and
+// rendered as a broken image in the recipient's inbox.
+const PUBLIC = ["/login", "/auth", "/brand"];
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next({ request: req });
