@@ -42,6 +42,29 @@ Explicitly rejected: Kafka/RabbitMQ/SQS (Postgres is the bus) · repository-patt
 
 Row-Level Security is mandatory and must be **tested with a non-privileged user** as a condition of merge. An untested policy is assumed broken. External parties — customers, auditors, municipality inspectors — get scoped expiring links, never logins.
 
+## Git remote and identity — this repo is account-isolated
+
+This machine hosts a second business on a **different GitHub account**. Nothing
+here may authenticate as that account.
+
+- **The only remote is SSH via the `github-mumtaz` host alias:**
+  `git@github-mumtaz:formsalmumtaz-rgb/mumtaz-mop.git`
+  The alias is what selects the Mumtaz key (`~/.ssh/id_mumtaz`).
+- **Never `git@github.com:...`** — a plain github.com URL does not match the
+  alias, so SSH falls back to default key discovery and authenticates as the
+  **other business's account**. This is the exact crossover the setup prevents.
+- **Never the `gh` CLI** for anything that touches this repo (push, PR, auth).
+  It carries its own account state, which is a second way to act as the wrong
+  identity. Use plain `git` over the alias.
+- **Never HTTPS.** HTTPS to github.com falls through to the macOS Keychain
+  helper in Xcode's system gitconfig, which is shared across every account on
+  this machine.
+- Identity is pinned **locally** in `.git/config` (`user.name` / `user.email`),
+  not inherited from `~/.gitconfig` — there is deliberately no global identity.
+
+Verify at any time with `git remote -v` and `git ls-remote origin`; the SSH
+debug line must read `Offering public key: ~/.ssh/id_mumtaz`.
+
 ## Proof-of-Work Protocol — mandatory
 
 Any claim that a task is complete must include, in the same message:
