@@ -15,6 +15,7 @@ interface Entry {
 
 export const inspectionRecorder: Consumer = {
   name: "inspection-recorder",
+  eventTypes: ["job.inspected"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.inspected") return;
     const p = ev.payload as { job_id?: string; device_time?: string; entries?: Entry[] };

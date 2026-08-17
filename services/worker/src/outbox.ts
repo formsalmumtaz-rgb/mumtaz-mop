@@ -41,6 +41,11 @@ export type Handler = (client: PoolClient, event: ParsedEvent) => Promise<void>;
 export interface Consumer {
   name: string;
   handle: Handler;
+  // Which event types this consumer acts on. Declaring it lets the drain skip
+  // the consumer with ZERO database work; every consumer still guards on the
+  // type internally, so omitting it is safe (the drain just falls back to
+  // claiming and calling, as it always did).
+  eventTypes?: readonly EventType[];
 }
 
 export interface DrainResult {
@@ -72,9 +77,25 @@ export async function drainOnce(
       );
   let dispatched = 0;
 
+  // One connection for the whole drain. Previously a fresh checkout + BEGIN +
+  // claim + COMMIT ran for EVERY (event, consumer) pair — 12 events across 13
+  // consumers is 156 round trips to the database, which on a remote pooler is
+  // ~20 seconds of pure latency and was timing the drain out. Consumers that
+  // cannot handle an event are now skipped without touching the database, and
+  // the rest share this connection. Exactly-once is untouched: the claim insert
+  // and the handler side effect still commit in ONE transaction per pair.
+  let client = await pool.connect();
+  const freshClient = async (): Promise<void> => {
+    // Only used when the connection itself dies; a rollback on a dead client
+    // throws, and continuing with it would fail every remaining event.
+    try { client.release(); } catch { /* already gone */ }
+    client = await pool.connect();
+  };
+
+  try {
   for (const ev of events) {
     for (const c of consumers) {
-      const client = await pool.connect();
+      if (c.eventTypes && !c.eventTypes.includes(ev.event_type as EventType)) continue;
       try {
         await client.query("begin");
         // Claim the (consumer, event) pair. rowCount 1 => first time for this
@@ -94,26 +115,43 @@ export async function drainOnce(
         }
         await client.query("commit");
       } catch (err) {
-        await client.query("rollback");
         // Leave no consumer row: the event stays unprocessed and is retried on
         // the next drain. Record the attempt on the outbox for visibility.
+        try {
+          await client.query("rollback");
+        } catch {
+          await freshClient(); // the connection died, not the statement
+        }
         await pool.query(`update outbox_events set attempts = attempts + 1 where event_id = $1`, [
           ev.event_id,
         ]);
         console.error(`[outbox] consumer "${c.name}" failed on ${ev.event_id}:`, (err as Error).message);
-      } finally {
-        client.release();
       }
     }
 
-    // Mark the event processed once every registered consumer has a processed row.
-    await pool.query(
-      `update outbox_events set processed_at = now()
-        where event_id = $1
-          and (select count(*) from event_consumers
-                where event_id = $1 and status = 'processed') = $2`,
-      [ev.event_id, consumers.length],
-    );
+    // Mark the event processed once every consumer that COULD handle it has a
+    // processed row. Counting all registered consumers would leave every event
+    // permanently unprocessed now that non-matching ones are skipped — and the
+    // outbox would be re-scanned forever.
+    const applicable = consumers.filter(
+      (c) => !c.eventTypes || c.eventTypes.includes(ev.event_type as EventType),
+    ).length;
+    // applicable === 0 means nothing registered here can handle this event type.
+    // It is deliberately LEFT unprocessed rather than quietly closed off: a
+    // consumer added later must still see it. Skipping costs nothing now — the
+    // drain no longer opens a transaction per consumer to discover the mismatch.
+    if (applicable > 0) {
+      await client.query(
+        `update outbox_events set processed_at = now()
+          where event_id = $1
+            and (select count(*) from event_consumers
+                  where event_id = $1 and status = 'processed') >= $2`,
+        [ev.event_id, applicable],
+      );
+    }
+  }
+  } finally {
+    client.release();
   }
 
   return { scanned: events.length, dispatched };

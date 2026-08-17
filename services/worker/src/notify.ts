@@ -80,6 +80,7 @@ export async function sendViaProvider(args: {
 // contract.activated → annual schedule document notice (with the standing clause)
 export const annualScheduleNotifier: Consumer = {
   name: "annual-schedule-notifier",
+  eventTypes: ["contract.activated"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "contract.activated") return;
     const p = ev.payload as { contract_id: string; customer_id: string };
@@ -114,6 +115,7 @@ Al Mumtaz Building Cleaning & Pest Control`,
 // technician's NEXT scheduled job today (fired exactly when the previous job ends).
 export const jobCompletionNotifier: Consumer = {
   name: "job-completion-notifier",
+  eventTypes: ["job.completed"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.completed") return;
     const p = ev.payload as { job_id: string };
@@ -198,6 +200,7 @@ Al Mumtaz Building Cleaning & Pest Control`,
 // console) rather than silently dropped.
 export const scheduleChangeNotifier: Consumer = {
   name: "schedule-change-notifier",
+  eventTypes: ["job.rescheduled"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.rescheduled") return;
     const p = ev.payload as { job_id: string; from_date?: string | null; to_date: string; start_time?: string | null };
