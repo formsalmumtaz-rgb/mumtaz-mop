@@ -8,6 +8,7 @@ import type { Consumer, ParsedEvent } from "./outbox";
 
 export const cashCollector: Consumer = {
   name: "cash-collector",
+  eventTypes: ["cash.collected"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "cash.collected") return;
     const p = ev.payload as { job_id?: string; amount?: number; note?: string };
@@ -26,6 +27,7 @@ export const cashCollector: Consumer = {
 
 export const expenseRecorder: Consumer = {
   name: "expense-recorder",
+  eventTypes: ["expense.recorded"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "expense.recorded") return;
     const p = ev.payload as {
@@ -68,6 +70,7 @@ export const expenseRecorder: Consumer = {
 // vehicle fuel ledger (append-only), idempotent by the device capture id.
 export const fuelLogger: Consumer = {
   name: "fuel-logger",
+  eventTypes: ["fuel.logged"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "fuel.logged") return;
     const p = ev.payload as {

@@ -16,6 +16,7 @@ const VAT_RATE = 5; // % — frozen onto the invoice at issue (UAE standard). Se
 // double-bill an annual contract). Buyer tax identity frozen at issue (F3).
 const invoiceQueuer: Consumer = {
   name: "invoice-queuer",
+  eventTypes: ["job.completed"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.completed") return;
     const jobId = jobIdOf(ev);
@@ -80,6 +81,7 @@ const invoiceQueuer: Consumer = {
 // so tenants without inventory set up behave exactly as before.
 const stockDeducter: Consumer = {
   name: "stock-deducter",
+  eventTypes: ["job.completed"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.completed") return;
     const jobId = jobIdOf(ev);

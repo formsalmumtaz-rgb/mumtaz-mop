@@ -9,6 +9,7 @@ import type { Consumer, ParsedEvent } from "./outbox";
 // material valuation is already posted when its cost is computed.
 export const jobCoster: Consumer = {
   name: "job-coster",
+  eventTypes: ["job.completed"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "job.completed") return;
     const jobId = (ev.payload as { job_id?: string }).job_id ?? (ev.envelope.entity_id as string) ?? null;

@@ -49,6 +49,7 @@ async function resolveRecipeVersion(c: PoolClient, contractId: string): Promise<
 
 const scheduleGenerator: Consumer = {
   name: "schedule-generator",
+  eventTypes: ["contract.activated"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
@@ -104,6 +105,7 @@ const scheduleGenerator: Consumer = {
 
 const jobGenerator: Consumer = {
   name: "job-generator",
+  eventTypes: ["contract.activated"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
@@ -147,6 +149,7 @@ const jobGenerator: Consumer = {
 
 const renewalReminder: Consumer = {
   name: "renewal-reminder",
+  eventTypes: ["contract.activated"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "contract.activated") return;
     const contractId = (ev.payload as { contract_id: string }).contract_id;
