@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
-import { listScheduleJobs, listPlannedVisits, detectConflicts, JOB_STATUSES, type JobRow, type PlannedVisit } from "@/lib/domain/jobs";
+import { listScheduleJobs, listScheduledAreas, listShifts, listPlannedVisits, detectConflicts, JOB_STATUSES, type JobRow, type PlannedVisit } from "@/lib/domain/jobs";
+import { listTeams } from "@/lib/domain/teams";
 import { listServiceLines } from "@/lib/domain/reference";
 import { PageHeader } from "@/components/ui";
 import { ScheduleBoard, type BoardDay } from "./board";
@@ -46,9 +47,17 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
   const serviceLineId = divisionCode ? lines.find((l) => l.code === divisionCode)!.id : undefined;
   const status = sp.status && (JOB_STATUSES as readonly string[]).includes(sp.status) ? sp.status : undefined;
   const unassigned = sp.unassigned === "1";
+  // §3.4 filters. The team list is master data; the AREA list is derived from the
+  // work actually in this window, so it never offers an empty district.
+  const [teams, areas, shifts] = await Promise.all([
+    listTeams(tenantId), listScheduledAreas(tenantId, from, to), listShifts(tenantId),
+  ]);
+  const teamId = sp.team && teams.some((t) => t.id === sp.team) ? sp.team : undefined;
+  const area = sp.area && areas.some((a) => a.area === sp.area) ? sp.area : undefined;
+  const shiftId = sp.shift && shifts.some((x) => x.id === sp.shift) ? sp.shift : undefined;
 
   const [jobs, planned] = await Promise.all([
-    listScheduleJobs(tenantId, from, to, { serviceLineId, status, unassigned }),
+    listScheduleJobs(tenantId, from, to, { serviceLineId, status, unassigned, teamId, area, shiftId }),
     unassigned || status ? Promise.resolve([] as PlannedVisit[]) : listPlannedVisits(tenantId, from, to),
   ]);
   const conflicts = detectConflicts(jobs);
@@ -65,7 +74,8 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
 
   const qs = (o: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const merged = { view, from: anchor, division: divisionCode, status, unassigned: unassigned ? "1" : undefined, ...o };
+    const merged = { view, from: anchor, division: divisionCode, status,
+                     unassigned: unassigned ? "1" : undefined, team: teamId, area, shift: shiftId, ...o };
     for (const [k, v] of Object.entries(merged)) if (v) p.set(k, v);
     return `/schedule?${p.toString()}`;
   };
@@ -106,6 +116,32 @@ export default async function SchedulePage({ searchParams }: { searchParams: Pro
           {lines.map((l) => <Link key={l.id} href={qs({ division: l.code })} className={chip(divisionCode === l.code)}>{l.name}</Link>)}
           <Link href={qs({ unassigned: unassigned ? undefined : "1" })} className={chip(unassigned)}>Unassigned only</Link>
         </div>
+      </div>
+
+      {/* §3.4 — team and area filters, so the office can look at one crew or one
+          district at a time. Areas come from the work in view, not a master list. */}
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="mr-1 text-xs uppercase tracking-wide text-neutral-500">Shift</span>
+        <Link href={qs({ shift: undefined })} className={chip(!shiftId)}>All</Link>
+        {shifts.map((x) => (
+          <Link key={x.id} href={qs({ shift: x.id })} className={chip(shiftId === x.id)}>{x.name}</Link>
+        ))}
+        <span className="ml-3 mr-1 text-xs uppercase tracking-wide text-neutral-500">Team</span>
+        <Link href={qs({ team: undefined })} className={chip(!teamId)}>All</Link>
+        {teams.map((t) => (
+          <Link key={t.id} href={qs({ team: t.id })} className={chip(teamId === t.id)}>{t.name}</Link>
+        ))}
+        {areas.length > 0 && (
+          <>
+            <span className="ml-3 mr-1 text-xs uppercase tracking-wide text-neutral-500">Area</span>
+            <Link href={qs({ area: undefined })} className={chip(!area)}>All</Link>
+            {areas.slice(0, 12).map((a) => (
+              <Link key={a.area} href={qs({ area: a.area })} className={chip(area === a.area)}>
+                {a.area} <span className="text-neutral-400">{a.jobs}</span>
+              </Link>
+            ))}
+          </>
+        )}
       </div>
 
       <ScheduleBoard days={days} view={view} today={today} conflictIds={[...conflicts]} />

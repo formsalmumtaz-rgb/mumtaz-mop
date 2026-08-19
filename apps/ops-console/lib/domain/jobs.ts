@@ -86,13 +86,20 @@ export async function getJobStatusCounts(tenantId: string): Promise<Record<strin
 // unassigned), ordered by day then start time for the calendar.
 export async function listScheduleJobs(
   tenantId: string, from: string, to: string,
-  opts: { serviceLineId?: string; status?: string; unassigned?: boolean } = {},
+  opts: { serviceLineId?: string; status?: string; unassigned?: boolean;
+          teamId?: string; shiftId?: string; area?: string } = {},
 ): Promise<JobRow[]> {
   const where = ["j.tenant_id=$1", "j.scheduled_date is not null", "j.scheduled_date >= $2", "j.scheduled_date <= $3"];
   const params: unknown[] = [tenantId, from, to];
   if (opts.serviceLineId) { params.push(opts.serviceLineId); where.push(`j.service_line_id = $${params.length}`); }
   if (opts.status && (JOB_STATUSES as readonly string[]).includes(opts.status)) { params.push(opts.status); where.push(`j.status = $${params.length}`); }
   if (opts.unassigned) where.push(`not exists (select 1 from job_assignments ja where ja.job_id = j.id)`);
+  // §3.4 — the operations calendar filters by team, shift and AREA as well as
+  // division. "Area" is the district on the customer, the same notion §3.3 slots
+  // first visits by, so the two features agree on what an area is.
+  if (opts.teamId) { params.push(opts.teamId); where.push(`j.team_id = $${params.length}`); }
+  if (opts.shiftId) { params.push(opts.shiftId); where.push(`j.shift_id = $${params.length}`); }
+  if (opts.area) { params.push(opts.area); where.push(`cu.district = $${params.length}`); }
   const { rows } = await scopedRead(tenantId,
     `${SELECT_JOB} where ${where.join(" and ")}
       order by j.scheduled_date, j.scheduled_start nulls last, cu.trade_name`, params);
@@ -340,4 +347,30 @@ export async function setJobStatus(tenantId: string, id: string, status: string)
     await c.query(`update jobs set status=$1 where id=$2`, [status, id]);
     await audit(c, tenantId, { table: "jobs", rowId: id, action: "update", oldValue: { status: before.status }, newValue: { status }, note: `job status set to ${status}` });
   });
+}
+
+// The areas that actually have work in a window — the calendar's area filter is
+// built from the schedule itself, so it never offers a district with nothing in
+// it and never needs an area master to be maintained (§3.3/§3.4 agree on "area"
+// = the district on the customer).
+export async function listScheduledAreas(
+  tenantId: string, from: string, to: string,
+): Promise<{ area: string; jobs: number }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select cu.district as area, count(*)::int as jobs
+       from jobs j join customers cu on cu.id = j.customer_id
+      where j.tenant_id=$1 and j.scheduled_date between $2 and $3
+        and nullif(trim(cu.district),'') is not null and j.archived_at is null
+      group by 1 order by 2 desc, 1`, [tenantId, from, to]);
+  return rows as { area: string; jobs: number }[];
+}
+
+// Shifts as the calendar's filter offers them (§3.4). Day/night is per-branch in
+// this business (closing time lives on the outlet), so the shift on a job is the
+// window it was scheduled into, not a property of the crew.
+export async function listShifts(tenantId: string): Promise<{ id: string; name: string; start_time: string | null; end_time: string | null }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, name, start_time::text, end_time::text from shifts
+      where tenant_id=$1 and is_active order by start_time nulls last, name`, [tenantId]);
+  return rows as { id: string; name: string; start_time: string | null; end_time: string | null }[];
 }
