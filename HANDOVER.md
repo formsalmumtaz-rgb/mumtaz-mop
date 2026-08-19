@@ -10,7 +10,7 @@ Last updated: 19 Aug 2026.
 
 ## 1. WHERE WE ARE
 
-Last updated: **19 Aug 2026**, head **`31aabcd`**.
+Last updated: **19 Aug 2026**, head **`6b15989`**.
 
 - **[FACT] The 583-customer import is DONE and live.** 583 customers on 5-digit
   account numbers (11111-11827), 24 groups, 464 sites, 403 contacts. 16 legacy
@@ -26,7 +26,7 @@ Last updated: **19 Aug 2026**, head **`31aabcd`**.
   engagement type · 102/103 area-window settings (owner-ratified) · 105 schedule
   approvals + home-base pin · 106 team_vehicles · 107 category dosage · 108 fuel
   consumption · 109 invoices-are-triggered.
-- **[FACT] Green at `31aabcd`:** `tsc` clean, RLS gate passes, `next build`
+- **[FACT] Green at `6b15989`:** `tsc` clean, RLS gate passes, `next build`
   compiles, worker suite **26/26**.
 - **[FACT] The intermittent suite failure is CLOSED** - root cause proven, see
   `DEBT.md` D-TEST1. An idle-in-transaction session blocked the drain's claim
@@ -58,10 +58,12 @@ Last updated: **19 Aug 2026**, head **`31aabcd`**.
   **Correction:** mig 108 had invented `cost.vehicle_litres_per_100km` = 12 when
   `cost.vehicle_km_per_litre` = 5 already existed unassumed; mig 110 deleted it
   and travel now reads `cost.standard_vehicle_rate_per_km`.
-- **§3.6 part done.** Invoices are TRIGGERED (mig 109) — the nightly cron
-  prepares, a human issues. The Sharjah F&B attestation charge (mig 112) is
-  editable via settings, overridable per contract, and removable via
-  `attestation_fee_waived`; six branches proven.
+- **§3.6 part done.** Invoices are TRIGGERED (mig 109). Attestation charge
+  (mig 112) — settings rate, per-contract override, per-contract waiver, six
+  branches proven. Job outcome from the app (mig 114) — completed / cancelled /
+  **delayed**, both non-completion outcomes requiring a reason by CHECK
+  constraint, arriving through the same idempotent device-sync path.
+  Blitz AED 85/L confirmed as the standard cost (mig 113), not an assumption.
 
 ## 2. THE DECISION JUST MADE — 5-digit account numbers (RATIFIED)
 
@@ -189,10 +191,13 @@ in one tap:
 - **DONE:** Sharjah F&B AED 250 + VAT attestation charge (mig 112) — settings
   rate, per-contract override, per-contract waiver, first invoice only,
   idempotent.
-- **REMAINING:** **technician invoice at completion**
-  (prepopulated, adjustable, partial/overpayment accepted, receipt voucher from
-  the app); **job status from the app** — completed / cancelled / delayed with
-  reason, flowing to ops and the schedule.
+- **DONE:** job status from the app (mig 114) — completed / cancelled / delayed,
+  reason mandatory on the two non-completion outcomes, idempotent by client_uuid,
+  a late cancel cannot overwrite a completed job.
+- **REMAINING:** **technician invoice at completion** — prepopulated from the
+  job, amount adjustable, partial payment AND overpayment accepted (record what
+  is actually received, never what is owed), receipt voucher generated from the
+  tech/supervisor app on payment. This is the last piece of §3.6.
 
 ### 3.7 — §7 technician + supervisor apps
 - **All ~20 technicians get auth accounts.** Bulk-create from the imported staff
