@@ -279,6 +279,15 @@ export async function runNotificationSweep(pool: Pool): Promise<SweepResult> {
          left join customer_branches b on b.id = j.branch_id
         where j.scheduled_date = current_date + 1
           and j.status in ('scheduled','assigned')
+          -- §3.4: the customer is told only once the OFFICE HAS APPROVED the day.
+          -- This used to fire the moment the schedule was generated, which meant
+          -- customers were promised visits the office had not yet agreed to and
+          -- every later adjustment became an apology. Approving the whole day
+          -- (shift_id is null) covers every shift in it.
+          and exists (select 1 from schedule_approvals a
+                       where a.tenant_id = j.tenant_id
+                         and a.operating_date = coalesce(j.operating_date, j.scheduled_date)
+                         and (a.shift_id is null or a.shift_id = j.shift_id))
           and not exists (select 1 from outbound_notifications n
                            where n.job_id = j.id and n.kind = 'visit_notice_24h')`);
     for (const j of due) {

@@ -63,6 +63,7 @@ const GROUPS: Group[] = [
   ] },
   { label: "Operations", items: [
     { href: "/schedule", label: "Schedule", icon: "schedule" },
+    { href: "/schedule/approvals", label: "Schedule approval" },
     { href: "/jobs", label: "Jobs", icon: "jobs" },
     { href: "/jobs/new", label: "New job" },
     { href: "/service-reports", label: "Service reports", icon: "reports" },
