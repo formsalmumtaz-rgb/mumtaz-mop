@@ -10,7 +10,7 @@ Last updated: 19 Aug 2026.
 
 ## 1. WHERE WE ARE
 
-Last updated: **19 Aug 2026**, head **`6b15989`**.
+Last updated: **19 Aug 2026**, head **`e034f3d`**.
 
 - **[FACT] The 583-customer import is DONE and live.** 583 customers on 5-digit
   account numbers (11111-11827), 24 groups, 464 sites, 403 contacts. 16 legacy
@@ -21,12 +21,12 @@ Last updated: **19 Aug 2026**, head **`6b15989`**.
 - **[FACT] Doctrine now in force** - DECISIONS §12 (5-digit account numbers),
   §13 (multi-outlet = group -> customers -> branches; the Sultan Al Arab merge is
   SUPERSEDED and was never performed), §14 (file is truth, legacy is history).
-- **[FACT] Migrations 097-109 applied.** 097 account-number scheme · 098 group
+- **[FACT] Migrations 097-119 applied.** 097 account-number scheme · 098 group
   matching · 099/104 declared attributes · 100 reconciliation link · 101 contract
   engagement type · 102/103 area-window settings (owner-ratified) · 105 schedule
   approvals + home-base pin · 106 team_vehicles · 107 category dosage · 108 fuel
   consumption · 109 invoices-are-triggered.
-- **[FACT] Green at `6b15989`:** `tsc` clean, RLS gate passes, `next build`
+- **[FACT] Green at `e034f3d`:** `tsc` clean, RLS gate passes, `next build`
   compiles, worker suite **26/26**.
 - **[FACT] The intermittent suite failure is CLOSED** - root cause proven, see
   `DEBT.md` D-TEST1. An idle-in-transaction session blocked the drain's claim
@@ -58,12 +58,24 @@ Last updated: **19 Aug 2026**, head **`6b15989`**.
   **Correction:** mig 108 had invented `cost.vehicle_litres_per_100km` = 12 when
   `cost.vehicle_km_per_litre` = 5 already existed unassumed; mig 110 deleted it
   and travel now reads `cost.standard_vehicle_rate_per_km`.
-- **§3.6 part done.** Invoices are TRIGGERED (mig 109). Attestation charge
-  (mig 112) — settings rate, per-contract override, per-contract waiver, six
-  branches proven. Job outcome from the app (mig 114) — completed / cancelled /
-  **delayed**, both non-completion outcomes requiring a reason by CHECK
-  constraint, arriving through the same idempotent device-sync path.
-  Blitz AED 85/L confirmed as the standard cost (mig 113), not an assumption.
+- **§3.6 COMPLETE.** Invoices are TRIGGERED (109). Attestation charge (112) —
+  settings rate, per-contract override, per-contract waiver. Job outcome from the
+  app (114) — completed / cancelled / **delayed**, reason mandatory by CHECK.
+  **Technician invoice at completion (115)** — partial AND overpayment now
+  possible at all: `fn_record_receipt` had required allocations to EQUAL the
+  receipt (overpayment impossible) and ad-hoc invoices to be paid in full
+  (partial impossible). Unapplied cash credits a new customer-advances liability
+  (2250) instead of understating AR. Field cash previously never reached the
+  ledger at all; it does now.
+- **§3.7 part done.** Google sign-in restricted to pre-registered employees
+  (116) — `fn_link_google_identity` allows only an active, pre-registered
+  address and **never creates an app_user**; eight decisions proven. Uniform
+  checklist, TIME IN/OUT and a derived working-hours view (117). HR requests
+  incl. sick leave with an approval queue (118).
+- **§3.8 part done.** Fuel bands corrected from 4 quarters to the 8 specified
+  (117). Refuel records **who paid** — payer, cash vs top-up card, receipt photo,
+  gauge band — and `fuel_cash_owed_to_technicians` reconciles by PAYER, not by
+  van (119). fuel.logged proven idempotent by client_uuid.
 
 ## 2. THE DECISION JUST MADE — 5-digit account numbers (RATIFIED)
 
@@ -194,10 +206,11 @@ in one tap:
 - **DONE:** job status from the app (mig 114) — completed / cancelled / delayed,
   reason mandatory on the two non-completion outcomes, idempotent by client_uuid,
   a late cancel cannot overwrite a completed job.
-- **REMAINING:** **technician invoice at completion** — prepopulated from the
-  job, amount adjustable, partial payment AND overpayment accepted (record what
-  is actually received, never what is owed), receipt voucher generated from the
-  tech/supervisor app on payment. This is the last piece of §3.6.
+- **DONE:** technician invoice at completion (mig 115) — `job.invoiced` raises it
+  at the door with an adjustable amount, respecting the service-report gate
+  (no report yet = a PREPARED invoice, not a failing event). `cash.collected`
+  settles it as far as the money goes: underpayment leaves the shortfall in AR,
+  overpayment credits customer advances. §3.6 is complete.
 
 ### 3.7 — §7 technician + supervisor apps
 - **All ~20 technicians get auth accounts.** Bulk-create from the imported staff
