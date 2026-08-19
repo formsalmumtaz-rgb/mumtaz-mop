@@ -46,12 +46,26 @@ test("rerunning the worker creates no duplicates (idempotent)", async () => {
   assert.equal(await invCount(), 1, "still exactly one invoice");
 });
 
-test("generated invoice is issued, numbered and GL-posted", async () => {
+test("recurring billing PREPARES the invoice — it does not issue it", async () => {
+  // "Invoices are TRIGGERED, never auto-generated" (CLAUDE.md). The nightly cron
+  // used to number the invoice and post it to the GL, so the business had a legally
+  // real document nobody had agreed to send. It now stops at prepared.
   const inv = (await pool.query(`select id, status, invoice_number, billing_period::text from invoices where contract_id=$1`, [contractId])).rows[0];
-  assert.equal(inv.status, "issued");
-  assert.match(inv.invoice_number, /^AMTX\//);
-  assert.equal(inv.billing_period, "2026-06-15");
+  assert.notEqual(inv.status, "issued", "the cron must not issue");
+  assert.equal(inv.invoice_number, null, "an unissued invoice has no number in the AMTX series");
+  assert.equal(inv.billing_period, "2026-06-15", "the period arithmetic is unchanged");
   const gl = (await pool.query(`select count(*)::int n from journal_entries where source_type='invoice' and source_id=$1`, [inv.id])).rows[0].n;
+  assert.equal(gl, 0, "nothing reaches the ledger until a human issues it");
+});
+
+test("issuing it — the human trigger — numbers it and posts it exactly as before", async () => {
+  const before = (await pool.query(`select id from invoices where contract_id=$1`, [contractId])).rows[0];
+  await pool.query(`select fn_issue_invoice($1)`, [before.id]);
+  await pool.query(`select fn_post_invoice_gl($1)`, [before.id]);
+  const inv = (await pool.query(`select status, invoice_number from invoices where id=$1`, [before.id])).rows[0];
+  assert.equal(inv.status, "issued");
+  assert.match(inv.invoice_number, /^AMTX\//, "numbered in the house series");
+  const gl = (await pool.query(`select count(*)::int n from journal_entries where source_type='invoice' and source_id=$1`, [before.id])).rows[0].n;
   assert.equal(gl, 1, "posted to the GL exactly once");
 });
 
