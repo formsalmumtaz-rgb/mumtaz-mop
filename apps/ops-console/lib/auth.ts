@@ -34,7 +34,24 @@ export async function getSession(): Promise<AppSession | null> {
     return null; // auth not reachable/enabled yet — treat as unauthenticated (inert phase)
   }
   if (!user) return null;
-  const resolved = await resolveActor(user.id);
+
+  // §3.7 — a GOOGLE sign-in is only a session if that address was pre-registered
+  // against an active employee. fn_link_google_identity decides and links on first
+  // use; it returns null for an address nobody registered, for a deactivated
+  // employee, and for a look-alike, and it never creates an app_user. An unknown
+  // Google account therefore gets no session and leaves no trace — rejected, never
+  // auto-provisioned. Email/password is untouched and remains the fallback.
+  const viaGoogle = (user.app_metadata?.provider ?? "") === "google"
+    || (user.identities ?? []).some((i: { provider?: string }) => i.provider === "google");
+  let actorId: string | null = user.id;
+  if (viaGoogle) {
+    const { rows } = await pool.query(`select fn_link_google_identity($1,$2) as id`,
+      [user.id, user.email ?? ""]);
+    actorId = (rows[0]?.id as string | null) ?? null;
+    if (!actorId) return null;   // not on the allowlist
+  }
+
+  const resolved = await resolveActor(actorId);
   // getSession only returns a session for an ACTIVE login (deactivated users are
   // revoked — see resolveActor for the revocation-aware variant the field app uses).
   return resolved && resolved.isActive ? resolved.session : null;

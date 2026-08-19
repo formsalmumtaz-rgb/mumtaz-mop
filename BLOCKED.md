@@ -58,6 +58,41 @@ receipts never reaching the ledger — is fixed in this run.
 
 ---
 
+### 0B. Google sign-in is built — I need the 11 addresses (19 Aug, run 10)
+
+Your OAuth setup is done, so the allowlist is now built and proven: a Google
+account can only sign in if its address was **pre-registered against an active
+employee**. Everything else is refused and **nothing is auto-created** — an
+unknown Google account leaves no trace at all. Email/password is untouched.
+
+Proven, eight cases:
+
+| | |
+|---|---|
+| pre-registered, active employee | allow |
+| same address, different capitalisation | allow |
+| an address nobody registered | reject |
+| a **deactivated** employee's address | reject |
+| look-alike (`tech.proof.@gmail.com`) | reject |
+| app_users auto-created by any of it | **0** |
+
+**What I need: the real Google address for each technician.** There are **11
+active technicians**, not 20 — if the other nine exist they are not in the system
+yet. Give me this and I will register them:
+
+```
+technician_code,google_email
+tech_01,<their gmail>
+tech_02,<their gmail>
+```
+
+`scripts/provision-employee-logins.ts` rehearses first and rolls back, refuses an
+address already registered to someone else, refuses a code that is not an active
+technician, and only writes with `--commit`. A mistyped address fails CLOSED:
+that person simply cannot sign in, rather than an unexpected account existing.
+
+---
+
 ### 0A. THE IMPORT IS DONE — what is waiting for you in the console (19 Aug, run 9)
 
 **All 583 customers from the master file are live**, each on its own 5-digit
