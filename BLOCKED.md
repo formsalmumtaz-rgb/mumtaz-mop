@@ -26,17 +26,45 @@ draft-to-estimate are all built and waiting on one key.
 
 Without the key everything still works; the AI parts just stay hidden.
 
-### 2. Maps key (5 minutes) — map previews + address autocomplete
+### 2. Google sign-in for the technician app (10 minutes, your accounts)
+
+The app will accept Google sign-in, but **only for pre-registered employees** —
+an unknown Google account is rejected, never auto-provisioned. Email/password
+stays as the fallback. Two consoles, in this order:
+
+**A. Google Cloud Console** (console.cloud.google.com)
+1. Pick (or create) the project → **APIs & Services → OAuth consent screen**.
+2. User type **External** → Create. App name `Mumtaz Field`, your support
+   email, developer email. Save.
+3. Scopes: the defaults (`email`, `profile`, `openid`) are enough — add nothing.
+4. Publishing status: **Publish app** (in Testing mode only listed test users
+   can sign in).
+5. **Credentials → Create credentials → OAuth client ID → Web application**.
+   Name it `Mumtaz Field PWA`.
+6. **Authorised redirect URI** — exactly this, from your Supabase project:
+   `https://xpkniuhcjysisfbfiqhn.supabase.co/auth/v1/callback`
+7. Create → copy the **Client ID** and **Client secret**.
+
+**B. Supabase** (supabase.com → your project)
+8. **Authentication → Providers → Google** → enable.
+9. Paste the Client ID and Client secret from step 7 → Save.
+10. **Authentication → URL Configuration** → add the field app's URL to
+    *Redirect URLs* (the tunnel URL now; the permanent URL when it exists).
+
+Tell me when that's done and I wire the employee-email allowlist check so only
+registered staff can complete a sign-in.
+
+### 3. Maps key (5 minutes) — map previews + address autocomplete
 1. console.cloud.google.com → APIs & Services → Credentials → your browser key.
 2. Under "API restrictions" enable **Maps JavaScript API** and **Places API**.
 3. Add `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=<key>` to
    `apps/ops-console/.env.local` **and** Vercel.
 
-### 3. Service-role key (2 minutes) — office invites + instant revocation
+### 4. Service-role key (2 minutes) — office invites + instant revocation
 supabase.com → project → Settings → API → copy **service_role** → add
 `SUPABASE_SERVICE_ROLE_KEY=<secret>` to `.env.local` and Vercel.
 
-### 4. Phone re-test (10 minutes)
+### 5. Phone re-test (10 minutes)
 1. Delete the old home-screen icon. Safari → Settings → Apps → Safari →
    Advanced → Website Data → delete every "trycloudflare" entry.
 2. Open the FIELD URL. The sign-in screen must read **build 018e3af**.
@@ -45,7 +73,7 @@ supabase.com → project → Settings → API → copy **service_role** → add
    goes to In progress) → Pre-flight (team lead) → Add expense → Log fuel →
    run a job → CHECK.
 
-### 5. Answers I still need (reply in chat)
+### 6. Answers I still need (reply in chat)
 - One address whose map pin lands wrong, for the geocoding fix.
 - Cleaning + FM quotation wording: reuse the pest terms, or give me yours?
 - **A19:** 76 imported customers + 176 contracts are still HELD in staging —
@@ -54,7 +82,7 @@ supabase.com → project → Settings → API → copy **service_role** → add
 - **A20:** Dubai / Abu Dhabi municipality attestation rules.
 - Recipes / PPE / inspection lists (A5/A6/A8) are still ASSUMED seeds.
 
-### 6. Real-device checklist (release gate — end of this file)
+### 7. Real-device checklist (release gate — end of this file)
 Airplane-mode completion, PDF on the phone, photo capture, map tiles. Only you
 can run these; the release is not accepted until they are ticked
 (ARCHITECTURE-BASELINE.md).

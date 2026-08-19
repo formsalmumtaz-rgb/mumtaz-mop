@@ -11,14 +11,38 @@ export async function createCustomerAction(formData: FormData): Promise<void> {
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   const emirate = String(formData.get("emirate") ?? "");
+  // Every field the form asks is carried through — a question the office answers
+  // must never be silently dropped on the way to the record.
+  const f = (k: string) => String(formData.get(k) ?? "");
   const id = await createCustomer(tenantId, sl, {
-    trade_name: String(formData.get("trade_name") ?? ""),
-    legal_name: String(formData.get("legal_name") ?? ""),
-    trn: String(formData.get("trn") ?? ""),
-    trade_license: String(formData.get("trade_license") ?? ""),
-    customer_type: String(formData.get("customer_type") ?? ""),
-    emirate,
+    trade_name: f("trade_name"), legal_name: f("legal_name"), trn: f("trn"),
+    trade_license: f("trade_license"), customer_type: f("customer_type"), emirate,
+    alias_name: f("alias_name"),
+    industry_category_id: f("industry_category_id"),
+    municipality_category_id: f("municipality_category_id"),
+    trade_licence_no: f("trade_licence_no"), tl_expiry: f("tl_expiry"),
+    contact_person: f("contact_person"), contact_designation: f("contact_designation"),
+    whatsapp: f("whatsapp"),
+    preferred_shift: f("preferred_shift"), preferred_language: f("preferred_language"),
+    payment_terms: f("payment_terms"), billing_frequency: f("billing_frequency"),
+    referred_by: f("referred_by"), access_notes: f("access_notes"),
+    place_of_supply: f("place_of_supply"), district: f("district"),
+    po_box: f("po_box"), priority: f("priority"),
+    night_shift_service: f("night_shift_service"),
   });
+
+  // The contact details the form collects become a real contact row — otherwise
+  // the office types a phone number that lands nowhere.
+  const cName = f("contact_person").trim(), cEmail = f("contact_email").trim();
+  const cPhone = (f("contact_mobile").trim() || f("contact_phone").trim());
+  if (cName || cEmail || cPhone) {
+    const { withTenantTx } = await import("@/lib/domain/tx");
+    await withTenantTx(tenantId, (c) => c.query(
+      `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, email, role)
+       values ($1,$2,$3,$4,$5,$6,$7)`,
+      [tenantId, sl, id, cName || "Primary contact", cPhone || null, cEmail || null,
+       f("contact_designation").trim() || null]));
+  }
 
   // Item 16: the FIRST site is captured on the same form. The pin is geocoded
   // server-side from the address (Art. XVII); geocode failure just leaves the

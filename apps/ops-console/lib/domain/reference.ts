@@ -67,3 +67,18 @@ export async function getActiveDivision(tenantId: string): Promise<ServiceLine> 
   if (!rows[0]) throw new Error("No active service line found (apply 010_seed)");
   return rows[0] as ServiceLine;
 }
+
+// Run 8: reference lists for the customer registration question set. Both are
+// editable data, not enums — the owner adds a category without a deploy.
+export async function listIndustryCategories(tenantId: string): Promise<{ id: string; name: string | null }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, name from industry_categories
+      where tenant_id = $1 and is_active order by sort_order, name`, [tenantId]);
+  return rows as { id: string; name: string | null }[];
+}
+
+export async function listMunicipalityCategories(tenantId: string): Promise<{ id: string; name: string | null }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, name from municipality_categories where tenant_id = $1 order by code`, [tenantId]);
+  return rows as { id: string; name: string | null }[];
+}
