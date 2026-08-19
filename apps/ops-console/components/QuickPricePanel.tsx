@@ -37,7 +37,10 @@ export function QuickPricePanel({ presets, customerLabel }: {
             </p>
 
             <dl className="mt-3 space-y-1 text-sm">
-              <div className="flex justify-between"><dt className="text-neutral-500">Material</dt><dd>{aed(p.material_cost)}</dd></div>
+              <div className="flex justify-between">
+                <dt className="text-neutral-500">Material{p.material_note && <span className="block text-xs text-neutral-400">{p.material_note}</span>}</dt>
+                <dd>{aed(p.material_cost)}</dd>
+              </div>
               <div className="flex justify-between"><dt className="text-neutral-500">Labour</dt><dd>{aed(p.labour_cost)}</dd></div>
               <div className="flex justify-between"><dt className="text-neutral-500">Travel</dt><dd>{aed(p.travel_cost)}</dd></div>
               <div className="mt-1 flex justify-between border-t border-neutral-200 pt-1 font-medium">

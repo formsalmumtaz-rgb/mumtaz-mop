@@ -94,6 +94,22 @@ export async function ingestDeviceEvents(
             [ev.job_id, JSON.stringify(gps), tenantId]);
         }
       }
+      // §3.6 — cancelled and delayed come from the app the same way completion
+      // does: idempotent by client_uuid, held if the login was revoked. The
+      // reason is stored on the job because that is where ops and the schedule
+      // read it; a delayed job stays open and reappears for rescheduling, a
+      // cancelled one does not.
+      if ((ev.event_type === "job.cancelled" || ev.event_type === "job.delayed") && !needsReview) {
+        const outcome = ev.event_type === "job.cancelled" ? "cancelled" : "delayed";
+        const reason = String((ev.payload as { reason?: unknown }).reason ?? "").trim();
+        if (reason) {
+          await client.query(
+            `update jobs set status=$4, status_reason=$2, status_changed_at=now()
+              where id=$1 and tenant_id=$3 and status not in ('completed','cancelled')`,
+            [ev.job_id, reason, tenantId, outcome],
+          );
+        }
+      }
       if (ev.event_type === "job.completed" && !needsReview) {
         await client.query(
           `update jobs set status='completed', device_completed_at=$2, completed_at=coalesce(completed_at, now())

@@ -17,6 +17,7 @@ export interface QuickPrice {
   service_minutes: number | null;
   material_cost: number | null;
   material_basis: "batch" | "fallback" | "unknown";
+  material_note: string | null;
   price_per_litre: number | null;
   labour_cost: number | null;
   labour_basis: string | null;
@@ -109,9 +110,12 @@ export async function quickPrice(
                  : r.fallback_per_litre != null ? Number(r.fallback_per_litre) : null;
   const materialBasis: QuickPrice["material_basis"] =
     r.batch_per_litre != null ? "batch" : r.fallback_per_litre != null ? "fallback" : "unknown";
-  if (materialBasis === "fallback") {
-    assumptions.push(`concentrate priced at AED ${perLitre}/L from settings — no purchase has been recorded yet, so this is not a real batch cost`);
-  }
+  // The settings price is the owner-confirmed STANDARD cost, not a guess, so it
+  // is not an assumption to flag. It is still worth saying which of the two the
+  // number came from, because a real goods receipt supersedes it automatically.
+  const materialNote = materialBasis === "batch"
+    ? "from the last recorded purchase"
+    : materialBasis === "fallback" ? "at the standard cost (no goods receipt yet)" : null;
   const materialCost = totalMl != null && perLitre != null ? +( (totalMl / 1000) * perLitre ).toFixed(2) : null;
 
   const serviceMinutes = r.est_duration_hours != null
@@ -158,6 +162,7 @@ export async function quickPrice(
     crew_size: r.crew_size != null ? Number(r.crew_size) : null,
     service_minutes: serviceMinutes,
     material_cost: materialCost, material_basis: materialBasis, price_per_litre: perLitre,
+    material_note: materialNote,
     labour_cost: labourCost, labour_basis: labourBasis,
     distance_km: distanceKm, travel_cost: travelCost,
     travel_basis: distanceKm != null

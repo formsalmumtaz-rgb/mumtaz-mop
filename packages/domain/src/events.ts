@@ -18,6 +18,8 @@ export const EVENT_TYPES = [
   "job.completed",
   "job.inspected",
   "job.failed",
+  "job.cancelled",
+  "job.delayed",
   "stock.consumed",
   "stock.transferred",
   "purchase.recorded",
@@ -94,6 +96,22 @@ export const payloadSchemas = {
     job_id: z.string().uuid(),
     client_uuid: z.string().uuid().nullish(),
     device_completed_at: z.string().nullish(),
+  }),
+  // §3.6 — the two outcomes that are NOT completion. Both demand a reason: the
+  // technician is the only person who knows why, and by the time the office asks,
+  // the day has moved on. Cancelled closes the visit; delayed sends it back to the
+  // office to reschedule, which is the opposite.
+  "job.cancelled": z.object({
+    job_id: z.string().uuid(),
+    client_uuid: z.string().uuid().nullish(),
+    reason: z.string().min(1),
+    device_time: z.string().nullish(),
+  }),
+  "job.delayed": z.object({
+    job_id: z.string().uuid(),
+    client_uuid: z.string().uuid().nullish(),
+    reason: z.string().min(1),
+    device_time: z.string().nullish(),
   }),
   "fuel.logged": z.object({
     client_uuid: z.string().uuid().nullish(),
