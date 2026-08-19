@@ -355,6 +355,61 @@ with counts reported before and after. Nothing is deleted.
 customers, codes to `CUST-0604`, burn counter `import.next_customer_code` = 601;
 none of the 11 live contract numbers appear in the master file.
 
+## 13 — Multi-outlet customers: group, customer, branch (RATIFIED 19 Aug 2026)
+
+**Owner ruling, 19 Aug 2026. Supersedes the Sultan Al Arab merge plan in §12** —
+the six live records are NOT merged into one customer.
+
+**The ruling.** Both things are true of a chain like Sultan Al Arab:
+operationally the outlets are branches of one group; legally they may be
+separate entities with their own licences and legal names. The structure follows
+the schema:
+
+1. The **group** (`customer_groups`) holds the outlets together for consolidated
+   statements and group reporting.
+2. An outlet with its **own trade licence / legal name stays its own customer**,
+   keeping its own contract and its own account number from the master file
+   where the file assigns one.
+3. Outlets sharing the **same licence** become **branches** under one customer.
+4. Contracts and jobs **stay pointed at their correct legal entity**. Nothing is
+   repointed across entities — which also keeps issued invoices and service
+   reports intact (Art. VII §2).
+5. The structure — group → customers → branches, with account numbers and
+   contract counts — is shown in the validation report **before** any commit.
+
+**[FACT, verified 19 Aug 2026] What implementing it established.**
+
+- The master file holds **five** Sultan Al Arab outlets, not one: **11525**
+  (Al Majas), **11662** (Al Barsha), **11663** (Business Bay), **11664**
+  (Manipal), **11665** (Al Qusais). Four are spelled "SUL**TH**AN", which is why
+  earlier passes found only one. No number needs minting for them.
+- All five share TRN **104774977300003** — one tax registration, five outlets.
+  **11662 is the parent**: the only one written "L.L.C" and the only one the file
+  tags into SULTAN ALARAB GROUP.
+- The six live records carry **no address, emirate, TRN or site row** and share
+  the identical name. The live-record → outlet mapping **does not exist in the
+  system** and can only come from the owner, by contract number. The five file
+  rows are HELD until it does.
+- **`contracts` has no branch reference — only `customer_id`.** Rule 3 above
+  therefore cannot be applied without losing which outlet a contract covers.
+  Until a branch reference exists on contracts, multi-outlet companies are
+  structured under rule 2 (a customer each, held together by the group). Adding
+  that reference is a schema change and needs its own decision.
+- The master file has **no trade licence column**, so the platform cannot
+  currently tell which outlets share a licence — only which share a TRN.
+- This is general, not specific to one chain: **14 companies across 41 records**
+  in the master file trade from more than one address under a single TRN.
+
+**Import rules added to give effect to this (migration 098, `lib/domain/imports.ts`):**
+
+- A file row whose group resolves to a live group that already has customers is
+  **held**, never created blind — the importer cannot tell a new outlet from one
+  already recorded.
+- Every row sharing that row's TRN is held with it, so one legal entity is
+  always mapped as a whole rather than half-imported.
+- Group names reconcile on `fn_group_key` — case, spacing, punctuation and a
+  trailing "GROUP" are not meaning, and nothing looser is ever matched.
+
 ## Changelog
 
 | Version | Date | Change |
@@ -373,3 +428,4 @@ none of the 11 live contract numbers appear in the master file.
 | 2.1 | 3 Aug 2026 | §11.4 — Security A2+A3 complete: reads migrated onto `scopedRead` + build-failing `pool.query` gate; RLS policy gaps closed (mig 040) + structural guard; login/invite UI; first admin provisioned; audit attributes the actor; auth enforcement + 51 permission guards behind fail-closed `AUTH_REQUIRED`; **A3 flip live — `withRequest` runs as `mop_app`, RLS is now the live boundary.** Gated on `rls_coverage.sql` (no tenant ⇒ zero rows), which passed before the flip. |
 | 2.2 | 12 Aug 2026 | §11.7 — Technician app T1 (offline auth): device+server time provenance (Art. VII §4), Bearer re-auth on `/api/field/*`, token revocation with held-for-review (never discarded). **Ratified refinement:** mig 056 extends the `outbox_events` mutable-bookkeeping whitelist to `needs_review`/`review_reason`; event content stays immutable (Art. VII §1 holds). Recorded as a constitutional amendment per the owner's rule. |
 | 2.3 | 19 Aug 2026 | §12 — **Customer account numbers switched to the 5-digit master scheme (11111–11827)**, ratified by the owner. CUST-0001…0600 burned and never reusable; new numbers continue from 11828 skipping any digit-0; every list and document displays the 5-digit number. Calicut → 11193; the six Sultan Al Arab records **merge** into 11662 (unique constraint ⇒ contracts/jobs repoint to the survivor, the other five archived, in one audited transaction). |
+| **2.4** | **19 Aug 2026** | §13 — **Multi-outlet customers ruled (owner): group → customers → branches; the §12 Sultan Al Arab merge is superseded and NOT performed.** Each outlet keeps its own customer record, contract and account number; the group consolidates. Established while implementing: the master file holds five Sultan outlets (11525/11662/11663/11664/11665) sharing one TRN, 11662 the parent; the six live records are indistinguishable and are held pending an owner mapping by contract number; `contracts` has no branch reference, so licence-sharing outlets cannot become branches without a schema change; 14 companies across 41 file records share a TRN. |

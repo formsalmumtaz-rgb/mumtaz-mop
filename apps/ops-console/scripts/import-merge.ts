@@ -4,9 +4,13 @@
 //   node --env-file=../../.env.local --import tsx scripts/import-merge.ts --commit   → commit the last validated batch's clean rows
 //
 // Doctrine: CSV → staging → validation → dry-run report → commit. Live tables are
-// never written during staging/validation. Account numbers are SYSTEM-assigned at
-// commit (file CUST-XXXX ids collide with live codes and are kept only as
-// source_ref). Match order: legacy_customer_code → TRN → phone → name. Rows needing
+// never written during staging/validation. Account numbers follow the 5-digit
+// scheme (DECISIONS §12) and are decided at VALIDATION by
+// fn_assign_batch_account_numbers — the same function the console importer calls —
+// so the dry-run report names the account number each row will receive. These
+// legacy CSVs carry CUST-XXXX source ids, which are not valid account numbers, so
+// every row here is minted a fresh number from 11828 up; the old id is kept as
+// source_ref. Match order: legacy_customer_code → TRN → phone → name. Rows needing
 // an owner decision (dup groups, shared TRNs, low-confidence contract matches,
 // flagged issues) are HELD, never guessed (Art. X §4). Idempotent: a source_row_id
 // already committed (customers.source_ref) is skipped on re-run.
@@ -178,6 +182,9 @@ async function stageAndValidate(): Promise<void> {
              and lower(coalesce(o.trade_name, o.legal_name,'')) = lower(coalesce(s.trade_name, s.legal_name,'')))`, [batch]);
     // 9. everything else is clean
     await c.query(`update staging_customers set disposition='clean', reason=null where batch_id=$1 and disposition='pending'`, [batch]);
+    // The account number each clean row will receive — decided here, shown in the
+    // dry-run report, copied verbatim at commit (DECISIONS §12).
+    await c.query(`select fn_assign_batch_account_numbers($1, $2)`, [TENANT, batch]);
 
     // contacts/branches inherit their customer's fate; malformed contacts held
     await c.query(
@@ -278,29 +285,19 @@ async function commit(): Promise<void> {
 
     // 1. clean customers → live, SYSTEM-assigned codes continuing our sequence (set-based)
     const { rows: cust } = await c.query(
-      `with base as (
-         -- Account numbers are permanent and never reused: the floor is the max of
-         -- live codes AND the burn setting (import.next_customer_code), so codes
-         -- issued by a rolled-back batch stay burned forever.
-         select greatest(
-                  coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0),
-                  coalesce((select (value #>> '{}')::int - 1 from settings
-                             where tenant_id=$1 and key='import.next_customer_code'), 0)
-                ) as n
-           from customers where tenant_id=$1 and code ~ '^CUST-\\d+$'
-       ), ins as (
+      `with ins as (
          insert into customers (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license,
                                 customer_type, emirate, source_ref, legacy_code, is_assumed, assumed_note, attributes)
-         select $1, $2,
-                'CUST-' || lpad((base.n + row_number() over (order by s.source_row_id))::text, 4, '0'),
+         -- decided at validation, copied here (DECISIONS §12) — never minted at commit
+         select $1, $2, s.assigned_code,
                 s.legal_name, coalesce(s.trade_name, s.legal_name), s.trn, s.trade_licence_number,
                 case when s.customer_type in ('B2B','B2G','B2C') then s.customer_type end,
                 s.emirate, s.source_row_id, s.legacy_customer_code,
                 true, 'Imported from legacy sheets — confirm details',
                 jsonb_strip_nulls(jsonb_build_object('alias_name', s.alias_name, 'po_box', s.po_box,
                                                      'priority', s.priority, 'address', s.address))
-           from staging_customers s, base
-          where s.batch_id = $3 and s.disposition = 'clean'
+           from staging_customers s
+          where s.batch_id = $3 and s.disposition = 'clean' and s.assigned_code is not null
          returning id, source_ref
        )
        update staging_customers s set live_customer_id = ins.id

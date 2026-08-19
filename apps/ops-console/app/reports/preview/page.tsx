@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireView } from "@/lib/auth";
 import { getTenantId } from "@/lib/tenant";
-import { pool } from "@/lib/db";
+import { withRequest } from "@/lib/rls";
 import { PageHeader, Card, CardBody, Button } from "@/components/ui";
 import {
   previousPeriod, computePeriodReport, computePeriodAnalysis, periodReportEmail, type Period,
@@ -26,23 +26,22 @@ export default async function ReportPreviewPage({ searchParams }: { searchParams
   const period = (PERIODS.find((p) => p.value === sp.period)?.value ?? "daily") as Period;
   const tenantId = await getTenantId();
 
-  // "Today" in the business's own clock — the same basis the scheduler uses.
-  const { rows: nowRows } = await pool.query(`select (now() at time zone 'Asia/Dubai')::date::text as today`);
-  const today: string = nowRows[0].today;
-  const range = previousPeriod(period, today);
-
-  const c = await pool.connect();
-  let mail: { subject: string; text: string; html: string };
-  let analysis: string[];
-  let figures: Record<string, unknown>;
-  try {
+  // The whole preview computes inside ONE tenant-scoped transaction (lib/rls.ts),
+  // so this page reads under mop_app with RLS live, exactly like every other read.
+  // It used to take a raw pooled connection and bypass the boundary.
+  const { mail, analysis, figures, range } = await withRequest({ tenantId }, async (c) => {
+    // "Today" in the business's own clock — the same basis the scheduler uses.
+    const { rows: nowRows } = await c.query(`select (now() at time zone 'Asia/Dubai')::date::text as today`);
+    const range = previousPeriod(period, nowRows[0].today as string);
     const report = await computePeriodReport(c, tenantId, range);
-    analysis = await computePeriodAnalysis(c, tenantId, report);
-    mail = periodReportEmail(report, analysis);
-    figures = { period: range, current: report.current, previous: report.previous };
-  } finally {
-    c.release();
-  }
+    const an = await computePeriodAnalysis(c, tenantId, report);
+    return {
+      mail: periodReportEmail(report, an),
+      analysis: an,
+      range,
+      figures: { period: range, current: report.current, previous: report.previous } as Record<string, unknown>,
+    };
+  });
 
   // Phase 2/3 commentary. The report above is already complete and sendable;
   // this only turns the computed figures and the rule-flagged exceptions into

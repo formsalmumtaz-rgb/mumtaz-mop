@@ -20,7 +20,12 @@ const one = async (sql: string, p: unknown[] = []) => (await pool.query(sql, p))
   const t = await one(`select id from tenants where name='Mumtaz Integrated Services Group'`);
   const tenantId = t.id;
   const sl = await one(`select id from service_lines where tenant_id=$1 and code='pest_control'`, [tenantId]);
-  const cust = await one(`select id from customers where tenant_id=$1 and code='CUST-0001'`, [tenantId]);
+  // The demo customer, by whichever account number it currently carries: DECISIONS
+  // §12 renumbers CUST-0001 → 11193, and this rehearsal must survive that.
+  const cust = await one(
+    `select id from customers where tenant_id=$1 and code in ('11193','CUST-0001')
+      order by case code when '11193' then 0 else 1 end limit 1`, [tenantId]);
+  if (!cust) throw new Error("Demo customer not found under 11193 or CUST-0001");
   const freq = await one(`select id from frequencies where tenant_id=$1 and code='monthly_1'`, [tenantId]);
   const pm = await one(`select id from pricing_models where tenant_id=$1 and code='per_treatment'`, [tenantId]);
 

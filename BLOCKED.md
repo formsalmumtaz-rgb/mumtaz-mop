@@ -12,6 +12,156 @@ anything; earlier links are dead (a tunnel dies with this machine's session).
 
 ## YOUR TASKS — in order, with exact steps
 
+### 0. DECIDE BEFORE THE 583 CUSTOMERS CAN BE IMPORTED (19 Aug, run 9)
+
+Four decisions. The first is the only one that is genuinely urgent — the import
+is staged and validated and waits on it. Nothing has been written to a live
+table.
+
+Read the full report first: **`merge/import-validation-report.md`**.
+Summary: **574 rows import cleanly, 8 are held, 1 already exists.**
+
+---
+
+#### 0.1 — Sultan Al Arab: your ruling is implemented. One thing still needs you.
+
+**Your ruling (19 Aug) is in force and DECISIONS §12's merge plan is superseded.**
+Nothing is merged. Each outlet stays its own customer with its own account
+number; the group holds them together. No contract and no job moves between
+customers.
+
+**What I found while implementing it — the picture changed.**
+
+The master file does **not** hold one Sultan Al Arab record. It holds **five**.
+Four of them are spelled "SUL**TH**AN", which is why the earlier read missed
+them. All five share one TRN — `104774977300003` — so they are five outlets of
+one legal entity, and the file has already given each its own account number:
+
+| Account no. | Outlet, as the file names it | Emirate | Address |
+|---|---|---|---|
+| 11525 | SULTHAN AL ARAB RESTUARANT | — | Al Majas |
+| 11662 | SULTAN AL ARAB RESTAURANT L.L.C (Al Barsha) | Dubai | Al Barsha-Shop No 2 |
+| 11663 | SULTHAN AL ARAB RESTUARANT (Business Bay) | Dubai | Business Bay |
+| 11664 | SULTHAN AL ARAB RESTUARANT (Manipal) | Dubai | Manipal |
+| 11665 | SULTHAN AL ARAB RESTUARANT (Al Qusais Branch) | Dubai | Al Qusais |
+
+So **no numbers need to be minted from 11828** — the file already assigns all
+five. And **11662 is the parent**: it is the only one written as "L.L.C", and the
+only one the file tags into SULTAN ALARAB GROUP. That answers "pick the one whose
+name matches": it is the Al Barsha record, and it is the parent outlet.
+
+**The one thing I cannot work out, and will not guess.**
+
+You have **six** live records and the file names **five** outlets. All six live
+records are called "SULTAN ALARAB REST" and carry **no address, no emirate, no
+TRN, and no site row**. There is nothing in the database that says which one is
+Al Barsha and which is Business Bay. The only thing telling them apart is the
+contract each one holds:
+
+| Live record | Contract | Annual value | Which outlet is this? |
+|---|---|---:|---|
+| CUST-0026 | 10032/25 | AED 3,000 | ________________ |
+| CUST-0088 | 1094/25 | AED 5,040 | ________________ |
+| CUST-0089 | 1095/25 | AED 5,040 | ________________ |
+| CUST-0090 | 1096/25 | AED 6,300 | ________________ |
+| CUST-0090 | *(no number)* | AED 200 | ________________ |
+| CUST-0091 | 1097/25 | AED 3,780 | ________________ |
+| CUST-0092 | 1098/25 | AED 3,780 | ________________ |
+
+Write the outlet name against each contract number and I will finish it. Note
+that five contracts (1094–1098/25) were all signed on 11 May 2025 and the sixth
+(10032/25) in August — so the **sixth live record is probably a sixth outlet the
+file is missing**, and it will get **11828**, the first newly minted number.
+
+Until you answer, the five file rows are **held**, not imported. Creating them
+would put each restaurant in your list twice while its contract stayed on the
+old record. Everything else in the batch is unaffected.
+
+**When you answer, nothing is merged or repointed:** each live record simply
+takes its outlet's 5-digit number, the same safe operation as Calicut — the
+contract and jobs stay exactly where they are.
+
+---
+
+#### 0.1b — A gap your ruling exposed: a contract cannot name an outlet.
+
+You asked that outlets sharing one trade licence become branches under a single
+customer. **The schema cannot support that today without losing information:**
+`jobs` and `estimates` can point at a specific branch, but **`contracts` cannot —
+it only points at a customer.**
+
+So if several outlets became branches of one customer, all their contracts would
+pile onto that one customer with nothing recording which outlet each covers.
+
+That is why the structure I have built keeps each outlet as its own customer:
+the file already gives each one an account number, so nothing is lost, and the
+group still gives you the consolidated view.
+
+**If you do want licence-sharing outlets to become branches, say so and I will
+add the missing link (a branch reference on contracts) first.** It is a schema
+change and it should be done deliberately, not worked around.
+
+Two more things worth knowing: the master file has **no trade licence column at
+all**, so the system currently has no way to tell which outlets share a licence —
+only which share a TRN. And this is not just a Sultan Al Arab question: **14
+companies in the file trade from more than one address under one TRN, covering
+41 records** (Nesto with 8, Aryaas with 4, Shifa Al Jazeera, Unimoni, Saga Spa
+and others). They are listed in section 2c of the validation report. I have
+imported them as separate customers, which is your stated default.
+
+---
+
+#### 0.2 — LATTAFA PERFUMES already exists. It keeps its old number unless you say otherwise.
+
+The file's account **11114 "LATTAFA PERFUMES IND. LLC"** is the same company as
+the live record `CUST-0096` — same name, same TRN (100601837600003). The import
+will therefore **not** create it again; it links to the existing record.
+
+But that record keeps the code `CUST-0096`, and it has **5 jobs** against it.
+DECISIONS §12 says every customer shows a 5-digit number, and it named Calicut
+and Sultan Al Arab specifically — it did not name this one.
+
+**Say yes and I renumber `CUST-0096` → `11114`.** It is a safe change: only the
+account number moves, nothing else is touched. (Say nothing and it stays
+`CUST-0096`, which contradicts §12.)
+
+---
+
+#### 0.3 — Calicut: rehearsed and ready, but the name does not match.
+
+DECISIONS §12 says Calicut Restaurant (`CUST-0001`) becomes **11193**. I have
+rehearsed exactly that — it works, and all **35** attached records (13 jobs, 6
+receipts, 3 service reports, 2 contracts, 1 invoice, and the rest) stay attached
+untouched.
+
+One thing to confirm before I apply it: the names are not the same.
+
+- live: **Calicut Restaurant** (legal: Calicut Restaurant LLC)
+- file 11193: **CALICUT NOTEBOOK RESTAURANT**
+
+If those are the same business, say so and I apply it. If they are two different
+restaurants, tell me and 11193 stays with the one in the file.
+
+**Also worth knowing:** the invoice, the 6 receipts and the 3 service reports
+already issued to this customer keep showing the old number. That is deliberate
+— an issued document is never rewritten — and it is exactly why §12 burns
+`CUST-0001…0600` forever.
+
+---
+
+#### 0.4 — Nine test records are still in the live customer list.
+
+`verbal` ×2, `ghjk`, `SSD`, `asdfghjk`, `fwgduhdu`, `dfghio`, `Sahad Saleem`,
+and the archived `Zenith Cafeteria` — junk from testing. They are not in the
+master file, so they will never get a 5-digit number, and they will sit in your
+customer list next to the 574 real ones.
+
+**Say the word and I remove them** (archive, not delete — one of them,
+`CUST-0009`, has 35 jobs against it from testing, so it cannot simply vanish).
+
+---
+
+
 ### 1. Enable the assistant (2 minutes) — unlocks four features
 "Ask the business", quotation-scope drafting, report commentary and
 draft-to-estimate are all built and waiting on one key.

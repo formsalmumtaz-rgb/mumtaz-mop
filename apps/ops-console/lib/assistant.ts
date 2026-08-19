@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { scopedRead } from "@/lib/rls";
-import { pool } from "@/lib/db";
+import { withRequest } from "@/lib/rls";
 
 // Item 5 — Claude inside MOP (phase 1). Ratified three-layer principle:
 // Layer 3 (this file) receives STRUCTURED data prepared by DETERMINISTIC
@@ -119,11 +119,21 @@ export async function askBusiness(tenantId: string, userId: string | null, quest
     return { answer: "", error: "The model declined this request." };
   }
   const answer = response.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n");
-  await pool.query(
-    `insert into assistant_log (tenant_id, user_id, kind, question, answer, model, input_tokens, output_tokens)
-     values ($1,$2,'ask',$3,$4,$5,$6,$7)`,
-    [tenantId, userId, question, answer, MODEL, response.usage.input_tokens, response.usage.output_tokens]);
+  await logAssistant(tenantId, userId, "ask", question, answer, response.usage);
   return { answer };
+}
+
+// Every assistant call is logged through the tenant/actor choke point, not the
+// bare pool: the log is tenant data and RLS is the live boundary for it like
+// everything else. Three near-identical inserts had drifted apart here.
+async function logAssistant(
+  tenantId: string, userId: string | null, kind: "ask" | "draft_quotation",
+  question: string, answer: string, usage: { input_tokens: number; output_tokens: number },
+): Promise<void> {
+  await withRequest({ tenantId, actorId: userId }, (c) => c.query(
+    `insert into assistant_log (tenant_id, user_id, kind, question, answer, model, input_tokens, output_tokens)
+     values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+    [tenantId, userId, kind, question, answer, MODEL, usage.input_tokens, usage.output_tokens]));
 }
 
 // ── Ad-hoc quotation drafting ───────────────────────────────────────────────
@@ -173,10 +183,7 @@ NEVER include prices, amounts, or quantities — pricing is computed elsewhere. 
   } catch {
     return { error: "Draft came back malformed — try rephrasing the scope." };
   }
-  await pool.query(
-    `insert into assistant_log (tenant_id, user_id, kind, question, answer, model, input_tokens, output_tokens)
-     values ($1,$2,'draft_quotation',$3,$4,$5,$6,$7)`,
-    [tenantId, userId, brief, text, MODEL, response.usage.input_tokens, response.usage.output_tokens]);
+  await logAssistant(tenantId, userId, "draft_quotation", brief, text, response.usage);
   return { draft };
 }
 
@@ -209,10 +216,7 @@ Rules:
     if (response.stop_reason === "refusal") return null;
     const text = response.content.filter((b) => b.type === "text").map((b) => (b as { text: string }).text).join("\n").trim();
     if (!text) return null;
-    await pool.query(
-      `insert into assistant_log (tenant_id, user_id, kind, question, answer, model, input_tokens, output_tokens)
-       values ($1,$2,'ask',$3,$4,$5,$6,$7)`,
-      [tenantId, userId, `[narration] ${subject}`, text, MODEL, response.usage.input_tokens, response.usage.output_tokens]);
+    await logAssistant(tenantId, userId, "ask", `[narration] ${subject}`, text, response.usage);
     return text;
   } catch (e) {
     console.error("[assistant] narration failed:", (e as Error).message);

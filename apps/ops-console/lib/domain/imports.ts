@@ -179,9 +179,10 @@ export async function stageCustomerCsv(
             contact_person, designation, email, phone, mobile, whatsapp, tl_expiry,
             preferred_shift, preferred_language, payment_terms, billing_frequency,
             referred_by, access_notes, latitude, longitude, location_source, location_status,
-            required_info, notes, contract_numbers, contract_sl_nos, legacy_customer_code, alias_name)
+            required_info, notes, contract_numbers, contract_sl_nos, legacy_customer_code, alias_name,
+            priority)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
-                 $23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
+                 $23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41)
          on conflict (batch_id, source_row_id) do nothing`,
         [tenantId, batch, rowId, nul(r.legal_name), nul(r.customer_name) ?? nul(r.legal_name), nul(r.trn),
          nul(r.trade_licence_no), nul(r.customer_type)?.toUpperCase() ?? null, nul(r.emirate),
@@ -193,14 +194,15 @@ export async function stageCustomerCsv(
          nul(r.preferred_shift), nul(r.preferred_language), nul(r.payment_terms), nul(r.billing_frequency),
          nul(r.referred_by), nul(r.access_notes), nul(r.latitude), nul(r.longitude),
          nul(r.location_source), nul(r.location_status), nul(r.required_info), nul(r.notes),
-         nul(r.contract_numbers), nul(r.contract_sl_nos), nul(r.legacy_codes), nul(r.alias)]);
+         nul(r.contract_numbers), nul(r.contract_sl_nos), nul(r.legacy_codes), nul(r.alias),
+         nul(r.priority)]);
       const phone = nul(r.mobile) ?? nul(r.phone), email = nul(r.email);
       for (const [type, value] of [["phone", phone], ["email", email]] as const) {
         if (!value) continue;
         await c.query(
-          `insert into staging_contacts (tenant_id, batch_id, source_row_id, contact_type, value, contact_name)
-           values ($1,$2,$3,$4,$5,$6)`,
-          [tenantId, batch, rowId, type, value, nul(r.contact_person)]);
+          `insert into staging_contacts (tenant_id, batch_id, source_row_id, contact_type, value, contact_name, designation)
+           values ($1,$2,$3,$4,$5,$6,$7)`,
+          [tenantId, batch, rowId, type, value, nul(r.contact_person), nul(r.designation)]);
       }
       if (nul(r.branch_name) || nul(r.address)) {
         await c.query(
@@ -221,12 +223,95 @@ export async function stageCustomerCsv(
   });
 }
 
+// Decide the account number every clean row will receive, and store it, so the
+// dry-run report the owner approves actually contains the identifier the decision
+// is about (Art. VII §5). The commit then copies this column — it never mints.
+//
+// The rule itself lives in fn_assign_batch_account_numbers (migration 097), not
+// here, because the CLI importer must apply exactly the same one. DECISIONS §12 ¶3
+// existed because three hand-copied versions of this rule had already drifted.
+async function assignAccountNumbers(c: PoolClient, tenantId: string, batch: string): Promise<void> {
+  await c.query(`select fn_assign_batch_account_numbers($1, $2)`, [tenantId, batch]);
+}
+
+// Blank-field counts per column — required of the dry-run report by Art. VII §5
+// and previously missing from it. "Blank means unknown": this is the census of
+// what the office still has to find out, and it is what drives REQUIRED_INFO.
+const CENSUS_COLUMNS = [
+  "legal_name", "trade_name", "alias_name", "trn", "trade_licence_number", "customer_type",
+  "emirate", "place_of_supply", "district", "address", "po_box", "priority",
+  "contact_person", "designation", "email", "phone", "mobile", "whatsapp",
+  "customer_group", "industry_category", "municipality_category", "tl_expiry",
+  "preferred_shift", "preferred_language", "payment_terms", "billing_frequency",
+  "referred_by", "access_notes", "latitude", "longitude",
+  "location_source", "location_status", "required_info", "notes",
+  "contract_numbers", "contract_sl_nos", "legacy_customer_code",
+] as const;
+
+async function blankCensus(c: PoolClient, batch: string): Promise<Record<string, number>> {
+  const cols = CENSUS_COLUMNS.map((k) => `count(*) filter (where ${k} is null)::int as ${k}`).join(", ");
+  const { rows } = await c.query(
+    `select count(*)::int as total, ${cols} from staging_customers where batch_id=$1`, [batch]);
+  return rows[0] as Record<string, number>;
+}
+
+// Every distinct group the file names, with its member count and whether a live
+// group already carries that name. A near-miss ("SULTAN ALARAB GROUP" against a
+// live "Sultan Al Arab") is REPORTED, never auto-merged — Art. X §4: the system
+// surfaces the suggestion, a human decides.
+async function groupCensus(c: PoolClient, tenantId: string, batch: string) {
+  const { rows } = await c.query(
+    `with g as (
+       select trim(customer_group) as name, count(*)::int as members
+         from staging_customers
+        where batch_id=$1 and nullif(trim(customer_group),'') is not null
+        group by 1
+     )
+     select g.name, g.members,
+            lg.name as live_group,
+            (select count(*)::int from customers cu
+              where cu.tenant_id=$2 and cu.group_id = lg.id) as live_members
+       from g
+       left join customer_groups lg
+         on lg.tenant_id=$2 and fn_group_key(lg.name) = fn_group_key(g.name)
+      order by g.name`, [batch, tenantId]);
+  return rows;
+}
+
+// Rows sharing a TRN are ONE legal entity with several outlets (a UAE TRN is per
+// tax registration). The importer creates them as separate customers — each has
+// its own account number in the master file — and reports the clusters here so
+// the office can see which customers belong to one company. Collapsing any of
+// them into branches of a single customer is a decision, not an inference.
+async function entityCensus(c: PoolClient, batch: string) {
+  const { rows } = await c.query(
+    `select s.trn,
+            count(*)::int as outlets,
+            string_agg(s.source_row_id || ' ' || coalesce(s.trade_name, s.legal_name), ' · '
+                       order by s.source_row_id) as members,
+            coalesce(max(nullif(trim(s.customer_group),'')), '') as group_name,
+            bool_or(s.disposition = 'held') as any_held
+       from staging_customers s
+      where s.batch_id=$1 and s.trn ~ '^1[0-9]{14}$'
+      group by s.trn having count(*) > 1
+      order by count(*) desc, s.trn`, [batch]);
+  return rows;
+}
+
 // The validation pass — identical rules to scripts/import-merge.ts.
 async function validateBatch(c: PoolClient, tenantId: string, batch: string): Promise<void> {
+  // Identity is checked strongest-first. Under DECISIONS §12 the account number IS
+  // the customer's permanent identifier, so a row whose ACCOUNT_NO already exists
+  // live is that customer — this runs before source_ref, TRN and name.
+  await c.query(
+    `update staging_customers s set disposition='matched_live', reason='matched a live customer (account number)', matched_customer_id=cu.id
+       from customers cu
+      where s.batch_id=$1 and s.disposition='pending' and s.source_row_id ~ '^[1-9]{5}$'
+        and cu.tenant_id=s.tenant_id and cu.code = s.source_row_id`, [batch]);
   await c.query(
     `update staging_customers s set disposition='matched_live', reason='already imported (source reference)', matched_customer_id=cu.id
        from customers cu
-      where s.batch_id=$1 and cu.tenant_id=s.tenant_id and cu.source_ref = s.source_row_id`, [batch]);
+      where s.batch_id=$1 and s.disposition='pending' and cu.tenant_id=s.tenant_id and cu.source_ref = s.source_row_id`, [batch]);
   await c.query(
     `update staging_customers s set disposition='matched_live', reason='matched a live customer (TRN)', matched_customer_id=cu.id
        from customers cu
@@ -246,6 +331,41 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
         and coalesce(s.trade_name, s.legal_name, '') <> ''
         and (lower(coalesce(cu.trade_name,'')) = lower(coalesce(s.trade_name, s.legal_name, ''))
           or lower(coalesce(cu.legal_name,'')) = lower(coalesce(s.legal_name, s.trade_name, '')))`, [batch]);
+  // The row wants an account number that a different live customer already holds.
+  // Account numbers are permanent (DECISIONS §12 ¶2), so this is never resolved by
+  // reassigning the live customer — a human decides which record is which.
+  await c.query(
+    `update staging_customers s set disposition='held',
+            reason='account number ' || s.source_row_id || ' is already held by a different live customer'
+      where s.batch_id=$1 and s.disposition='pending' and s.source_row_id ~ '^[1-9]{5}$'
+        and exists (select 1 from customers cu where cu.tenant_id=s.tenant_id and cu.code = s.source_row_id
+                     and cu.id is distinct from s.matched_customer_id)`, [batch]);
+  // The row belongs to a group that ALREADY exists live with customers in it. The
+  // import cannot tell whether this row is a NEW outlet of that group or one of
+  // the outlets already recorded — and creating it blind would put the same
+  // restaurant in the list twice while its contracts stay on the old record.
+  // A human maps outlet to record; the system never guesses (Art. X §4).
+  await c.query(
+    `update staging_customers s set disposition='held',
+            reason='group "' || lg.name || '" already exists live with ' || lm.n ||
+                   ' customer(s) — confirm whether this is a new outlet or one of them'
+       from customer_groups lg
+       join lateral (select count(*)::int as n from customers cu
+                      where cu.tenant_id = lg.tenant_id and cu.group_id = lg.id) lm on true
+      where s.batch_id=$1 and s.disposition='pending'
+        and lg.tenant_id = s.tenant_id and lm.n > 0
+        and fn_group_key(lg.name) = fn_group_key(s.customer_group)`, [batch]);
+  // …and every other outlet of the SAME legal entity goes with it. A shared TRN is
+  // one tax registration, so these rows are the same company: they must be mapped
+  // as one set, not half imported and half held.
+  await c.query(
+    `update staging_customers s set disposition='held',
+            reason='same legal entity (TRN ' || s.trn || ') as a row held for outlet mapping'
+      where s.batch_id=$1 and s.disposition='pending' and s.trn ~ '^1[0-9]{14}$'
+        and exists (select 1 from staging_customers o
+                     where o.batch_id=s.batch_id and o.id <> s.id
+                       and o.trn = s.trn and o.disposition='held'
+                       and o.reason like 'group %already exists live%')`, [batch]);
   await c.query(
     `update staging_customers set disposition='held', reason='TRN present but not a valid 15-digit UAE TRN'
       where batch_id=$1 and disposition='pending' and trn is not null and trn !~ '^1[0-9]{14}$'`, [batch]);
@@ -255,6 +375,8 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
         select 1 from staging_customers o where o.batch_id=s.batch_id and o.id<>s.id
           and lower(coalesce(o.trade_name, o.legal_name,'')) = lower(coalesce(s.trade_name, s.legal_name,'')))`, [batch]);
   await c.query(`update staging_customers set disposition='clean', reason=null where batch_id=$1 and disposition='pending'`, [batch]);
+
+  await assignAccountNumbers(c, tenantId, batch);
 
   await c.query(
     `update staging_contacts sc set disposition = case when s.disposition in ('clean','matched_live') then 'clean' else 'held' end,
@@ -275,6 +397,15 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
          from ${tbl} where batch_id=$1 group by 1,2 order by 1,3 desc`, [batch]);
     rep[key] = rows;
   }
+  rep.blank_counts = await blankCensus(c, batch);
+  rep.groups = await groupCensus(c, tenantId, batch);
+  rep.legal_entities = await entityCensus(c, batch);
+  const { rows: codes } = await c.query(
+    `select count(*) filter (where assigned_code is not null)::int as assigned,
+            min(assigned_code) as lowest, max(assigned_code) as highest,
+            count(*) filter (where assigned_code is not null and assigned_code <> source_row_id)::int as minted
+       from staging_customers where batch_id=$1`, [batch]);
+  rep.account_numbers = codes[0];
   await c.query(`update import_batches set status='validated', report=$2 where id=$1`, [batch, JSON.stringify(rep)]);
 }
 
@@ -282,7 +413,7 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
 // rows are never written. Account numbers are system-assigned and never reused.
 export async function commitImportBatch(
   tenantId: string, batchId: string,
-): Promise<{ customers: number; sites: number; contacts: number; contracts: number }> {
+): Promise<{ customers: number; sites: number; contacts: number; contracts: number; grouped: number }> {
   return withTenantTx(tenantId, async (c: PoolClient) => {
     const { rows: b } = await c.query(
       `select id, status from import_batches where tenant_id=$1 and id=$2 for update`, [tenantId, batchId]);
@@ -295,14 +426,7 @@ export async function commitImportBatch(
     if (!slId) throw new Error("No service line configured");
 
     const { rows: cust } = await c.query(
-      `with base as (
-         select greatest(
-                  coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0),
-                  coalesce((select (value #>> '{}')::int - 1 from settings
-                             where tenant_id=$1 and key='import.next_customer_code'), 0)
-                ) as n
-           from customers where tenant_id=$1 and code ~ '^CUST-\\d+$'
-       ), ins as (
+      `with ins as (
          insert into customers (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license,
                                 customer_type, emirate, source_ref, legacy_code, is_assumed, assumed_note, attributes,
                                 alias_name, place_of_supply, district, po_box, priority,
@@ -311,8 +435,10 @@ export async function commitImportBatch(
                                 referred_by, access_notes, trade_licence_no,
                                 location_source, location_status, required_info, notes,
                                 industry_category_id, municipality_category_id)
-         select $1, $2,
-                'CUST-' || lpad((base.n + row_number() over (order by s.source_row_id))::text, 4, '0'),
+         -- The account number was decided and shown at validation (DECISIONS §12).
+         -- The commit copies it; it does not mint, so what the owner approved is
+         -- exactly what lands.
+         select $1, $2, s.assigned_code,
                 s.legal_name, coalesce(s.trade_name, s.legal_name), s.trn, s.trade_licence_number,
                 case when s.customer_type in ('B2B','B2G','B2C') then s.customer_type end,
                 s.emirate, s.source_row_id, s.legacy_customer_code,
@@ -336,13 +462,49 @@ export async function commitImportBatch(
                   where ic.tenant_id = $1 and lower(ic.code) = lower(coalesce(s.industry_category,''))),
                 (select mc.id from municipality_categories mc
                   where mc.tenant_id = $1 and lower(mc.code) = lower(coalesce(s.municipality_category,'')))
-           from staging_customers s, base
-          where s.batch_id = $3 and s.disposition = 'clean'
+           from staging_customers s
+          where s.batch_id = $3 and s.disposition = 'clean' and s.assigned_code is not null
          returning id, source_ref
        )
        update staging_customers s set live_customer_id = ins.id
          from ins where s.batch_id = $3 and s.source_row_id = ins.source_ref
        returning s.id`, [tenantId, slId, batchId]);
+
+    // Customer groups. The group NAME on each customer row is the authority; the
+    // workbook's Groups sheet is a cross-check performed at conversion time. A
+    // A group that already exists live is REUSED, reconciled on fn_group_key
+    // (migration 098): case, spacing, punctuation and a trailing "GROUP" are not
+    // meaning, so the file's "SULTAN ALARAB GROUP" attaches to the live
+    // "Sultan Al Arab" instead of creating a near-duplicate beside it. Nothing
+    // looser than that is matched — the dry-run report names every reconciliation
+    // before the owner approves it.
+    await c.query(
+      `insert into customer_groups (tenant_id, service_line_id, code, name, is_assumed, assumed_note)
+       select $2, $3, g.code, g.name, true, 'Created by customer import — confirm the members'
+         from (
+           select distinct on (fn_group_key(s.customer_group)) s.customer_group as name,
+                  left(regexp_replace(upper(s.customer_group), '[^A-Z0-9]', '', 'g'), 24)
+                    || '-' || substr(md5(lower(s.customer_group)), 1, 4) as code
+             from staging_customers s
+            where s.batch_id=$1 and s.disposition='clean' and nullif(trim(s.customer_group),'') is not null
+            order by fn_group_key(s.customer_group), s.source_row_id
+         ) g
+        where not exists (select 1 from customer_groups x
+                           where x.tenant_id=$2 and fn_group_key(x.name) = fn_group_key(g.name))
+       on conflict (tenant_id, code) do nothing`, [batchId, tenantId, slId]);
+    const { rows: gr } = await c.query(
+      `with tgt as (
+         select source_row_id, customer_group, coalesce(live_customer_id, matched_customer_id) as cid
+           from staging_customers
+          where batch_id=$1 and nullif(trim(customer_group),'') is not null
+            and coalesce(live_customer_id, matched_customer_id) is not null
+       ), upd as (
+         update customers cu set group_id = g.id
+           from tgt join customer_groups g
+             on g.tenant_id=$2 and fn_group_key(g.name) = fn_group_key(tgt.customer_group)
+          where cu.id = tgt.cid and cu.tenant_id=$2 and cu.group_id is null
+         returning 1
+       ) select count(*)::int as n from upd`, [batchId, tenantId]);
 
     const { rows: br } = await c.query(
       `with tgt as (
@@ -431,7 +593,8 @@ export async function commitImportBatch(
                             else 'skipped at commit (duplicate contract number or unmatched customer)' end
         where batch_id=$1 and disposition='clean'`, [batchId]);
 
-    const counts = { customers: cust.length, sites: br[0].n as number, contacts: ct[0].n as number, contracts: k.length };
+    const counts = { customers: cust.length, sites: br[0].n as number, contacts: ct[0].n as number,
+                     contracts: k.length, grouped: gr[0].n as number };
     await c.query(
       `update import_batches set status='committed', committed_at=now(),
               report = report || jsonb_build_object('committed', $2::jsonb) where id=$1`,

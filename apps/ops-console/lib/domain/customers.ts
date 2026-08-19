@@ -127,18 +127,12 @@ export async function createCustomer(
   data: CustomerInput,
 ): Promise<string> {
   return withTenantTx(tenantId, async (c) => {
-    // Account numbers are permanent and never reused (Art. VII): the next code is
-    // max(live codes, import burn floor) + 1 — same rule as the import pipeline.
-    // The old count(*)+1 collided with burned import codes once 508 customers
-    // landed (unique constraint would have rejected every new customer).
-    const { rows: seq } = await c.query(
-      `select greatest(
-                coalesce(max((substring(code from 'CUST-(\\d+)'))::int), 0),
-                coalesce((select (value #>> '{}')::int - 1 from settings
-                           where tenant_id = $1 and key = 'import.next_customer_code'), 0)
-              ) + 1 as n
-         from customers where tenant_id = $1 and code ~ '^CUST-\\d+$'`, [tenantId]);
-    const code = "CUST-" + String(seq[0].n).padStart(4, "0");
+    // Account numbers are permanent and never reused (Art. VII; DECISIONS §12).
+    // The scheme is the master file's 5-digit number, digit 0 never used, and the
+    // rule lives in fn_next_account_no (migration 097) rather than being restated
+    // here — this is one of three call sites and they used to drift.
+    const { rows: seq } = await c.query(`select fn_next_account_no($1) as code`, [tenantId]);
+    const code = seq[0].code as string;
     const extCast = EXT_COLS.map((k, i) => `$${10 + i}${UUID_COLS.has(k) ? "::uuid" : ""}`).join(",");
     const { rows } = await c.query(
       `insert into customers
