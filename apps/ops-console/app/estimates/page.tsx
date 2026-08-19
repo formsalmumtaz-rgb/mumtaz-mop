@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { listEstimates } from "@/lib/domain/estimation";
@@ -92,15 +93,15 @@ export default async function EstimatesPage() {
             {estimates.map((e) => {
               const margin = e.revenue > 0 ? ((e.gross_profit / e.revenue) * 100).toFixed(1) + "%" : "—";
               return (
-                <tr key={e.id}>
-                  <td className="px-3 py-2"><Link href={`/estimates/${e.id}`} className="text-brand underline">{e.customer ?? "(no customer)"}</Link></td>
+                <RowLink key={e.id} href={`/estimates/${e.id}`}>
+                  <td className="px-3 py-2 text-neutral-700">{e.customer ?? "(no customer)"}</td>
                   <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[e.status] ?? ""}`}>{e.status}</span></td>
                   <td className="px-3 py-2 text-neutral-600">{e.line_count ?? 0}</td>
                   <td className="px-3 py-2 text-right">{aed(e.revenue)}</td>
                   {showProfit && <><td className="px-3 py-2 text-right text-neutral-600">{aed(e.est_cost)}</td>
                   <td className="px-3 py-2 text-right font-medium">{aed(e.gross_profit)}</td>
                   <td className="px-3 py-2 text-right">{margin}</td></>}
-                </tr>
+                </RowLink>
               );
             })}
           </tbody>

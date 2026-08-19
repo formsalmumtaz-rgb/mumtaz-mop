@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
 import { getTenantId } from "@/lib/tenant";
 import { listServiceReports, listCompletedJobsWithoutSR } from "@/lib/domain/servicereports";
 import { listTechnicians } from "@/lib/domain/technicians";
@@ -60,14 +61,14 @@ export default async function ServiceReportsPage() {
           <tbody className="divide-y divide-neutral-100">
             {reports.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-500">No service reports yet.</td></tr>}
             {reports.map((r) => (
-              <tr key={r.id}>
-                <td className="px-3 py-2"><Link href={`/service-reports/${r.id}`} className="font-mono text-xs text-brand underline">{r.report_number ?? "—"}</Link></td>
+              <RowLink key={r.id} href={`/service-reports/${r.id}`}>
+                <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{r.report_number ?? "—"}</td>
                 <td className="px-3 py-2">{r.customer ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{r.performer ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{r.server_completed_at?.slice(0, 10) ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{r.attachment_count}</td>
                 <td className="px-3 py-2"><ReviewPill action={r.review_action} /></td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>

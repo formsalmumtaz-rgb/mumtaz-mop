@@ -53,6 +53,7 @@ export async function listContracts(tenantId: string, customerId: string): Promi
 export interface AllContractRow extends Contract {
   customer_id: string;
   customer_name: string | null;
+  customer_code: string | null;
   jobs_count: number;
 }
 
@@ -62,7 +63,7 @@ export async function listAllContracts(tenantId: string): Promise<AllContractRow
             ct.currency, ct.start_date::text as start_date, ct.end_date::text as end_date,
             ct.frequency_id, f.name as frequency_name,
             ct.pricing_model_id, p.name as pricing_model_name,
-            ct.customer_id, cu.trade_name as customer_name,
+            ct.customer_id, cu.trade_name as customer_name, cu.code as customer_code,
             (select count(*)::int from jobs j where j.contract_id = ct.id) as jobs_count
        from contracts ct
        left join customers cu on cu.id = ct.customer_id

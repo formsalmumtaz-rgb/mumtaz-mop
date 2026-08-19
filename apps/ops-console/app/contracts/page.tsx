@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listAllContracts } from "@/lib/domain/contracts";
 import { Badge, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
-import { ExportButtons, FilterChips } from "@/components/ListControls";
+import { ExportButtons, FilterChips, ListToolbar } from "@/components/ListControls";
+import { RowLink } from "@/components/RowLink";
 
 // Contracts list (Release 1 item 1). Contracts previously had no list page and no
 // nav entry — reachable only via a customer, an estimate, or the billing table.
@@ -16,7 +17,14 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
   const tenantId = await getTenantId();
   const all = await listAllContracts(tenantId);
   const statusFilter = (sp.status ?? "").trim();
-  const contracts = statusFilter ? all.filter((c) => c.lifecycle_status === statusFilter) : all;
+  // Search by NUMBER first, then account number, then customer name (§3.2).
+  const q = (sp.q ?? "").trim().toLowerCase();
+  const contracts = all
+    .filter((c) => (statusFilter ? c.lifecycle_status === statusFilter : true))
+    .filter((c) => !q
+      || (c.contract_number ?? "").toLowerCase().includes(q)
+      || (c.customer_code ?? "").toLowerCase().includes(q)
+      || (c.customer_name ?? "").toLowerCase().includes(q));
   const active = contracts.filter((c) => c.lifecycle_status === "active").length;
 
   return (
@@ -26,6 +34,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
         description={`${contracts.length} contracts · ${active} active. A contract is created from an accepted estimate (or from a customer profile); activating it generates the schedule and jobs.`}
       />
       <div className="flex flex-wrap items-center gap-3">
+        <ListToolbar basePath="/contracts" params={sp} placeholder="Contract no., account no. or customer" showArchived={false} />
         <FilterChips basePath="/contracts" params={sp} name="status" allLabel="All statuses"
           options={[{ value: "draft", label: "Draft" }, { value: "active", label: "Active" },
                     { value: "expired", label: "Expired" }, { value: "cancelled", label: "Cancelled" }]} />
@@ -36,6 +45,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
           <Thead>
             <tr>
               <th className="px-3 py-2 text-left font-medium">Contract</th>
+              <th className="px-3 py-2 text-left font-medium">Account no.</th>
               <th className="px-3 py-2 text-left font-medium">Customer</th>
               <th className="px-3 py-2 text-left font-medium">Status</th>
               <th className="px-3 py-2 text-right font-medium">Value</th>
@@ -46,22 +56,20 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
           </Thead>
           <Tbody>
             {contracts.length === 0 && (
-              <tr><td colSpan={7} className="px-3 py-8 text-center text-neutral-500">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-500">
                 No contracts yet. Accept an estimate and convert it, or create one from a customer profile.
               </td></tr>
             )}
             {contracts.map((c) => (
-              <tr key={c.id}>
-                <td className="px-3 py-2">
-                  <Link href={`/contracts/${c.id}`} className="font-medium text-brand underline">
-                    {c.contract_number ?? "(no number)"}
-                  </Link>
+              // ROW = THE RECORD: the whole row opens THIS contract. The customer
+              // name is deliberately not a link — "View customer profile" lives on
+              // the contract's own detail page (§3.2).
+              <RowLink key={c.id} href={`/contracts/${c.id}`}>
+                <td className="px-3 py-2 font-medium text-brand">
+                  {c.contract_number ?? "(no number)"}
                 </td>
-                <td className="px-3 py-2">
-                  <Link href={`/customers/${c.customer_id}`} className="text-neutral-700 underline decoration-neutral-300 hover:text-brand">
-                    {c.customer_name ?? "—"}
-                  </Link>
-                </td>
+                <td className="px-3 py-2 font-mono text-xs text-neutral-700">{c.customer_code ?? "—"}</td>
+                <td className="px-3 py-2 text-neutral-700">{c.customer_name ?? "—"}</td>
                 <td className="px-3 py-2">
                   <Badge tone={c.lifecycle_status === "active" ? "success" : "neutral"}>{c.lifecycle_status}</Badge>
                 </td>
@@ -75,7 +83,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
                     ? <Link href={`/jobs?contract=${c.id}`} className="text-brand underline">{c.jobs_count}</Link>
                     : <span className="text-neutral-400">0</span>}
                 </td>
-              </tr>
+              </RowLink>
             ))}
           </Tbody>
         </table>

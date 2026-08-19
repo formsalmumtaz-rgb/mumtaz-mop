@@ -27,7 +27,12 @@ try {
     `select pg_terminate_backend(pid) from pg_stat_activity
       where datname = current_database() and pid <> pg_backend_pid()
         and state like 'idle in transaction%'
-        and state_change < now() - interval '2 minutes'`);
+        -- 30s, not 2 minutes: a suite run is ~65s, so a 2-minute threshold let an
+        -- orphan from the immediately preceding command survive the whole run and
+        -- block one claim insert — which is how a 25/25 suite came back 23/25 with
+        -- no logic having changed. Nothing legitimate sits idle in a transaction
+        -- for 30 seconds against this database.
+        and state_change < now() - interval '30 seconds'`);
 } catch {
   // best-effort: a failed cleanup must never fail the suite
 } finally {

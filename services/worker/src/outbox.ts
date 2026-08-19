@@ -98,6 +98,16 @@ export async function drainOnce(
       if (c.eventTypes && !c.eventTypes.includes(ev.event_type as EventType)) continue;
       try {
         await client.query("begin");
+        // Fail FAST if another session is holding this claim row rather than
+        // stalling for the whole statement budget. A killed run leaves a session
+        // idle-in-transaction holding an event_consumers PK row; without this the
+        // claim below blocks until statement_timeout (~2 min on the pooler), the
+        // drain returns having processed nothing, and the caller fails on a wrong
+        // VALUE with no hint as to why. With it the drain gives up on this pair in
+        // two seconds, records the attempt, logs a lock message, and moves on —
+        // the event is retried on the next drain. Exactly-once is untouched: a
+        // claim that never committed grants nothing.
+        await client.query("set local lock_timeout = '2s'");
         // Claim the (consumer, event) pair. rowCount 1 => first time for this
         // consumer; 0 => already handled, skip (idempotent).
         const claim = await client.query(
@@ -125,7 +135,14 @@ export async function drainOnce(
         await pool.query(`update outbox_events set attempts = attempts + 1 where event_id = $1`, [
           ev.event_id,
         ]);
-        console.error(`[outbox] consumer "${c.name}" failed on ${ev.event_id}:`, (err as Error).message);
+        const msg = (err as Error).message;
+        // Name the environmental case explicitly so a red test is diagnosable at a
+        // glance instead of looking like a business-logic bug.
+        const contended = /lock timeout|canceling statement due to lock timeout|deadlock detected/i.test(msg);
+        console.error(
+          `[outbox] consumer "${c.name}" failed on ${ev.event_id}:`, msg,
+          contended ? "\n  ^ LOCK CONTENTION, not a logic failure: another session holds this claim row. " +
+                      "Check for idle-in-transaction sessions (services/worker/test/_setup.ts clears orphans)." : "");
       }
     }
 

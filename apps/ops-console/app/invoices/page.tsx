@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
 import { getTenantId } from "@/lib/tenant";
 import { listInvoicesPaged } from "@/lib/domain/invoices";
 import { listCustomers } from "@/lib/domain/customers";
@@ -65,8 +66,8 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
           <tbody className="divide-y divide-neutral-100">
             {invoices.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-500">{lp.q ? "No invoices match your search." : "No invoices yet."}</td></tr>}
             {invoices.map((i) => (
-              <tr key={i.id}>
-                <td className="px-3 py-2"><Link href={`/invoices/${i.id}`} className="font-mono text-xs text-brand underline">{i.invoice_number ?? "(draft)"}</Link></td>
+              <RowLink key={i.id} href={`/invoices/${i.id}`}>
+                <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{i.invoice_number ?? "(draft)"}</td>
                 <td className="px-3 py-2">{i.customer ?? "—"}</td>
                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[i.status] ?? ""}`}>{i.status}</span></td>
                 <td className="px-3 py-2 text-neutral-600">{i.issue_date ?? "—"}</td>
@@ -74,7 +75,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                 <td className="px-3 py-2 text-right">{aed(i.subtotal)}</td>
                 <td className="px-3 py-2 text-right text-neutral-600">{aed(i.vat_total)}</td>
                 <td className="px-3 py-2 text-right font-medium">{aed(i.total)}</td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>

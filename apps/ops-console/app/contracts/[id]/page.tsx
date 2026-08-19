@@ -69,7 +69,9 @@ export default async function ContractDetail({ params, searchParams }: { params:
       )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <Link href={`/customers/${ct.customer_id}`} className="text-sm text-brand underline">← {ct.customer_name ?? "Customer"}</Link>
+          <Link href={`/customers/${ct.customer_id}`} className="text-sm text-brand underline">
+            View customer profile — {ct.customer_name ?? "Customer"}
+          </Link>
           <h1 className="mt-1 flex items-center gap-3 text-2xl font-semibold">
             {ct.contract_number ?? "(no number)"}
             <StatusPill status={ct.lifecycle_status} />

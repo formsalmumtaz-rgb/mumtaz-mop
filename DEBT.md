@@ -251,3 +251,55 @@ keys, audiences), not merely send. Exposure is limited to the two git-ignored
 **Repayment trigger.** **Before production go-live**: replace with a sending-only
 key in `.env.local` (root + apps/ops-console) and Vercel, then revoke the
 full-access key in the Resend dashboard.
+
+---
+
+## D-TEST1 — The suite's intermittent failures: root cause found and closed (19 Aug 2026)
+
+**Symptom.** `npm run test:worker` returned **23/25** once, with 13 clean runs
+either side of it and no code change between them. A suite that fails at random
+is worse than no suite, so this was chased to the ground before further work.
+
+**Root cause — proven, not inferred.** A session left **idle in transaction**
+holds the `event_consumers` primary-key row it inserted. `drainOnce` claims each
+(consumer, event) pair with an `insert … on conflict do nothing` against that
+same key, so the claim **blocks** until `statement_timeout` (~2 min on the
+pooler). The drain catches the error, rolls back, records the attempt and moves
+on — leaving the event **unprocessed**. The test that follows then fails on a
+**wrong value**, which reads exactly like a business-logic bug.
+
+Demonstrated directly (session A holds the claim row uncommitted; session B runs
+the drain's own claim statement):
+
+```
+Session A: holds event_consumers PK ('invoice_on_job_completed', 14f16af7…), NOT committed
+Session B: claim BLOCKED then failed after 5.0s
+           error: canceling statement due to statement timeout
+Event after the blocked drain: processed_at=null, attempts=0
+```
+
+**Why it hit that particular run.** `_setup.ts` already cleared orphaned
+sessions, but only those idle for more than **2 minutes**. A suite run takes
+~65 seconds, so an orphan created shortly before a run survived the entire run.
+Measured: at 35 seconds idle, the 2-minute rule declines to terminate it, and
+the 30-second rule terminates it.
+
+**Closed by two changes, both of which are also right in production:**
+
+1. `services/worker/src/outbox.ts` — `set local lock_timeout = '2s'` on the claim
+   transaction. A contended claim now gives up in two seconds and is retried on
+   the next drain, instead of holding a connection for the full statement budget.
+   Exactly-once is untouched: a claim that never committed grants nothing.
+2. `services/worker/src/outbox.ts` — a contended failure now says so in the log
+   ("LOCK CONTENTION, not a logic failure"), so a red suite is diagnosable at a
+   glance rather than looking like a broken invariant.
+3. `services/worker/test/_setup.ts` — orphan threshold **2 minutes → 30 seconds**,
+   so an orphan can no longer outlive a run. Nothing legitimate sits idle in a
+   transaction for 30 seconds against this database.
+
+**Evidence.** 10/10 clean before the change (plus 3 earlier), 3/3 clean after.
+**No test logic was changed and no assertion was relaxed.**
+
+**Repayment trigger.** If a 23/25-class failure recurs, the drain now names it
+in the log. If it recurs *without* a lock message, the cause is different and
+this entry no longer applies — reopen it.
