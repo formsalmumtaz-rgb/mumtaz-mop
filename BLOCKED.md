@@ -99,6 +99,23 @@ doing in that area. The area is the **district** on the customer, and 271 of the
 team's existing round") rather than guess. The district is one of the fields the
 profile now prompts for, so this fills in through daily use.
 
+#### 0.7b — Restaurant B and C are guesses, and the fuel figure is too
+
+Quick-pricing works, but three numbers in it are mine, not yours. Each is
+flagged on screen wherever it is used, and each is editable from settings:
+
+- **Restaurant B and C sizes.** You gave me A (1 mix, 50 ml, ~20 min) and D
+  (max 3 mixes, 150 ml, never more). B and C I proposed as 2 and 3 mixes. Tell
+  me the real sizes and durations.
+- **The Dubai uplift.** You said +10–20%; I seeded **15%** as the midpoint.
+  Give me the number you actually quote at.
+- **Fuel: 12 L/100km.** No reconciled fuel log exists yet, so a van's real
+  consumption is unknown. It only affects the travel line on a quote and will
+  correct itself once refuel data accumulates — but say if 12 is wrong.
+
+Restaurant A is marked confirmed because you stated it outright. D's 150 ml cap
+is enforced by the database: a preset that would dose past it cannot be saved.
+
 #### 0.8 — Still open from before: should a contract be able to name an outlet?
 
 `contracts` points at a customer, not at a branch. Until that changes, outlets

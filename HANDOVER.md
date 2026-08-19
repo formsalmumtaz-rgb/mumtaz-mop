@@ -10,46 +10,52 @@ Last updated: 19 Aug 2026.
 
 ## 1. WHERE WE ARE
 
-- **[FACT] main is `9ece62c`** (this handover commit sits on top). Remote is
-  SSH-only via the `github-mumtaz` alias — never `gh`, never HTTPS, never
-  `git@github.com:` (that authenticates as a different business's account).
-  See CLAUDE.md § "Git remote and identity".
-- **[FACT] Migrations 001–096 exist; 093–096 are applied to staging** and their
-  columns were verified present after apply:
-  - `093_customer_extended_profile.sql` — 21 new customer columns + the
-    `industry_categories` reference table (9 seeded per tenant).
-  - `094_staging_extended_customer.sql` — staging carries every one of them
-    (`staging_customers` now has 49 columns).
-  - `095_night_shift_home_base.sql` — `customer_branches.closing_time` +
-    `night_shift_service` (per BRANCH), `customers.night_shift_service` (default
-    for new sites), and `settings.operations.home_base` (Ajman New Industrial
-    Area depot; **lat/lng are null until the maps key is live**).
-  - `096_notification_channels.sql` — `outbound_notifications.channel` +
-    `channel_ref`, `customers.preferred_channel`. Email is the only implemented
-    channel.
-- **[FACT] The registration form asks the full question set** and is the same
-  vocabulary as the importer. It previously collected contact person / email /
-  phone and **dropped them**; it now writes a real `contacts` row. A trade
-  licence expiry becomes a `monitored_documents` row (same expiry engine as
-  vehicle and staff papers).
-- **[FACT] The importer accepts Customer_Master_v2 — 38 columns, mapped by
-  header name with aliases**, so `ACCOUNT_NO`/`CUSTOMER_NAME` import unchanged.
-  Unknown headers are reported, never silently dropped. `GET
-  /api/import/template` returns all 38 columns (verified live).
-- **[FACT] `tsc` clean and `next build` passes** at `9ece62c`.
-- **[FACT] Earlier runs shipped and are on main:** calendar month view with
-  drag-drop reschedule + customer "your visit has moved" notice; Excel/PDF
-  export + filters on customers/contracts/jobs/invoices/expenses; the bulk
-  import UI (upload → validation report → approve → commit); weekly + yearly
-  report packs and `/reports/preview` with Send-now; field-app swipe-to-start;
-  the agreement generator rebuilt with real bilingual clauses and the correct
-  contracting entity per emirate (Sharjah TL 546486 / Dubai TL 996625); the
-  Claude assistant (admin-only, explain-only) phases 1–4.
-- **[FACT] `merge/CUSTOMER_Master_MOP.xlsx` is in the repo** — 583 customers,
-  24 groups, a Missing Info sheet (568 rows) and a Summary sheet stating the
-  file's own conventions. **It has NOT been imported.**
+Last updated: **19 Aug 2026**, head **`cf4e4f0`**.
 
----
+- **[FACT] The 583-customer import is DONE and live.** 583 customers on 5-digit
+  account numbers (11111-11827), 24 groups, 464 sites, 403 contacts. 16 legacy
+  `CUST-` records remain: 1 linked (Calicut `CUST-0001` -> `11193`), 15 flagged
+  for console resolution. **0 documents were moved** - reconciliation is a LINK
+  (`customers.reconciled_to_customer_id`, mig 100), never a repoint, because an
+  issued invoice or receipt is frozen (Art. VII §2).
+- **[FACT] Doctrine now in force** - DECISIONS §12 (5-digit account numbers),
+  §13 (multi-outlet = group -> customers -> branches; the Sultan Al Arab merge is
+  SUPERSEDED and was never performed), §14 (file is truth, legacy is history).
+- **[FACT] Migrations 097-109 applied.** 097 account-number scheme · 098 group
+  matching · 099/104 declared attributes · 100 reconciliation link · 101 contract
+  engagement type · 102/103 area-window settings (owner-ratified) · 105 schedule
+  approvals + home-base pin · 106 team_vehicles · 107 category dosage · 108 fuel
+  consumption · 109 invoices-are-triggered.
+- **[FACT] Green at `cf4e4f0`:** `tsc` clean, RLS gate passes, `next build`
+  compiles, worker suite **26/26**.
+- **[FACT] The intermittent suite failure is CLOSED** - root cause proven, see
+  `DEBT.md` D-TEST1. An idle-in-transaction session blocked the drain's claim
+  insert until statement_timeout, leaving events unprocessed so the next assertion
+  failed on a wrong value. Fixed with `lock_timeout`, an explicit LOCK CONTENTION
+  log line, and orphan cleanup tightened 2 min -> 30 s.
+
+### What shipped this run
+
+- **§3.2 complete.** `components/RowLink.tsx` - ROW = the record, across all
+  lists. Account number everywhere, search is number -> account -> name.
+  ListToolbar on estimates/surveys/service-reports. The survey no longer re-asks
+  the customer. Estimates no longer forced to AMC (mig 101). Quotations and
+  agreements have **no standalone list** (views of estimates/contracts); pipeline
+  is a counts dashboard.
+- **§3.1 tail - the REQUIRED_INFO prompt exists.** 584 of 599 customers carry a
+  flag and there was **no UI for them at all**; the profile now asks for exactly
+  the missing fields and each answer clears only its own flag.
+- **§3.3 complete.** `lib/domain/firstvisit.ts` + `FirstVisitPanel`: suggestions
+  with reasons, booked only on a click, off-pattern flagged. No area master
+  invented - area = the customer's district, pattern derived from live jobs.
+- **§3.4 complete.** Calendar team/shift/area filters · `/schedule/approvals`
+  with **24h customer notices gated on approval, not generation** ·
+  `/teams/crews` drag-drop, date-effective, persists day-to-day.
+- **§3.5 data + engine, NO UI.** Restaurant A/D carry the owner's numbers (D's
+  150 ml cap is a CHECK constraint), B/C ASSUMED. `lib/domain/quickprice.ts`
+  computes material + labour + travel from the pinned Ajman depot, Dubai uplift
+  as guidance. **The picker still needs wiring.**
+- **§3.6 started.** Invoices are TRIGGERED (mig 109).
 
 ## 2. THE DECISION JUST MADE — 5-digit account numbers (RATIFIED)
 
@@ -170,18 +176,15 @@ in one tap:
   **[FACT] created, lat/lng still null**). All distance/fuel/time calculations
   run from this base to the site pin.
 
-### 3.6 — §6 attestation charge + invoicing rules
-- **Sharjah F&B contracts:** **AED 250 + VAT** attestation charge added to the
-  **first invoice automatically** — rate **editable**, and **removable** (not
-  forced).
-- **Invoices are TRIGGERED, never auto-generated.** Wherever auto-generation
-  exists today, convert it to a request/trigger with human confirmation.
-- **Technician invoice at completion:** the technician can generate the invoice
-  from the app — everything prepopulated, amount **adjustable**, **partial
-  payment or overpayment accepted** (record what is actually received). Receipt
-  voucher generated from the tech/supervisor app on payment.
-- **Job status from the app:** completed / **cancelled** / **delayed with
-  reason** — flows to ops and the schedule.
+### 3.6 — §6 attestation charge + invoicing rules — PART DONE
+- **DONE:** invoices are triggered, never auto-generated (mig 109). The nightly
+  cron prepares; a human issues, which numbers and GL-posts. Two tests pin down
+  both halves.
+- **REMAINING:** Sharjah F&B **AED 250 + VAT attestation charge** on the first
+  invoice, **editable AND removable**; **technician invoice at completion**
+  (prepopulated, adjustable, partial/overpayment accepted, receipt voucher from
+  the app); **job status from the app** — completed / cancelled / delayed with
+  reason, flowing to ops and the schedule.
 
 ### 3.7 — §7 technician + supervisor apps
 - **All ~20 technicians get auth accounts.** Bulk-create from the imported staff
