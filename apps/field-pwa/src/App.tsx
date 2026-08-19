@@ -3,6 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
 import { MyDay } from "./MyDay";
 import { HrRequest } from "./HrRequest";
+import { CloseDay } from "./CloseDay";
 import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
 import { calcDose } from "./dose";
 import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
@@ -54,6 +55,7 @@ export function App() {
   // §3.7 — the technician's own day, and HR requests.
   const [showDay, setShowDay] = useState(false);
   const [showHr, setShowHr] = useState(false);
+  const [showClose, setShowClose] = useState(false);
   const [myDayCache, setMyDayCache] = useState<{ requests: { id: string; kind: string; status: string; from_date: string | null; reason: string }[] } | null>(null);
   useEffect(() => { void db.meta.get("myDay").then((m) => setMyDayCache((m?.value as never) ?? null)); }, [showDay]);
 
@@ -128,6 +130,15 @@ export function App() {
       <button className="ghost" onClick={() => { setShowDay(false); setShowHr(true); }} style={{ marginTop: ".9rem" }}>
         🤒 Sick leave or another request
       </button>
+      <button className="ghost" onClick={() => { setShowDay(false); setShowClose(true); }} style={{ marginTop: ".5rem" }}>
+        🔒 Close the day (supervisor)
+      </button>
+      <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
+    </div></div>
+  );
+  if (showClose) return (
+    <div className="app"><div className="content">
+      <CloseDay base={SYNC_BASE} onBack={() => { setShowClose(false); setShowDay(true); }} />
       <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
     </div></div>
   );
