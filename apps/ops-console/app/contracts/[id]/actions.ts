@@ -8,6 +8,8 @@ import {
   archiveContract, restoreContract, getContract, getScheduleSummary,
 } from "@/lib/domain/contracts";
 import { setContractBilling } from "@/lib/domain/billing";
+import { getServiceLineId } from "@/lib/domain/reference";
+import { bookFirstVisit, type FirstVisitBasis } from "@/lib/domain/firstvisit";
 
 export async function updateContractAction(fd: FormData): Promise<void> {
   await requirePermission("contract.edit");
@@ -146,5 +148,22 @@ export async function resolveSevereEpisodeAction(fd: FormData): Promise<void> {
         where id=$1 and tenant_id=$2 and resolved_at is null`,
       [id, tenantId, String(fd.get("note") ?? ""), session?.userId ?? null]),
   );
+  revalidatePath(`/contracts/${contractId}`);
+}
+
+// §3.3 — book the first visit the office CONFIRMED. The engine only ever
+// suggests; nothing reaches the schedule without this click.
+export async function bookFirstVisitAction(formData: FormData): Promise<void> {
+  await requirePermission("job.edit");
+  const contractId = String(formData.get("contract_id"));
+  const tenantId = await getTenantId();
+  const serviceLineId = await getServiceLineId(tenantId);
+  await bookFirstVisit(tenantId, serviceLineId, contractId, {
+    date: String(formData.get("date")),
+    team_id: String(formData.get("team_id") ?? "") || null,
+    basis: String(formData.get("basis")) as FirstVisitBasis,
+    off_pattern: String(formData.get("off_pattern")) === "true",
+    reason: String(formData.get("reason") ?? ""),
+  });
   revalidatePath(`/contracts/${contractId}`);
 }

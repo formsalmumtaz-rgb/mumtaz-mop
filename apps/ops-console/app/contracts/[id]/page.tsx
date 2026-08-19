@@ -5,10 +5,13 @@ import { getContract, getScheduleSummary, getFrequencyBasis } from "@/lib/domain
 import { listFrequencies, listPricingModels } from "@/lib/domain/reference";
 import { TermDates } from "@/components/TermDates";
 import { scopedRead } from "@/lib/rls";
+import { suggestFirstVisit } from "@/lib/domain/firstvisit";
+import { FirstVisitPanel } from "@/components/FirstVisitPanel";
 import {
   activateContractAction, setContractBillingAction,
   updateContractAction, extendContractAction, archiveContractAction, restoreContractAction,
   markAttestationAction, openSevereEpisodeAction, resolveSevereEpisodeAction,
+  bookFirstVisitAction,
 } from "./actions";
 
 const FREQS = ["per_visit", "weekly", "monthly", "quarterly", "half_yearly", "yearly", "custom"];
@@ -23,7 +26,7 @@ export default async function ContractDetail({ params, searchParams }: { params:
   const tenantId = await getTenantId();
   const ct = await getContract(tenantId, id);
   if (!ct) notFound();
-  const [sum, frequencies, pricingModels, freqBasis, attRows, episodes] = await Promise.all([
+  const [sum, frequencies, pricingModels, freqBasis, attRows, episodes, firstVisit, bookedRows] = await Promise.all([
     getScheduleSummary(tenantId, id),
     listFrequencies(tenantId),
     listPricingModels(tenantId),
@@ -42,6 +45,12 @@ export default async function ContractDetail({ params, searchParams }: { params:
          left join contract_severe_cost s on s.episode_id = e.id
         where e.tenant_id = $1 and e.contract_id = $2
         order by e.opened_at desc limit 5`, [tenantId, id]).then((r) => r.rows),
+    // §3.3 — where this contract's first visit belongs. Reads only; books nothing.
+    suggestFirstVisit(tenantId, id),
+    scopedRead(tenantId,
+      `select scheduled_date::text as date, attributes ? 'off_pattern' as off_pattern
+         from jobs where contract_id = $2 and tenant_id = $1 and archived_at is null
+           and attributes->>'first_visit' = 'true' limit 1`, [tenantId, id]).then((r) => r.rows),
   ]);
   const att = attRows[0] ?? { attestation_status: "not_required" };
   const isActive = ct.lifecycle_status === "active";
@@ -93,6 +102,7 @@ export default async function ContractDetail({ params, searchParams }: { params:
             </p>
           )}
         </div>
+
         <div className="flex items-center gap-2">
           <a href={`/contracts/${ct.id}/agreement`}
              className="rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
@@ -114,7 +124,18 @@ export default async function ContractDetail({ params, searchParams }: { params:
         </div>
       </div>
 
+      {/* §3.3 — where the first visit belongs, and why. Books only on a click. */}
+      <FirstVisitPanel
+        contractId={ct.id}
+        suggestions={firstVisit.suggestions}
+        area={firstVisit.area}
+        note={firstVisit.note}
+        booked={bookedRows[0] ? { date: bookedRows[0].date as string, off_pattern: !!bookedRows[0].off_pattern } : null}
+        action={bookFirstVisitAction}
+      />
+
       {/* Contract terms — editable while unlocked; frozen once invoiced */}
+
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
         <h2 className="mb-1 font-medium">Contract terms</h2>
         {locked ? (

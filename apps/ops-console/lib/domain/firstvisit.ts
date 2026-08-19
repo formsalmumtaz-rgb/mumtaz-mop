@@ -40,7 +40,13 @@ export async function suggestFirstVisit(
             (select (value #>> '{}') from settings
               where tenant_id=$1 and service_line_id is null and key='scheduling.week_start_day') as week_start,
             (select (value #>> '{}')::numeric from settings
-              where tenant_id=$1 and service_line_id is null and key='scheduling.near_area_km') as near_km
+              where tenant_id=$1 and service_line_id is null and key='scheduling.near_area_km') as near_km,
+            -- Only a setting that is STILL assumed is worth flagging to the office.
+            -- Both of these were ratified by the owner on 19 Aug (mig 103), so the
+            -- suggestions stopped carrying an ASSUMED badge automatically — the flag
+            -- is read, never hardcoded (Art. X §4: confirmation clears it).
+            (select coalesce(array_agg(key) filter (where is_assumed), '{}') from settings
+              where tenant_id=$1 and service_line_id is null and key like 'scheduling.%') as assumed_keys
        from contracts ct
        join customers cu on cu.id = ct.customer_id
        left join lateral (
@@ -51,7 +57,7 @@ export async function suggestFirstVisit(
   const c = ctx[0];
   if (!c) return { suggestions: [], area: null, note: "Contract not found." };
 
-  const assumed = ["scheduling.week_start_day (ASSUMED)", "scheduling.near_area_km (ASSUMED)"];
+  const assumed = ((c.assumed_keys ?? []) as string[]).map((k) => `${k} (ASSUMED)`);
   const out: FirstVisitSuggestion[] = [];
 
   // (a) the area is already being served THIS WEEK, on a day still to come.
@@ -130,4 +136,56 @@ export async function suggestFirstVisit(
     : !c.area ? `No area recorded for ${c.customer ?? "this customer"} — set the district on the profile and the first visit can be slotted into a team's existing round.`
     : `Nothing is scheduled in ${c.area} yet${c.has_pin ? " and no team passes nearby" : ", and this site has no map pin to measure from"}. Choose a date.`;
   return { suggestions: out, area: c.area ?? null, note };
+}
+
+// Book the first visit the office CONFIRMED. The suggestion engine never books;
+// this runs only from an explicit click, and it records which suggestion was
+// accepted so the decision is auditable after the fact.
+//
+// An off-pattern booking — (b), a team passing near rather than serving the area —
+// is flagged on the job itself, because a technician seeing it on the round needs
+// to know it is not part of the normal pattern for that day.
+export async function bookFirstVisit(
+  tenantId: string, serviceLineId: string, contractId: string,
+  choice: { date: string; team_id: string | null; basis: FirstVisitBasis; off_pattern: boolean; reason: string },
+): Promise<string> {
+  const { withTenantTx } = await import("./tx");
+  const { audit } = await import("./audit");
+  return withTenantTx(tenantId, async (c) => {
+    const { rows: ct } = await c.query(
+      `select customer_id, lifecycle_status from contracts where id=$1 and tenant_id=$2 for update`,
+      [contractId, tenantId]);
+    if (!ct[0]) throw new Error("Contract not found");
+
+    // One first visit per contract. A second click must not book a second job.
+    const { rows: already } = await c.query(
+      `select id, scheduled_date::text as d from jobs
+        where contract_id=$1 and tenant_id=$2 and archived_at is null
+          and attributes->>'first_visit' = 'true' limit 1`, [contractId, tenantId]);
+    if (already[0]) throw new Error(`The first visit is already booked for ${already[0].d}.`);
+
+    const { rows: br } = await c.query(
+      `select id from customer_branches where customer_id=$1 and archived_at is null
+        order by (location is not null) desc, created_at limit 1`, [ct[0].customer_id]);
+
+    const { rows: job } = await c.query(
+      `insert into jobs (tenant_id, service_line_id, customer_id, branch_id, contract_id,
+                         team_id, scheduled_date, status, attributes)
+       values ($1,$2,$3,$4,$5,$6,$7::date,'scheduled',$8::jsonb)
+       returning id`,
+      [tenantId, serviceLineId, ct[0].customer_id, br[0]?.id ?? null, contractId,
+       choice.team_id, choice.date,
+       JSON.stringify({
+         first_visit: "true",
+         first_visit_basis: choice.basis,
+         ...(choice.off_pattern ? { off_pattern: "first visit — off-pattern" } : {}),
+       })]);
+
+    await audit(c, tenantId, {
+      table: "jobs", rowId: job[0].id, action: "insert",
+      newValue: { contract_id: contractId, scheduled_date: choice.date, basis: choice.basis, off_pattern: choice.off_pattern },
+      note: `first visit booked by the office from a suggestion: ${choice.reason}`,
+    });
+    return job[0].id as string;
+  });
 }
