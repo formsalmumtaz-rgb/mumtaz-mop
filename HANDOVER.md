@@ -1,289 +1,328 @@
-# HANDOVER.md
+# HANDOVER — read this first, then CLAUDE.md and CONSTITUTION.md
 
-**For a fresh Claude Code session with repo + database access but no prior chat
-history.** Read `CLAUDE.md`, `CONSTITUTION.md`, `DECISIONS.md`, and
-`ARCHITECTURE-BASELINE.md` first — they are binding. This file is a factual
-status snapshot written 12 Aug 2026. `[FACT]` = verifiable in the repo or the
-database right now. `[ESTIMATE]` = author's judgment. Verify anything before you
-rely on it; some `[FACT]`s (test results, applied migrations) are point-in-time
-and you should re-run to confirm.
+Written for a session with **no conversation history**. Every claim is tagged
+**[FACT]** (verifiable right now in the repo or the database) or **[ESTIMATE]**
+(judgement, not verified). Trust nothing untagged.
+
+Last updated: 19 Aug 2026.
 
 ---
 
 ## 1. WHERE WE ARE
 
-- `[FACT]` main is at commit `aec075a` (the commit *before* this file). The
-  technician-app work landed as PRs **#53–#67**, all merged to main.
-- `[FACT]` Migration files run `001` → `059`. Migrations `051`–`059` were applied
-  to the shared Supabase project `xpkniuhcjysisfbfiqhn` during this work. Confirm
-  with the Supabase `list_migrations` tool — a cold session must not assume.
-- `[FACT]` **Technician app T1–T6 is built and merged:**
-  - **T1** (#59 server, #60 client): offline auth. Device+server time provenance
-    on every field event (`outbox_events.device_time` / `server_received_at` /
-    `time_suspect`, mig 054); Bearer re-authorization on `/api/field/*`
-    (`lib/field-auth.ts` `resolveFieldRequest`); token revocation → events held
-    `needs_review` not discarded (drain skips them, mig 055/056); `/field-review`
-    admin screen + dashboard tile. PWA: Supabase login, Bearer sync, revoke lock
-    (`apps/field-pwa/src/auth.ts`).
-  - **T2** (#62): extracted `@mop/documents` (brandChrome + serviceReportPdf +
-    quotationPdf); `/api/field/sync` returns the job's frozen recipe; mig 057
-    seeds ASSUMED recipes.
-  - **T3** (#63): pre-flight (mig 058 `preflight_checks` + `preflight_checklist_items`);
-    `/api/field/preflight`; PWA PreflightScreen.
-  - **T4** (#64): post-inspection (mig 059 append-only `job_inspections` +
-    `inspection_options`); `job.inspected` event + worker `inspection-recorder`
-    consumer; PWA button-driven form + Google Maps deep-link.
-  - **T5** (#65): field cash + expense; worker `cash-collector` / `expense-recorder`
-    consumers; PWA "Cash & expenses" card.
-  - **T6** (#66): honest sync indicator. **The other half of T6 — rewiring the
-    on-device report to brandChrome + division logo — is NOT done** (see BLOCKED
-    A10).
-- `[FACT]` **Filed but NOT built:** `ROADMAP-AMENDMENT.md` (727 lines). Its §0
-  states everything in it beyond migrations `001`–`023` is *filed, not built*.
-  Two owner requests from this era were also **not built**: the **costing &
-  estimation real-configuration** ("Prompt 3": real technician cost, material
-  landed-cost, consumption rules, treatment cycle, travel-in-labour) and the
-  **RBS / monitoring-points module** ("Prompt 4"). Do not treat either as
-  delivered.
+- **[FACT] main is `9ece62c`** (this handover commit sits on top). Remote is
+  SSH-only via the `github-mumtaz` alias — never `gh`, never HTTPS, never
+  `git@github.com:` (that authenticates as a different business's account).
+  See CLAUDE.md § "Git remote and identity".
+- **[FACT] Migrations 001–096 exist; 093–096 are applied to staging** and their
+  columns were verified present after apply:
+  - `093_customer_extended_profile.sql` — 21 new customer columns + the
+    `industry_categories` reference table (9 seeded per tenant).
+  - `094_staging_extended_customer.sql` — staging carries every one of them
+    (`staging_customers` now has 49 columns).
+  - `095_night_shift_home_base.sql` — `customer_branches.closing_time` +
+    `night_shift_service` (per BRANCH), `customers.night_shift_service` (default
+    for new sites), and `settings.operations.home_base` (Ajman New Industrial
+    Area depot; **lat/lng are null until the maps key is live**).
+  - `096_notification_channels.sql` — `outbound_notifications.channel` +
+    `channel_ref`, `customers.preferred_channel`. Email is the only implemented
+    channel.
+- **[FACT] The registration form asks the full question set** and is the same
+  vocabulary as the importer. It previously collected contact person / email /
+  phone and **dropped them**; it now writes a real `contacts` row. A trade
+  licence expiry becomes a `monitored_documents` row (same expiry engine as
+  vehicle and staff papers).
+- **[FACT] The importer accepts Customer_Master_v2 — 38 columns, mapped by
+  header name with aliases**, so `ACCOUNT_NO`/`CUSTOMER_NAME` import unchanged.
+  Unknown headers are reported, never silently dropped. `GET
+  /api/import/template` returns all 38 columns (verified live).
+- **[FACT] `tsc` clean and `next build` passes** at `9ece62c`.
+- **[FACT] Earlier runs shipped and are on main:** calendar month view with
+  drag-drop reschedule + customer "your visit has moved" notice; Excel/PDF
+  export + filters on customers/contracts/jobs/invoices/expenses; the bulk
+  import UI (upload → validation report → approve → commit); weekly + yearly
+  report packs and `/reports/preview` with Send-now; field-app swipe-to-start;
+  the agreement generator rebuilt with real bilingual clauses and the correct
+  contracting entity per emirate (Sharjah TL 546486 / Dubai TL 996625); the
+  Claude assistant (admin-only, explain-only) phases 1–4.
+- **[FACT] `merge/CUSTOMER_Master_MOP.xlsx` is in the repo** — 583 customers,
+  24 groups, a Missing Info sheet (568 rows) and a Summary sheet stating the
+  file's own conventions. **It has NOT been imported.**
 
 ---
 
-## 2. WHAT IS PROVEN vs UNVERIFIED
+## 2. THE DECISION JUST MADE — 5-digit account numbers (RATIFIED)
 
-### Proven (automated, against the live DB)
-- `[FACT]` **Worker suite** `npm run test:worker` — 10 files
-  (`exactly_once`, `fanout`, `inventory` FEFO, `billing`, `recurring_billing`,
-  `costing`, `interrupted_sync`, `field_provenance`, `inspection`, `fieldfinance`),
-  **19 tests, last run GREEN 12 Aug 2026**. Needs the root `.env.local`
-  `DATABASE_URL`. Re-run to confirm — it is intermittently flaky on the shared
-  Supabase pooler under concurrency (a clean re-run passes; not a code failure).
-- `[FACT]` **`packages/db/tests/invariants.sql`** (append-only, debits=credits,
-  version immutability) — last run GREEN 12 Aug 2026.
-- `[FACT]` **`packages/db/tests/rls_isolation.sql`** — 20 tenant-isolation checks
-  + the no-policy-gap structural guard — last run GREEN 12 Aug 2026. (Runner:
-  execute the file via a `pg` client with the session-pooler `DATABASE_URL`.)
-- `[FACT]` `scripts/rls-gate.mjs` (no bare `pool.query` in request paths) and
-  `next build` (ops-console) + `tsc --noEmit && vite build` (field-pwa) — green.
+Recorded in **DECISIONS.md §12**. Summary:
 
-### Build-verified ONLY (compiles; behaviour not executed)
-- `[FACT]` Every **field PWA screen** (login, jobs, job detail, pre-flight,
-  inspection, cash/expense, sync indicator) — TypeScript + vite build only.
-- `[FACT]` The **agreement `.docx`** generator (#58) — output validated as a real
-  OOXML zip (header/footer/media present), but **never opened in Word** by the
-  author.
+- The master file's **5-digit numbers (11111–11827, digit 0 never used)** become
+  THE permanent customer account number. **CUST-XXXX is retired.**
+- **CUST-0001 … CUST-0600 are burned — never reusable.**
+- New numbers continue from **11828**, skipping any number containing a 0.
+  Three call sites mint codes and all three change:
+  `apps/ops-console/lib/domain/customers.ts`,
+  `apps/ops-console/lib/domain/imports.ts`,
+  `apps/ops-console/scripts/import-merge.ts`.
+- **Every surface, list and document displays the 5-digit number.** All read
+  `customers.code`, so they follow automatically; relabel to "Account no.".
+- **Calicut Restaurant (`CUST-0001`) → 11193.**
+- **The six Sultan Al Arab records (`CUST-0026, 0088, 0089, 0090, 0091, 0092`)
+  → 11662.**
 
-### NEVER exercised — on a real device or in a browser
-- `[FACT/ESTIMATE]` The **entire field PWA runtime**: sign-in, session
-  persistence across app-kill, **airplane-mode offline day**, camera capture +
-  WebP compression, **on-device PDF rendering**, GPS + Google Maps deep-link,
-  the **revoke-while-offline → lockout** path, and the full
-  offline-then-reconnect sync cycle. All built, none run on a phone.
-- `[FACT]` The **ops-console UI in a browser** — the author only ran `next build`
-  and `curl`ed status codes (e.g. `/login` → 200). No page was rendered or
-  clicked. Visual/interaction correctness is unverified.
-- `[FACT]` The **service-report / quotation / agreement PDFs** were rendered
-  headless to PNG by the author for the branding work, but **not** viewed by a
-  human in their final form, and never printed.
+**[FACT] The Sultan Al Arab renumbering is a MERGE, not a rename.** The file has
+one record; the live system has six, holding **7 contracts and 3 jobs**.
+`unique (tenant_id, code)` forbids six rows sharing 11662. So: one record
+becomes 11662, the other five have their contracts and jobs repointed to it and
+are archived — one transaction, audited, counts reported before and after.
+Nothing is deleted.
 
 ---
 
-## 3. OPEN ERRORS
+## 3. THE WORK QUEUE — in this exact order
 
-### Production 500 on Vercel (digest `6663152226`) — OPEN
-- `[FACT]` The owner reports the deployed ops-console returning "Application
-  error: a server-side exception has occurred" with digest `6663152226`
-  (earlier a `-dlrl5w84z-` preview URL showed digest `666315226`).
-- `[FACT]` The author **could not read the Vercel logs** — no Vercel CLI or API
-  token in the environment, no Vercel MCP. This was **not** diagnosed from logs.
-- `[FACT]` The **same code runs clean locally**: `apps/ops-console` dev server
-  serves `/login` → 200 with no server exception in its log.
-- `[ESTIMATE]` Therefore it is almost certainly **environment/deployment**, not a
-  code bug — most likely `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-  missing on that deployment (the console middleware creates a Supabase client at
-  runtime and 500s without them). This is the exact class of the earlier
-  `MIDDLEWARE_INVOCATION_FAILED: Your project's URL and Key are required`.
-- **Diagnosis to try first, in order:** (1) open the **production** URL (no
-  deployment hash) and confirm both `NEXT_PUBLIC_SUPABASE_*` are enabled for
-  **Production**, then redeploy; (2) get the real stack trace from Vercel →
-  deployment → **Runtime Logs** (the line by that digest) — paste it, it's a
-  seconds-long fix; (3) reproduce locally with `cd apps/ops-console && pnpm build
-  && pnpm start` under the production env to surface the un-hashed error.
+### 3.1 — Import the 583 customers through the dry-run pipeline
+Staging → validation report → **owner approval** → commit. Idempotent by batch,
+rollback by batch (Art. VII §5). The UI exists at `/imports`.
+Respect the file's own conventions:
+- `LOCATION_SOURCE` / `LOCATION_STATUS` import as-is: **VERIFIED 80,
+  UNVERIFIED 15, AREA_APPROX 304** (district centroids — must be flagged as
+  approximate in the technician app), **NO_LOCATION 184**.
+- **`PLACE_OF_SUPPLY` is the UAE VAT field — keep it distinct from emirate**
+  even though every value matches today.
+- `LEGACY_CODES` links the old system; `CONTRACT_NUMBERS` + `CONTRACT_SL_NOS`
+  link 128 customers to contracts. **[FACT] None of the file's 121 distinct
+  contract numbers exist in the live system** — the live contracts are all test
+  data, so there is nothing real to reconcile against yet.
+- `ALIAS` → `alias_name`; `CUSTOMER_GROUP` + the Groups sheet create/attach
+  groups. Sultan Al Arab reconciles with the **existing** group — no duplicate.
+- **Nothing invented: blank stays blank. Do NOT geocode NO_LOCATION records** —
+  technicians capture the pin at the door.
+- `REQUIRED_INFO` is a feature, not just data: store it per customer, and when
+  any user first opens a customer whose `REQUIRED_INFO` is non-empty, the
+  profile prompts *"This customer is missing: EMAIL, PHONE — capture now?"*
+  with inline fields. That is how the 568 incomplete records complete through
+  daily use instead of a data project.
 
-### Half-wired / known-incomplete
-- `[FACT]` **Technician test login is not finished** (see §6). The technician
-  record + today's jobs exist, but the Supabase auth user and its `app_users`
-  link were never created — so the field app cannot yet sign in as that
-  technician.
-- `[FACT]` A7: pre-flight odometer/fuel are captured but **not posted** to
-  `vehicle_fuel_purchases`. A9: field expense posts with `category_id = null` and
-  no dedicated receipt-photo link. A10: on-device report is not brandChrome/
-  division-aware.
-- `[FACT]` Costing "Prompt 3" and RBS "Prompt 4" not built (see §1).
+### 3.2 — §4 flow fixes
+- **ROW = the record.** In every list (quotations, estimates, surveys,
+  contracts, agreements, invoices, service reports) clicking anywhere on the row
+  opens **that record's** detail. The customer **name inside a row is NOT a
+  link**. Inside the record detail there is a clear **"View customer profile"**
+  link. Currently name-click hijacks to the customer profile — fix everywhere.
+- **Account number everywhere:** on every record, list row and document.
+- **Universal numbering:** every entity carries its own document number
+  (survey, estimate, quotation, contract, agreement, service report, invoice,
+  receipt) — largely true already; verify and expose.
+- **Search + filters on every list:** search by **number first**, then customer
+  name, then date; filters by date range, status, team, division, customer.
+- **Customer creation is ONE complete form** — trade/legal name, TRN, licence,
+  contact person, email, phone, mobile, one paste-friendly address line plus
+  Google Maps capture, category, night shift + closing time. Not split across
+  modules, not re-asked later. After save, a **"Start survey"** button carries
+  the customer straight in — **the survey must never re-ask who the customer
+  is** (it still offers a blank picker when arriving from a customer — fix).
+- **Estimates are NOT forced to AMC.** Recurring is a **choice** at
+  estimate/contract creation; one-off stays one-off.
 
----
+### 3.3 — §2 area-window first-visit scheduling
+When a new contract is signed, the first visit slots by this logic:
+- **(a)** If the customer's area is already scheduled for a team **this week on
+  a coming day** → book the first visit into that day.
+- **(b)** If that area's day already passed this week → find any day this week
+  where a team passes **near** the area (closest-area match) → book as an
+  **additional** job on that day's route, flagged **"first visit —
+  off-pattern"**.
+- **(c)** If nothing near this week → book **next week's** area day.
+- **(d)** From the **second visit onward** the customer syncs onto the area's
+  normal pattern (F&B monthly-twice = every 2 weeks on that area's day), even
+  if the first→second gap is shorter than the normal interval. **One-time
+  compression is acceptable** to lock the pattern.
+Surface as **suggestions with reasons** ("Team A passes Al Zahia Thursday — add
+as extra job?"). **The office confirms; never silent auto-booking.**
 
-## 4. BLOCKED.md CONTENTS
+### 3.4 — §3 operations calendar + approval queues
+- **Operations calendar:** month/week/day, all teams, filter by team / shift /
+  division / area, drag-drop reschedule. (A month/week/day calendar with
+  drag-drop exists at `/schedule` — extend it to teams/shift/area filters
+  rather than rebuilding.)
+- **Next-day and night-schedule approval queue:** tonight's/tomorrow's generated
+  schedule appears for review each day; the office adjusts (drag-drop) and
+  approves; **approval triggers the customer 24h notices**.
+- **Team assignment screen:** drag-drop technicians into teams and vehicles.
+  Persists day-to-day automatically, changeable any day; changes flow to the
+  technician apps.
 
-Full detail is in `BLOCKED.md`. Summary (status as of 12 Aug 2026):
+### 3.5 — §5 category quick-pricing
+The category picker is currently dead — make it work. Presets drive the estimate
+in one tap:
+- **RESTAURANT A:** small kitchen + small cafeteria, ~20 min service, **1 mix =
+  50 ml Blitz** (1 L ≈ AED 85) + surfactant.
+- **RESTAURANT B / C:** intermediate sizes — propose defaults, mark **ASSUMED**,
+  editable.
+- **RESTAURANT D:** full-size restaurant, **max 3 mixes = 150 ml. Never more.**
+- Each preset carries est. service minutes, mixes (→ material cost from **real
+  batch costs**), crew size. Selecting it computes labour and material;
+  distance/fuel compute from the pin.
+- **Emirate pricing factor:** Dubai quotes **+10–20%** over the Sharjah-based
+  suggestion — configurable %, not forced rounding, shown as pricing guidance.
+- **Home base = Ajman New Industrial Area** (Etihad Road, near Gift Way Home),
+  stored as the configurable depot pin (`settings.operations.home_base`,
+  **[FACT] created, lat/lng still null**). All distance/fuel/time calculations
+  run from this base to the site pin.
 
-| ID | What | Blocks | Owner action to clear |
-|---|---|---|---|
-| A1 | Clock-drift thresholds ASSUMED (future >5min / behind >3d; `services/worker/src/ingest.ts`) | nothing (flag works) | confirm/adjust the two numbers |
-| A2 | `SUPABASE_SERVICE_ROLE_KEY` for *immediate* token kill. **NOTE: the key IS present in `.env.local`; the admin sign-out wiring is not built** | immediate revocation only (`is_active` gate works now) | wire admin sign-out if wanted |
-| A3 | Field PWA `VITE_SUPABASE_*` — **CLEARED** (owner set them; `apps/field-pwa/.env` exists). BLOCKED.md header still says 🔴 — stale, update it | — | done |
-| A4 | Asymmetric JWT signing keys for offline signature validation | nothing (exp + server re-auth work) | Supabase → migrate to asymmetric keys (optional) |
-| A5 | Treatment recipes ASSUMED (dose/dilution/coverage) | **misleading dosing** until set | confirm recipe values |
-| A6 | Pre-flight PPE/equipment lists ASSUMED | cosmetic | confirm the lists |
-| A7 | Pre-flight fuel→`vehicle_fuel_purchases` not wired (that table has no `client_uuid`) | fuel-cost linkage | decide + I add `client_uuid` and post once |
-| A8 | Inspection option lists ASSUMED | cosmetic | confirm areas/issues/levels |
-| A9 | Field expense category + receipt-photo link | refinement | sync categories + add a picker if wanted |
-| A10 | On-device report not brandChrome/division-logo (PARTIAL) | branding consistency | do it WITH device verification |
+### 3.6 — §6 attestation charge + invoicing rules
+- **Sharjah F&B contracts:** **AED 250 + VAT** attestation charge added to the
+  **first invoice automatically** — rate **editable**, and **removable** (not
+  forced).
+- **Invoices are TRIGGERED, never auto-generated.** Wherever auto-generation
+  exists today, convert it to a request/trigger with human confirmation.
+- **Technician invoice at completion:** the technician can generate the invoice
+  from the app — everything prepopulated, amount **adjustable**, **partial
+  payment or overpayment accepted** (record what is actually received). Receipt
+  voucher generated from the tech/supervisor app on payment.
+- **Job status from the app:** completed / **cancelled** / **delayed with
+  reason** — flows to ops and the schedule.
 
----
+### 3.7 — §7 technician + supervisor apps
+- **All ~20 technicians get auth accounts.** Bulk-create from the imported staff
+  data. **Google sign-in restricted to pre-registered employee emails** — each
+  employee record carries their Google email and OAuth succeeds only on a match;
+  unknown Google accounts are **rejected, never auto-provisioned**.
+  Email/password remains the fallback.
+- **Technician flow:** login → mark attendance → personal checklist (**uniform:
+  t-shirt, pants, socks, safety shoes, mask**) → **TIME IN** → view today's team
+  + schedule → work jobs → **TIME OUT**. Working hours computed from time
+  in/out. Daily KPIs on their dashboard; salary-credit notification + amount
+  from payroll; **apply for sick leave** and general HR requests from the app.
+- **Supervisor = technician plus:** complete jobs per the schema/constitution,
+  log expenses, pre- and post-flight checklists, and an explicit
+  **accountability confirmation that the inputs are true**.
+- **UI: modern, playful, colourful, button-first** — these users are not
+  technical. Big touch targets, icons + colour, celebration states.
 
-## 5. ASSUMED DATA (awaiting owner confirmation)
+### 3.8 — §8 fuel
+- **Bands:** CRITICALLY LOW / <10% / <20% / <40% / <60% / <80% / <100% / FULL,
+  asked **every morning** at pre-flight.
+- **Refuel flow:** band + **litres** + **amount** + vehicle + **receipt photo**
+  + **payer** (cash or top-up account; **teams may fuel for each other**, so
+  capture who paid or reconciliation breaks).
+- Monthly fuel price setting + month-end reminder stay as built.
 
-`[FACT]` counts for the Mumtaz tenant (12 Aug 2026):
+### 3.9 — §11 modern UI refresh
+Design tokens (spacing scale, type scale, 8px grid), card layouts with depth,
+motion 150–250 ms, skeletons, ⌘K, grouped nav (Sales / Operations / Finance /
+Admin), collapsible sidebar with user avatar + role, top bar with global search
+/ quick-create / notification bell / health indicator, clean tables with sticky
+headers and inline status pills, empty states with one primary action,
+**dark-ready tokens (do not ship dark mode, just do not hardcode colours)**.
+Field apps colourful, button-first, playful, celebration states.
+**Commit hash stays in the footers.** Verify on the deployed URL, not just code.
 
-| Table | ASSUMED / total | Misleading output until confirmed? |
-|---|---|---|
-| `accounts` (chart of accounts / GL) | **18 / 18** | **YES** — every financial report posts to placeholder accounts |
-| `pricing_models` | **17 / 26** | **YES** — estimates/quotations can misprice |
-| `service_categories` | **18 / 18** | **YES** — category cost/price assumptions are placeholders |
-| `treatment_recipes` + `_versions` | **2 / 2** each | **YES** — chemical dose/dilution/coverage are placeholders |
-| `document_branding` (accents) | 2 / 4 | No — cosmetic (cleaning/FM accent hex) |
-| `preflight_checklist_items` | 10 / 10 | No — cosmetic list |
-| `inspection_options` | 15 / 15 | No — cosmetic list |
+### 3.10 — §9 HR module (inside the ops console)
+Staff records from the imported staff data; approval queue for requests from the
+tech/supervisor apps (leave, expenses); **payroll**: monthly run from attendance
++ working hours, salary components per employee (already modelled in costing),
+salary-credit notifications to the apps; **document expiry** for visa, Emirates
+ID, labour card, passport, municipality card wired to the existing expiry
+engine, with the **sponsorship entity recorded per employee**; **manpower**:
+optional timesheet upload per deployment feeding technician KPIs.
 
-`[FACT]` Also ASSUMED / placeholder, not in the table above:
-- **Labour cost rate** — a placeholder (DECISIONS §7: `1700 ÷ 176`, *not* real
-  employment cost). `employee_cost_components` is **empty (0 rows)** for Mumtaz.
-  **Any job-cost or profit number is placeholder** until "Prompt 3" is built.
-- **Clock-drift thresholds** (A1) — technical tolerance, not a business rule.
-
-`[ESTIMATE]` **Do not present any cost, price, margin, GL, or chemical-dose figure
-as real** until A5 + the costing config + the GL/pricing/category ASSUMED rows are
-confirmed. The operational field flow (jobs, checklist, photos, inspection,
-pre-flight) does not depend on these and is safe to demo.
-
----
-
-## 6. THE DEVICE CHECKLIST (real phone) + setup
-
-### Setup required (the author did this once; it does not survive the session)
-- `[FACT]` **Two local dev servers + a tunnel:** ops-console on **:3100**
-  (`cd apps/ops-console && pnpm dev`), field-pwa on **:3200**
-  (`cd apps/field-pwa && pnpm dev`), and a Cloudflare tunnel over **:3200 only**
-  (`cloudflared tunnel --url http://localhost:3200`). Service workers need HTTPS,
-  which the tunnel provides. The vite dev proxy forwards **only `/api/field`** to
-  :3100 (#67) — so the tunnel exposes the field app + secured field endpoints,
-  **not** the admin console or cron endpoints. Do not widen it.
-- `[FACT]` **field-pwa env** (`apps/field-pwa/.env`, gitignored): `VITE_SUPABASE_URL`
-  + `VITE_SUPABASE_ANON_KEY`. **ops-console** must have `NEXT_PUBLIC_SUPABASE_*`
-  in its `.env.local` or Bearer validation 401s.
-- `[FACT]` **Technician + jobs are seeded but the login is NOT finished:**
-  - Technician `tech_test` ("Field Test Technician"), id `505055b3-4562-4081-9c7f-098f16558149`, `user_id = NULL`.
-  - **2 jobs scheduled today** at *Calicut Restaurant / Aljada Branch* (has GPS),
-    spray recipe attached, assigned to that technician.
-  - **TO FINISH:** the owner creates a Supabase **auth user** (proposed email
-    `field.tech@almumtaz.ae`, they set the password, "Auto Confirm User" on).
-    Then a session must: read `auth.users` for that email → create
-    `app_users(id = that uuid, tenant, technician role)` → set
-    `technicians.user_id = that uuid`. Only then do the 2 jobs sync to the app.
-    **The author cannot create the auth account (prohibited) — the owner must.**
-
-### T1–T6 checklist (full copy in `BLOCKED.md`)
-- **T1** sign in online once; kill+reopen offline → still signed in, jobs cached;
-  work past the ~1h access-token expiry → not logged out; reconnect → queued
-  events upload attributed to the login actor; **admin deactivates the login
-  while the device is offline → on reconnect the device flushes, then locks and
-  shows "revoked", and those events appear in the dashboard "Field events held
-  for review"**; set the phone clock wildly wrong → the event is flagged "clock
-  suspect", not silently accepted.
-- **T3** open Pre-flight online → PPE/equipment load; enter vehicle/odometer/fuel;
-  Save → "Saved & synced"; repeat offline → "Saved"; reconnect → one record/day.
-- **T4** "Navigate ↗" opens Google Maps to the pin; the job shows its recipe;
-  post-inspection (area/issue/infestation + hygiene/structural buttons, multiple
-  areas) → complete → after sync the append-only inspection rows appear; re-sync
-  does not duplicate.
-- **T5** cash collected offline → reconnect → a cash receipt against the customer;
-  expense + "what for" → a submitted claim on the dashboard; re-sync no double.
-- **T6** the bar shows Online/Offline + "All synced"/"N to sync" with a breakdown
-  (events/media/pre-flight) + last-sync time.
-
----
-
-## 7. WHAT SHOULD HAPPEN NEXT (in order)
-
-1. **Diagnose the production 500** (§3). It makes the deployed console unusable;
-   likely a one-line env fix. Get the runtime log or reproduce with
-   `pnpm build && pnpm start`. *Reason: the owner is trying to operate; a dead
-   console blocks everything office-side.*
-2. **Finish the technician login and run the T1–T6 device checklist** (§6).
-   *Reason: the entire field app is built but unproven on a phone — this is the
-   single biggest unverified surface and the last thing blocking a real operating
-   day.*
-3. **Confirm the ASSUMED data that produces misleading output** (§5: recipes, GL
-   accounts, pricing models, service categories, labour rate). *Reason: any
-   financial/dosing output is placeholder until then — do not let it be trusted.*
-4. **Build the costing & estimation real-configuration ("Prompt 3")** and then
-   **RBS/monitoring points ("Prompt 4")** — both filed, not built. *Reason:
-   profit-per-contract and physical-asset tracking are core to the operation.*
-5. **A10** (on-device report brandChrome + division logo), A7, A9 — refinements,
-   do with device verification.
-
----
-
-## 8. HOW THE OWNER WORKS (binding)
-
-- `[FACT]` **The owner is not a developer.** Explain in plain terms; give exact,
-  clickable steps; never assume CLI fluency.
-- `[FACT]` **Proof-of-Work is mandatory** (CLAUDE.md "Proof-of-Work Protocol",
-  Constitution Art. X §5). Every completion claim must include, in the same
-  message: `git diff --stat`, passing build/test output, the commit hash, and
-  confirmation of push. A claim without all four is treated as *not done*.
-- `[FACT]` **Touching a structural invariant is a constitutional amendment** — it
-  **stops and waits for the owner**, it is never done-and-continued. Precedent:
-  `DECISIONS §11.7` (mig 056 outbox-whitelist refinement, owner-ratified). The
-  frozen invariants are in `ARCHITECTURE-BASELINE.md`.
-- `[FACT]` **Never invent a business rule.** If a rule is unknown, seed it
-  `ASSUMED`, make it editable without a deploy, flag it visibly in the UI, and log
-  it (BLOCKED.md). Never present an assumption as fact.
-- `[FACT]` Work on a branch, PR, and merge; verify main green after each. The
-  owner merges (or has granted merge) via `gh pr merge`. Do not push to `main`
-  directly.
+### 3.11 — §10 accounts module
+All deterministic, from the existing GL: **SOA per customer**; **daily /
+monthly / quarterly / half-yearly / yearly** report packs; **P&L**; trend
+analysis; **reconciliation** (cash vs bank, daily petty cash, bookkeeping
+views); **VAT report** (5%, from invoices/receipts as recorded); **corporate tax
+(basic)** — research current UAE rules (9% above the small-business threshold,
+registration, deductible expense recording) and build the module to **record**
+tax-relevant figures and register expenses correctly. **Filing stays with
+experts.** **Cite what the rules are based on; flag ASSUMED where UAE guidance
+is ambiguous.**
 
 ---
 
-## 9. ADDENDUM — autonomous session 12 Aug 2026 (branch `autonomous/2026-08-12`)
+## 4. BLOCKED.MD STATE — what the owner must do
 
-`[FACT]` An unattended session ran on a freshly-moved Mac. **All work is committed to
-the local branch `autonomous/2026-08-12` (6 commits, one per task) but NOT pushed** —
-this machine has no GitHub write credential and no `gh` CLI (**BLOCKED A11**). Push the
-branch, then PR/merge, once A11 is cleared.
+BLOCKED.md carries the owner's tasks **at the top**, numbered, with exact
+click-paths. Open at this handover:
 
-Done + proven (build/test green, committed):
-1. **A3 header** cleared (was stale red).
-2. **Production 500 (digest 6663152226)** diagnosed + reproduced locally: middleware
-   threw when `NEXT_PUBLIC_SUPABASE_*` are missing. Hardened `middleware.ts` to fail
-   **closed with a 503** naming the missing var (was an opaque 500). Real fix = set the
-   vars on Vercel Production + redeploy (**BLOCKED A12**, owner).
-3. **Costing engine — real config (mig 060–062, "Prompt 3")**: labour 10.62 AED/hr
-   (from a real 1,869/mo basis), vehicle 0.698 AED/km (fuel 3.49÷5), material landed
-   costs (Blitz 0.10/ml, Gel 1.3333/g, Pro Surfactant ASSUMED 0.05/ml), per-m²
-   consumption, treatment cycle, 24 visits/yr, travel-in-labour, and
-   `fn_pest_treatment_costing()` → full annual survey costing with suggested price +
-   margin-at-price + an `assumptions[]` flag list. ASSUMED inputs to confirm =
-   **BLOCKED A13**; ad-hoc-vs-AMC price gap = **A14**. New test `treatment_costing.test.ts`.
-4. **A7** pre-flight fuel → `vehicle_fuel_purchases` (mig 063), idempotent + append-only. DONE.
-5. **A9** `expense_receipts` link table (mig 064); category already flowed through the
-   backend. Field-app picker/receipt-tagging UI remains (device-verified). PARTIAL.
-6. **A10** flag-gated **parallel** shared-brandChrome report path
-   (`VITE_REPORT_SHARED_CHROME=1`, default OFF); verified `render.ts` untouched. Staged —
-   pest-only + thinner body; compare on a phone before switching.
+1. **Anthropic API key** → unlocks the assistant, report commentary and
+   draft-to-estimate (paste into `apps/ops-console/.env.local` + Vercel).
+2. **Google sign-in** — full Google Cloud Console steps (OAuth consent screen,
+   Web application credentials, redirect URI
+   `https://xpkniuhcjysisfbfiqhn.supabase.co/auth/v1/callback`) and the Supabase
+   Authentication → Providers → Google steps. **[FACT] written out in
+   BLOCKED.md task 2.** After the owner confirms, wire the employee-email
+   allowlist so only registered staff can complete a sign-in.
+3. **Google Maps browser key** (Maps JavaScript API + Places API) → map previews
+   and address autocomplete, and the home-base pin.
+4. **Supabase service-role key** → office invites + instant revocation.
+5. **Phone re-test** — clear the old PWA cache, confirm the build hash in the
+   footer, walk the field flow.
+6. **Answers still needed:** an address whose pin lands wrong; cleaning/FM
+   quotation wording; Dubai + Abu Dhabi municipality attestation rules.
+7. **Real-device checklist** (release gate) — airplane-mode completion, PDF on
+   the phone, photo capture, map tiles.
 
-`[FACT]` DB now at **migration 064** (060–064 applied this session; verify with
-`list_migrations`). invariants.sql + rls_isolation.sql PASSED after the changes; worker
-suite 25/25 on a clean run (the FEFO/pooler flake in `inventory.test.ts` re-passes — it
-is on a throwaway tenant, isolated from this work). Nothing on a phone or needing an
-owner-created account is verified.
+**[ESTIMATE] Supabase steps for the 20 technician accounts:** the accounts can
+be created programmatically once the **service-role key** (item 4) is present —
+so the owner's only manual step is likely supplying that key, plus the Google
+provider setup in item 2. Confirm before promising it.
+
+**[FACT] Email sending is live** (Resend; deliveries proven). If Vercel lacks
+the email env vars, the scheduled sends will fail there while working locally —
+verify before claiming production email works.
+
+---
+
+## 5. STANDING RULES — load these before writing code
+
+- **Proof-of-Work per Art. X §5.** Any completion claim carries, in the same
+  message: `git diff --stat`, build/test output showing a pass, the commit hash,
+  and confirmation of push. Without all four it is **not done**.
+- **Invariants may not be weakened.** Exactly-once event processing,
+  `debits=credits` by constraint, append-only on stock movements / journal lines
+  / service reports / audit log / generated documents, RLS tenant isolation
+  tested with a non-privileged role, version immutability on reference data,
+  frozen snapshots on transaction records. Relaxing one is a **constitutional
+  amendment — stop and ask the owner**.
+- **ASSUMED discipline.** Never invent a business rule. Unknown → ask, or seed
+  as a value marked `ASSUMED`, editable from settings without a deploy, and
+  visibly flagged in the UI. Never present an assumption as fact.
+- **SOURCED citations for municipality data** — cite the document; the files in
+  `docs/reference/` are the **source of truth for every document format** and
+  for the municipality contract clauses.
+- **Invoices are triggered, never auto-generated.**
+- **Flags — a human decides.** The system surfaces suggestions with reasons; the
+  office confirms. No silent auto-booking, no silent merges.
+- **Channel-plural notifications.** Email today; WhatsApp only via the
+  **official WhatsApp Business API** — unofficial WhatsApp Web automation is
+  forbidden (business-number ban). See ROADMAP-AMENDMENT.md.
+- **Night shift is per-branch.** Closing time lives on the branch; visits are
+  sequenced after that outlet's own closing time, never a fixed shift start.
+- **Salesforce-grade reliability.** Every new domain (HR, payroll, fuel,
+  approvals, calendar, accounts) gets **dedicated tables with constraints, RLS
+  and audit** — **no JSON-blob shortcuts on financial or HR data**.
+  Transactional writes through the established choke point (`withTenantTx` /
+  `withRequest`). **Nothing may fail silently.**
+- **Automation first, AI last.** Scheduling, routing, dosing, inventory and
+  accounting are deterministic. The AI layer explains; it never runs the
+  business. Deleting it must leave the business running normally.
+
+---
+
+## 6. HOW THE OWNER WORKS
+
+- **[FACT] Not a developer.** Explain in plain business language, not code.
+- **[FACT] Instructions are voice-dictated** — long, detailed, occasionally
+  repeating a point for emphasis. Read the whole instruction before starting;
+  the important constraint is often mid-paragraph.
+- **[FACT] Review happens on the deployed URL only**, on a phone. The **commit
+  hash in the footer** is how the owner proves which build they are looking at —
+  keep it there. A stale PWA cache has already caused a false "nothing changed"
+  report once.
+- **[FACT] Honest summaries required: built ≠ verified on device.** Say what
+  shipped, what is partial, what is blocked, and what bugs were found and fixed.
+  Never report a clean test run that did not happen. If two of twenty-five tests
+  fail, say so and show the output.
+- **[FACT] The owner has standing authority for the agent to push and merge its
+  own work** on this repo, over the `github-mumtaz` SSH remote.

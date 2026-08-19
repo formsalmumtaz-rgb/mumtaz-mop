@@ -312,6 +312,49 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 
 ---
 
+## 12 — Customer account numbers: the 5-digit scheme (RATIFIED 19 Aug 2026)
+
+**Decision (owner, ratified).** The 5-digit account numbers in
+`merge/CUSTOMER_Master_MOP.xlsx` (**11111–11827**, digit 0 never used, 583
+unique) become **THE permanent customer account number**. `CUST-XXXX` is
+retired.
+
+**Consequences, all binding:**
+
+1. `customers.code` holds the 5-digit number. The column is `text` with
+   `unique (tenant_id, code)`, so no schema change is required — only the
+   minting logic changes.
+2. **CUST-0001 … CUST-0600 are BURNED — never reusable.** Account numbers are
+   permanent identifiers; a retired number is never reissued to a different
+   customer, because historical documents already carry it.
+3. New numbers continue the file's sequence from **11828**, skipping any number
+   containing the digit 0 (11830 → 11831, 11899 → 11911). Three call sites mint
+   codes today and all three change: `lib/domain/customers.ts`,
+   `lib/domain/imports.ts`, `scripts/import-merge.ts`.
+4. **Every surface, list and document shows the 5-digit number** — customers
+   list and detail, ⌘K search, exports, quotation PDF ("Account no."), service
+   report S2 ("Account No."), agreement client block, receipts, estimates. All
+   already read `customers.code`, so they follow automatically; the labels say
+   "Account no.", not "customer code".
+5. **The demo customer and the Sultan Al Arab records renumber to their IDs in
+   the master file** (owner's instruction, 19 Aug):
+   - Calicut Restaurant (`CUST-0001`) → **11193**.
+   - Sultan Al Arab (`CUST-0026`, `0088`, `0089`, `0090`, `0091`, `0092`) →
+     **11662**.
+
+**MECHANICAL CONSEQUENCE THE NEXT SESSION MUST HANDLE EXPLICITLY.** The master
+file holds **one** Sultan Al Arab record (11662, Al Barsha, Dubai) while the
+live system holds **six**, carrying **7 contracts and 3 jobs** between them.
+`unique (tenant_id, code)` means six rows cannot share 11662. The renumbering
+is therefore a **merge**: one record becomes 11662, the other five have their
+contracts and jobs repointed to it and are then archived. That repointing
+touches live transactional links, so it runs inside one transaction, audited,
+with counts reported before and after. Nothing is deleted.
+
+[FACT, verified 18–19 Aug 2026] Live state at the time of this decision: 16
+customers, codes to `CUST-0604`, burn counter `import.next_customer_code` = 601;
+none of the 11 live contract numbers appear in the master file.
+
 ## Changelog
 
 | Version | Date | Change |
@@ -329,3 +372,4 @@ The financial documents (invoice, receipt, credit note) are built as subledger r
 | 2.0 | 3 Aug 2026 | §11 — Security model: Supabase Auth + RBAC (6 roles, 28 permissions; profit/GL finance+management only, technicians none); external parties get scoped links, not logins; `withRequest` choke point with phased flip to live RLS under mop_app; offline field sessions; cron context via `fn_all_active_tenant_ids()` SECURITY DEFINER pinhole. Phase A1 shipped (mig 039): identity schema + helper, inert (no behaviour change). |
 | 2.1 | 3 Aug 2026 | §11.4 — Security A2+A3 complete: reads migrated onto `scopedRead` + build-failing `pool.query` gate; RLS policy gaps closed (mig 040) + structural guard; login/invite UI; first admin provisioned; audit attributes the actor; auth enforcement + 51 permission guards behind fail-closed `AUTH_REQUIRED`; **A3 flip live — `withRequest` runs as `mop_app`, RLS is now the live boundary.** Gated on `rls_coverage.sql` (no tenant ⇒ zero rows), which passed before the flip. |
 | 2.2 | 12 Aug 2026 | §11.7 — Technician app T1 (offline auth): device+server time provenance (Art. VII §4), Bearer re-auth on `/api/field/*`, token revocation with held-for-review (never discarded). **Ratified refinement:** mig 056 extends the `outbox_events` mutable-bookkeeping whitelist to `needs_review`/`review_reason`; event content stays immutable (Art. VII §1 holds). Recorded as a constitutional amendment per the owner's rule. |
+| 2.3 | 19 Aug 2026 | §12 — **Customer account numbers switched to the 5-digit master scheme (11111–11827)**, ratified by the owner. CUST-0001…0600 burned and never reusable; new numbers continue from 11828 skipping any digit-0; every list and document displays the 5-digit number. Calicut → 11193; the six Sultan Al Arab records **merge** into 11662 (unique constraint ⇒ contracts/jobs repoint to the survivor, the other five archived, in one audited transaction). |
