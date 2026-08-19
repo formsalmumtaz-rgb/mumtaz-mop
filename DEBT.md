@@ -327,3 +327,34 @@ afterwards is not a fallback that exists there, by design.
 shape as `fn_reverse_receipt`, so a mistaken fuel entry has a sanctioned
 correction path at all. Right now it has none, which is why BLOCKED §0C needs a
 decision rather than a fix.
+
+
+---
+
+## D-MIG1 — The migration set could not rebuild from empty (19 Aug 2026)
+
+`ARCHITECTURE-BASELINE.md` lists **byte-identical migration rebuild from empty**
+as a structural invariant. It was broken, and I broke part of it.
+
+**What was wrong.** Migrations applied through the Supabase `apply_migration`
+tool are recorded in `supabase_migrations.schema_migrations`; ones applied by a
+direct `query()` are not. Both routes were used. The result:
+
+- **Three applied changes had NO FILE on disk** — `108_vehicle_consumption_assumed`,
+  `111_category_material_from_dose`, `113_blitz_price_confirmed`. A rebuild would
+  have produced a database where every restaurant preset costs its chemical at
+  **zero** and the Blitz price still reads "unconfirmed".
+- Thirteen files (`109`, `112`, `114`–`124`) exist on disk but are absent from the
+  ledger, so tooling that trusts the ledger would try to re-apply them.
+
+**Fixed.** All three missing files reconstructed and each verified against the live
+database. 124 files on disk now.
+
+**The rule this establishes.** Every schema or seed change goes to a FILE FIRST,
+then gets applied. Applying first and writing the file afterwards is how a change
+ends up existing only in one database — which is the same failure as a dashboard
+edit, just slower.
+
+**Repayment trigger.** Before any production cutover (BLOCKED §0E option d), run a
+rebuild from empty into a scratch database and diff the schema against staging.
+Until that has been done once, "rebuilds from empty" is a claim, not a fact.

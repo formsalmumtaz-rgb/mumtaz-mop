@@ -49,6 +49,82 @@ itself.
 
 ---
 
+### 0E. GO-LIVE PLAN — my recommendation: **(d) fresh tenant**
+
+You asked which of four options I would choose. **(d), and not narrowly.**
+
+**Why not the others.**
+
+- **(a) go-live date filter** and **(b) test/live flag** both make correctness
+  depend on *remembering to filter*, forever, in every report anyone ever writes —
+  including the ones that go to your accountant and the FTA. That is precisely the
+  class of rule that gets forgotten, and the failure is silent: a report that
+  quietly includes AED 7,888 of fiction looks exactly like a correct one. (b) is
+  slightly better than (a) because it also catches test data created *after*
+  go-live, which will happen — people test in production. Neither removes the rows
+  from the ledger, so any raw GL export or auditor query still shows them.
+- **(c) reverse everything** cannot actually be done. Receipts, fuel and invoices
+  have reversal paths; **jobs, service reports, estimates and surveys have no
+  concept of reversal at all.** And where it can be done it makes things *worse*:
+  47 journal entries become 47 entries plus 47 reversals. The P&L nets to zero but
+  the transaction listing is twice as noisy. It is also untrue — a reversal asserts
+  "this happened and was undone", and none of it happened.
+
+**Why (d).** It is the only option where the books are correct *by construction*
+rather than by discipline. No filter to remember, no flag to maintain, no reversal
+noise. And it is cheap here specifically because of what the data actually is:
+
+| | |
+|---|---:|
+| Test transactional rows to abandon | **338** |
+| Genuine data to carry over | **583 customers**, 24 groups, 464 sites, 403 contacts |
+| Reference data (accounts, pricing, categories…) | rebuilt by migration |
+| To re-enter by hand | 2 teams, 11 technicians, 2 vehicles |
+
+The customer import is a proven, repeatable pipeline — one command — and the
+technician data is not imported yet anyway, so almost nothing is re-keyed.
+
+**The one thing that made this non-trivial, now fixed.** (d) depends on migrations
+rebuilding cleanly from empty, which is a Baseline invariant — and **it was
+broken**. Three changes had been applied to the database with no file on disk
+(`108`, `111`, `113`), so a rebuild would have silently missed them: restaurant
+material costs would have been zero and the Blitz price would still read
+"unconfirmed". I reconstructed all three and verified each against the live
+database. Recorded as DEBT.md **D-MIG1**.
+
+**What you would lose, honestly:** the reconciliation links on the 16 legacy
+`CUST-` records (they only exist because of test data), and the burned
+`CUST-0001…0600` range (irrelevant in a tenant that never used it). Nothing else.
+
+**My suggestion:** keep the current tenant as a read-only archive rather than
+deleting it. That is free, and it means the test history is still there if a
+question comes up.
+
+**Say the word and I will do it.** I have not implemented anything.
+
+---
+
+### 0F. Two customers carry YOUR TRN
+
+Your TRN **100072077900003** is on three imported customer records:
+
+| Account | Name |
+|---|---|
+| 11387 | **Al Mumtaz Bldg Clean & Pest Control** — this is *you*, in your own customer list |
+| 11197 | Ocean Oilfield Services (FZE) |
+| 11321 | Brilliant International Private School |
+
+A TRN belongs to one legal entity, so the other two are almost certainly a
+data-entry error in the old system — someone pasted the company's own TRN into a
+customer record. **It matters:** if you invoice Ocean Oilfield with your own TRN
+as the buyer's, that is a VAT error on a tax document.
+
+Tell me the real TRNs (or that they have none) and I will correct them. And say
+whether 11387 should stay a customer at all — some businesses do invoice
+themselves internally, so I have not assumed.
+
+---
+
 ### 0D. Corporate tax — four numbers your accountant must confirm
 
 The corporate tax working figures are built (`/reports/corporate-tax`). It
@@ -65,7 +141,7 @@ that is visibly unconfirmed. Ask your adviser these four, then I clear the flags
 | Standard CT rate | **9%** | Federal Decree-Law No. 47 of 2022 |
 | 0% threshold | **AED 375,000** | Federal Decree-Law No. 47 of 2022 |
 | Small Business Relief revenue limit | **AED 3,000,000** | Ministerial Decision No. 73 of 2023 |
-| Registered for corporate tax? | **not set** | nobody has told the platform |
+| Registered for corporate tax? | ✅ **YES** — confirmed 19 Aug, TRN 100072077900003 | owner |
 
 Two things the system deliberately will not decide:
 
