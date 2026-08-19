@@ -10,7 +10,7 @@ Last updated: 19 Aug 2026.
 
 ## 1. WHERE WE ARE
 
-Last updated: **19 Aug 2026**, head **`e034f3d`**.
+Last updated: **19 Aug 2026**, head **`87f82c0`**.
 
 - **[FACT] The 583-customer import is DONE and live.** 583 customers on 5-digit
   account numbers (11111-11827), 24 groups, 464 sites, 403 contacts. 16 legacy
@@ -21,12 +21,12 @@ Last updated: **19 Aug 2026**, head **`e034f3d`**.
 - **[FACT] Doctrine now in force** - DECISIONS §12 (5-digit account numbers),
   §13 (multi-outlet = group -> customers -> branches; the Sultan Al Arab merge is
   SUPERSEDED and was never performed), §14 (file is truth, legacy is history).
-- **[FACT] Migrations 097-119 applied.** 097 account-number scheme · 098 group
+- **[FACT] Migrations 097-123 applied.** 097 account-number scheme · 098 group
   matching · 099/104 declared attributes · 100 reconciliation link · 101 contract
   engagement type · 102/103 area-window settings (owner-ratified) · 105 schedule
   approvals + home-base pin · 106 team_vehicles · 107 category dosage · 108 fuel
   consumption · 109 invoices-are-triggered.
-- **[FACT] Green at `e034f3d`:** `tsc` clean, RLS gate passes, `next build`
+- **[FACT] Green at `87f82c0`:** `tsc` clean, RLS gate passes, `next build`
   compiles, worker suite **26/26**.
 - **[FACT] The intermittent suite failure is CLOSED** - root cause proven, see
   `DEBT.md` D-TEST1. An idle-in-transaction session blocked the drain's claim
@@ -67,11 +67,23 @@ Last updated: **19 Aug 2026**, head **`e034f3d`**.
   (partial impossible). Unapplied cash credits a new customer-advances liability
   (2250) instead of understating AR. Field cash previously never reached the
   ledger at all; it does now.
-- **§3.7 part done.** Google sign-in restricted to pre-registered employees
-  (116) — `fn_link_google_identity` allows only an active, pre-registered
-  address and **never creates an app_user**; eight decisions proven. Uniform
-  checklist, TIME IN/OUT and a derived working-hours view (117). HR requests
-  incl. sick leave with an approval queue (118).
+- **§3.7 mostly done.** Google allowlist (116). The technician's own day —
+  `technician_day` (mig 122, correcting 117: the clock could NOT live on
+  preflight_checks, which only a team lead may write). PWA screens `MyDay` and
+  `HrRequest`: present → uniform → fuel gauge → TIME IN → crew → TIME OUT →
+  hours → KPIs, built for gloves (52px targets, tap-to-tick, chips not
+  keyboards, celebration state). Field APIs `/api/field/my-day` and
+  `/api/field/hr-requests`. **REMAINING: the supervisor extras** — job
+  completion from the app, expenses, post-flight, accountability confirmation.
+- **§3.9 done.** Design tokens in globals.css (dark palette DEFINED, not
+  enabled), sticky table headers, card depth, skeletons, empty states,
+  reduced-motion. Fixed four pages that rendered a table inside a table.
+- **§3.10 done.** `/hr` approval queue — decisions record their owner, deciding
+  twice is refused, attendance and hours come from the technicians' own clock.
+- **§3.11 part done.** Quarterly + half-yearly packs added (they did not exist).
+  Corporate tax working figures at `/reports/corporate-tax`, every rate flagged
+  unconfirmed with its legal basis cited. **REMAINING: cash vs bank
+  reconciliation, daily petty cash, trend analysis.**
 - **§3.8 part done.** Fuel bands corrected from 4 quarters to the 8 specified
   (117). Refuel records **who paid** — payer, cash vs top-up card, receipt photo,
   gauge band — and `fuel_cash_owed_to_technicians` reconciles by PAYER, not by
