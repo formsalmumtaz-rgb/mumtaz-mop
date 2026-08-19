@@ -25,7 +25,43 @@ export interface CustomerInput {
   trade_license?: string;
   customer_type?: string; // '', 'B2B', 'B2G', 'B2C'
   emirate?: string;
+  // Run 8: the rest of what the business needs to serve, bill and route a
+  // customer. All optional — blank stays blank, nothing is invented.
+  alias_name?: string;
+  industry_category_id?: string;
+  municipality_category_id?: string;
+  trade_licence_no?: string;
+  tl_expiry?: string;             // feeds the document-expiry engine, not a column
+  contact_person?: string;
+  contact_designation?: string;
+  whatsapp?: string;
+  preferred_shift?: string;       // day | night
+  preferred_language?: string;    // EN | AR
+  payment_terms?: string;         // cash_on_service | net_15 | net_30
+  billing_frequency?: string;     // per_visit | monthly | quarterly | annual
+  referred_by?: string;
+  access_notes?: string;
+  place_of_supply?: string;
+  district?: string;
+  po_box?: string;
+  priority?: string;
+  night_shift_service?: string;   // 'yes' | 'no' | ''
 }
+
+// The extended columns, written the same way by create and update so the two
+// paths cannot drift. Order matters only in that it matches EXT_COLS.
+const EXT_COLS = [
+  "alias_name", "industry_category_id", "municipality_category_id", "trade_licence_no",
+  "contact_person", "contact_designation", "whatsapp", "preferred_shift", "preferred_language",
+  "payment_terms", "billing_frequency", "referred_by", "access_notes",
+  "place_of_supply", "district", "po_box", "priority",
+] as const;
+// Night shift is a boolean column, so it is written separately from the text set.
+const nightShift = (v?: string): boolean | null =>
+  v === "yes" ? true : v === "no" ? false : null;
+const UUID_COLS = new Set(["industry_category_id", "municipality_category_id"]);
+const extValues = (d: CustomerInput): (string | null)[] =>
+  EXT_COLS.map((k) => clean(d[k as keyof CustomerInput] as string | undefined));
 
 const clean = (v?: string) => {
   const t = (v ?? "").trim();
@@ -103,14 +139,26 @@ export async function createCustomer(
               ) + 1 as n
          from customers where tenant_id = $1 and code ~ '^CUST-\\d+$'`, [tenantId]);
     const code = "CUST-" + String(seq[0].n).padStart(4, "0");
+    const extCast = EXT_COLS.map((k, i) => `$${10 + i}${UUID_COLS.has(k) ? "::uuid" : ""}`).join(",");
     const { rows } = await c.query(
       `insert into customers
-         (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,false)
+         (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed,
+          ${EXT_COLS.join(", ")}, night_shift_service)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,false, ${extCast}, $${10 + EXT_COLS.length}::boolean)
        returning id`,
       [tenantId, serviceLineId, code, clean(data.legal_name), clean(data.trade_name), clean(data.trn),
-       clean(data.trade_license), clean(data.customer_type), clean(data.emirate)],
+       clean(data.trade_license), clean(data.customer_type), clean(data.emirate), ...extValues(data),
+       nightShift(data.night_shift_service)],
     );
+    // A trade licence with an expiry becomes a monitored document, so it lands in
+    // the SAME expiry engine as vehicle and staff papers — one reminder path.
+    const tlExpiry = clean(data.tl_expiry);
+    if (tlExpiry) {
+      await c.query(
+        `insert into monitored_documents (tenant_id, service_line_id, kind, title, customer_id, expiry_date, notes)
+         values ($1,$2,'customer_document',$3,$4,$5::date,'Trade licence — captured on customer registration')`,
+        [tenantId, serviceLineId, `Trade licence ${clean(data.trade_licence_no) ?? ""}`.trim(), rows[0].id, tlExpiry]);
+    }
     await audit(c, tenantId, {
       table: "customers", rowId: rows[0].id, action: "insert",
       newValue: { code, ...data }, note: "created in admin console",
@@ -127,11 +175,13 @@ export async function updateCustomer(tenantId: string, id: string, data: Custome
       [id, tenantId],
     );
     if (!rows[0]) throw new Error("Customer not found");
+    const extSet = EXT_COLS.map((k, i) => `${k}=$${7 + i}${UUID_COLS.has(k) ? "::uuid" : ""}`).join(", ");
     await c.query(
       `update customers set legal_name=$1, trade_name=$2, trn=$3, trade_license=$4,
-              customer_type=$5, emirate=$6, is_assumed=false where id=$7`,
+              customer_type=$5, emirate=$6, is_assumed=false, ${extSet}
+        where id=$${7 + EXT_COLS.length}`,
       [clean(data.legal_name), clean(data.trade_name), clean(data.trn), clean(data.trade_license),
-       clean(data.customer_type), clean(data.emirate), id],
+       clean(data.customer_type), clean(data.emirate), ...extValues(data), id],
     );
     await audit(c, tenantId, {
       table: "customers", rowId: id, action: "update",

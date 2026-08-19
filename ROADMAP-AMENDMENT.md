@@ -75,3 +75,46 @@ business. AI shall only explain the business.**
   entry — a drafted document carries no Claude-invented figures.
 - Every interaction logged; the log is append-only via RLS grants
   (select/insert only).
+
+---
+
+# WHATSAPP REMINDERS — FILED, NOT BUILT (19 Aug 2026)
+
+Owner's instruction: file the design, do not build it yet.
+
+## The hard rule
+
+Customer reminders over WhatsApp go through the **official WhatsApp Business
+API only** — Meta direct, or a BSP such as Twilio. **Unofficial WhatsApp Web
+automation libraries are forbidden under any circumstances** (whatsapp-web.js,
+Baileys, Venom and similar). They breach WhatsApp's Terms of Service and the
+realistic penalty is the **company's business number being banned** — losing
+the channel the business already runs on. No exception, no "just for testing".
+
+## Cost, for the owner's decision
+
+UAE **utility** conversations (appointment reminders qualify) run roughly
+**USD 0.02–0.05** each. At ~3,500 visits a year that is about
+**AED 400–700 per year**, plus the BSP's platform fee if a BSP is used
+(Twilio adds a per-message fee; Meta direct has none). Template messages must
+be pre-approved by Meta before they can be sent.
+
+## What was built now so the later work is small
+
+The notification engine is **channel-plural as of migration 096**, not
+email-hardcoded:
+
+- `outbound_notifications.channel` ('email' | 'whatsapp' | 'sms', default
+  'email') with `channel_ref` for the provider-side id per channel.
+- `customers.preferred_channel` — the choice is data, not code.
+- Adding WhatsApp becomes a dispatcher branch next to `sendViaProvider`, plus
+  Meta-approved templates. No schema change under pressure, and no rewrite of
+  the queue, the sweep or the idempotency rules.
+
+## Still to decide when the owner is ready
+
+- Meta direct vs Twilio (cost vs integration effort).
+- Which notices move to WhatsApp: 24h visit notice and schedule changes are
+  the obvious wins; invoices and reports stay on email (attachments).
+- Opt-in capture — WhatsApp requires the customer to have opted in; the
+  consent flag belongs on the customer record before the first send.

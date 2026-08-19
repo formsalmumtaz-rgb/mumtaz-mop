@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomersPaged } from "@/lib/domain/customers";
-import { listFacilityTypes } from "@/lib/domain/reference";
+import { listFacilityTypes, listIndustryCategories, listMunicipalityCategories } from "@/lib/domain/reference";
 import { parseListParams } from "@/lib/list";
 import { ListToolbar, Pagination, ExportButtons, FilterChips } from "@/components/ListControls";
 import { NewCustomerForm } from "@/components/NewCustomerForm";
@@ -13,9 +13,11 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const params = parseListParams(sp);
   const tenantId = await getTenantId();
-  const [{ rows: customers, total }, facilityTypes] = await Promise.all([
+  const [{ rows: customers, total }, facilityTypes, industries, municipalityCategories] = await Promise.all([
     listCustomersPaged(tenantId, params),
     listFacilityTypes(tenantId),
+    listIndustryCategories(tenantId),
+    listMunicipalityCategories(tenantId),
   ]);
 
   return (
@@ -43,7 +45,9 @@ export default async function CustomersPage({ searchParams }: { searchParams: Pr
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={customers.length === 0}>
         <summary className="cursor-pointer font-medium">New customer</summary>
         <NewCustomerForm action={createCustomerAction}
-          facilityTypes={facilityTypes.map((f: { id: string; name: string | null }) => ({ id: f.id, name: f.name }))} />
+          facilityTypes={facilityTypes.map((f: { id: string; name: string | null }) => ({ id: f.id, name: f.name }))}
+          industries={industries}
+          municipalityCategories={municipalityCategories} />
       </details>
 
       {/* List */}

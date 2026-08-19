@@ -81,21 +81,59 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
+// Customer_Master_v2 column set. The importer maps BY HEADER NAME, so the owner
+// can reorder columns, omit any of them, or add their own — unknown headers are
+// reported, never silently dropped. Aliases exist because the master file uses
+// the business's own names (ACCOUNT_NO, CUSTOMER_NAME) and the form uses ours.
 export const IMPORT_TEMPLATE_COLUMNS = [
-  "source_row_id", "legal_name", "trade_name", "trn", "trade_licence_number",
-  "customer_type", "emirate", "address", "po_box", "contact_name",
-  "contact_phone", "contact_email", "site_name", "site_address", "remarks",
+  "account_no", "customer_name", "legal_name", "alias", "customer_group",
+  "customer_type", "industry_category", "municipality_category",
+  "legacy_codes", "contract_numbers", "contract_sl_nos",
+  "emirate", "place_of_supply", "district", "address", "po_box",
+  "contact_person", "designation", "email", "phone", "mobile", "whatsapp",
+  "trn", "trade_licence_no", "tl_expiry",
+  "preferred_shift", "preferred_language", "payment_terms", "billing_frequency",
+  "priority", "referred_by", "access_notes",
+  "latitude", "longitude", "location_source", "location_status",
+  "required_info", "notes",
 ] as const;
 
+// Header aliases → canonical column. Lets the master file import unchanged.
+const HEADER_ALIASES: Record<string, string> = {
+  source_row_id: "account_no", account_number: "account_no",
+  trade_name: "customer_name", name: "customer_name",
+  alias_name: "alias", group: "customer_group", group_name: "customer_group",
+  trade_licence_number: "trade_licence_no", trade_license: "trade_licence_no",
+  trade_licence_expiry: "tl_expiry", licence_expiry: "tl_expiry",
+  contact_name: "contact_person", contact_designation: "designation",
+  contact_email: "email", contact_phone: "phone", contact_mobile: "mobile",
+  site_address: "address", site_name: "branch_name", remarks: "notes",
+  maps_link_coords: "maps_link", lat: "latitude", lng: "longitude",
+};
+const canonical = (h: string): string => HEADER_ALIASES[h] ?? h;
+
 export function importTemplateCsv(): string {
-  const example = [
-    "R-001", "Al Noor Trading LLC", "Al Noor Supermarket", "100123456700003", "546486",
-    "B2B", "Sharjah", "Industrial Area 12, Sharjah", "12345", "Mr Ahmed",
-    "0501234567", "ahmed@alnoor.ae", "Main Branch", "Industrial Area 12, Sharjah",
-    "moved from the old spreadsheet",
-  ];
+  const example: Record<string, string> = {
+    account_no: "11828", customer_name: "Al Noor Supermarket", legal_name: "Al Noor Trading LLC",
+    alias: "Noor Super", customer_group: "AL NOOR GROUP", customer_type: "B2B",
+    industry_category: "retail", municipality_category: "foodstuffs",
+    legacy_codes: "004", contract_numbers: "1234/26", contract_sl_nos: "12",
+    emirate: "Sharjah", place_of_supply: "Sharjah", district: "Industrial Area 12",
+    address: "Shop 4, Industrial Area 12, Sharjah", po_box: "12345",
+    contact_person: "Mr Ahmed", designation: "Manager", email: "ahmed@alnoor.ae",
+    phone: "065654466", mobile: "0501234567", whatsapp: "0501234567",
+    trn: "100123456700003", trade_licence_no: "546486", tl_expiry: "31/12/2026",
+    preferred_shift: "night", preferred_language: "EN", payment_terms: "net_30",
+    billing_frequency: "monthly", priority: "High", referred_by: "Walk-in",
+    access_notes: "Ask for the store manager; park behind the building",
+    latitude: "25.3245", longitude: "55.4012",
+    location_source: "CONTRACT_MASTER", location_status: "VERIFIED",
+    required_info: "", notes: "",
+  };
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  return `${IMPORT_TEMPLATE_COLUMNS.join(",")}\n${example.map(esc).join(",")}\n`;
+  const header = IMPORT_TEMPLATE_COLUMNS.join(",");
+  const row = IMPORT_TEMPLATE_COLUMNS.map((c) => esc(example[c] ?? "")).join(",");
+  return `${header}\n${row}\n`;
 }
 
 const nul = (v: string | undefined) => {
@@ -111,11 +149,11 @@ export async function stageCustomerCsv(
 ): Promise<{ batchId: string; staged: number; unknownColumns: string[] }> {
   const grid = parseCsv(csvText);
   if (grid.length < 2) throw new Error("The file has no data rows.");
-  const header = grid[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  const header = grid[0].map((h) => canonical(h.trim().toLowerCase().replace(/\s+/g, "_")));
   const known = new Set<string>(IMPORT_TEMPLATE_COLUMNS as readonly string[]);
   const unknownColumns = header.filter((h) => h && !known.has(h));
-  if (!header.includes("legal_name") && !header.includes("trade_name")) {
-    throw new Error("The file needs a legal_name or trade_name column. Download the template to see the expected columns.");
+  if (!header.includes("customer_name") && !header.includes("legal_name")) {
+    throw new Error("The file needs a CUSTOMER_NAME (or LEGAL_NAME) column. Download the template to see the expected columns.");
   }
   const records = grid.slice(1).map((cells) => {
     const o: Record<string, string> = {};
@@ -132,29 +170,43 @@ export async function stageCustomerCsv(
     let seq = 0;
     for (const r of records) {
       seq++;
-      const rowId = nul(r.source_row_id) ?? `ROW-${String(seq).padStart(4, "0")}`;
+      const rowId = nul(r.account_no) ?? `ROW-${String(seq).padStart(4, "0")}`;
       await c.query(
         `insert into staging_customers
            (tenant_id, batch_id, source_row_id, legal_name, trade_name, trn, trade_licence_number,
-            customer_type, emirate, address, po_box, remarks)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            customer_type, emirate, address, po_box, remarks,
+            customer_group, industry_category, municipality_category, place_of_supply, district,
+            contact_person, designation, email, phone, mobile, whatsapp, tl_expiry,
+            preferred_shift, preferred_language, payment_terms, billing_frequency,
+            referred_by, access_notes, latitude, longitude, location_source, location_status,
+            required_info, notes, contract_numbers, contract_sl_nos, legacy_customer_code, alias_name)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+                 $23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40)
          on conflict (batch_id, source_row_id) do nothing`,
-        [tenantId, batch, rowId, nul(r.legal_name), nul(r.trade_name), nul(r.trn),
-         nul(r.trade_licence_number), nul(r.customer_type)?.toUpperCase() ?? null, nul(r.emirate),
-         nul(r.address), nul(r.po_box), nul(r.remarks)]);
-      const phone = nul(r.contact_phone), email = nul(r.contact_email);
+        [tenantId, batch, rowId, nul(r.legal_name), nul(r.customer_name) ?? nul(r.legal_name), nul(r.trn),
+         nul(r.trade_licence_no), nul(r.customer_type)?.toUpperCase() ?? null, nul(r.emirate),
+         nul(r.address), nul(r.po_box), nul(r.notes),
+         nul(r.customer_group), nul(r.industry_category), nul(r.municipality_category),
+         nul(r.place_of_supply), nul(r.district),
+         nul(r.contact_person), nul(r.designation), nul(r.email), nul(r.phone), nul(r.mobile),
+         nul(r.whatsapp), nul(r.tl_expiry),
+         nul(r.preferred_shift), nul(r.preferred_language), nul(r.payment_terms), nul(r.billing_frequency),
+         nul(r.referred_by), nul(r.access_notes), nul(r.latitude), nul(r.longitude),
+         nul(r.location_source), nul(r.location_status), nul(r.required_info), nul(r.notes),
+         nul(r.contract_numbers), nul(r.contract_sl_nos), nul(r.legacy_codes), nul(r.alias)]);
+      const phone = nul(r.mobile) ?? nul(r.phone), email = nul(r.email);
       for (const [type, value] of [["phone", phone], ["email", email]] as const) {
         if (!value) continue;
         await c.query(
           `insert into staging_contacts (tenant_id, batch_id, source_row_id, contact_type, value, contact_name)
            values ($1,$2,$3,$4,$5,$6)`,
-          [tenantId, batch, rowId, type, value, nul(r.contact_name)]);
+          [tenantId, batch, rowId, type, value, nul(r.contact_person)]);
       }
-      if (nul(r.site_name) || nul(r.site_address)) {
+      if (nul(r.branch_name) || nul(r.address)) {
         await c.query(
           `insert into staging_branches (tenant_id, batch_id, source_row_id, branch_name, address, po_box, emirate)
            values ($1,$2,$3,$4,$5,$6,$7)`,
-          [tenantId, batch, rowId, nul(r.site_name) ?? "Main", nul(r.site_address) ?? nul(r.address),
+          [tenantId, batch, rowId, nul(r.branch_name) ?? "Main", nul(r.address),
            nul(r.po_box), nul(r.emirate)]);
       }
     }
@@ -252,15 +304,38 @@ export async function commitImportBatch(
            from customers where tenant_id=$1 and code ~ '^CUST-\\d+$'
        ), ins as (
          insert into customers (tenant_id, service_line_id, code, legal_name, trade_name, trn, trade_license,
-                                customer_type, emirate, source_ref, legacy_code, is_assumed, assumed_note, attributes)
+                                customer_type, emirate, source_ref, legacy_code, is_assumed, assumed_note, attributes,
+                                alias_name, place_of_supply, district, po_box, priority,
+                                contact_person, contact_designation, whatsapp,
+                                preferred_shift, preferred_language, payment_terms, billing_frequency,
+                                referred_by, access_notes, trade_licence_no,
+                                location_source, location_status, required_info, notes,
+                                industry_category_id, municipality_category_id)
          select $1, $2,
                 'CUST-' || lpad((base.n + row_number() over (order by s.source_row_id))::text, 4, '0'),
                 s.legal_name, coalesce(s.trade_name, s.legal_name), s.trn, s.trade_licence_number,
                 case when s.customer_type in ('B2B','B2G','B2C') then s.customer_type end,
                 s.emirate, s.source_row_id, s.legacy_customer_code,
                 true, 'Imported — confirm details',
-                jsonb_strip_nulls(jsonb_build_object('alias_name', s.alias_name, 'po_box', s.po_box,
-                                                     'priority', s.priority, 'address', s.address))
+                jsonb_strip_nulls(jsonb_build_object('address', s.address,
+                                                     'contract_numbers', s.contract_numbers,
+                                                     'contract_sl_nos', s.contract_sl_nos)),
+                s.alias_name, s.place_of_supply, s.district, s.po_box,
+                case when s.priority in ('High','Medium','Low') then s.priority end,
+                s.contact_person, s.designation, s.whatsapp,
+                case when s.preferred_shift in ('day','night') then s.preferred_shift end,
+                case when upper(s.preferred_language) in ('EN','AR') then upper(s.preferred_language) end,
+                case when s.payment_terms in ('cash_on_service','net_15','net_30') then s.payment_terms end,
+                case when s.billing_frequency in ('per_visit','monthly','quarterly','annual') then s.billing_frequency end,
+                s.referred_by, s.access_notes, s.trade_licence_number,
+                s.location_source,
+                case when s.location_status in ('VERIFIED','UNVERIFIED','AREA_APPROX','NO_LOCATION')
+                     then s.location_status end,
+                s.required_info, s.notes,
+                (select ic.id from industry_categories ic
+                  where ic.tenant_id = $1 and lower(ic.code) = lower(coalesce(s.industry_category,''))),
+                (select mc.id from municipality_categories mc
+                  where mc.tenant_id = $1 and lower(mc.code) = lower(coalesce(s.municipality_category,'')))
            from staging_customers s, base
           where s.batch_id = $3 and s.disposition = 'clean'
          returning id, source_ref
@@ -275,10 +350,16 @@ export async function commitImportBatch(
            from staging_customers where batch_id=$1 and coalesce(live_customer_id, matched_customer_id) is not null
        ), ins as (
          insert into customer_branches (tenant_id, service_line_id, customer_id, name, address, emirate, access_notes,
-                                        is_assumed, assumed_note)
+                                        is_assumed, assumed_note, location)
          select $2, $3, tgt.cid, coalesce(sb.branch_name,'Main'), sb.address, sb.emirate, sb.access_notes,
-                true, 'Imported — confirm and pin the location'
-           from staging_branches sb join tgt on tgt.source_row_id = sb.source_row_id
+                true, 'Imported — confirm and pin the location',
+                -- coordinates come from the FILE only. A NO_LOCATION row stays
+                -- without a pin: the technician captures it at the door.
+                case when sc.latitude ~ '^-?[0-9.]+$' and sc.longitude ~ '^-?[0-9.]+$'
+                     then ST_SetSRID(ST_MakePoint(sc.longitude::float8, sc.latitude::float8),4326)::geography end
+           from staging_branches sb
+           join tgt on tgt.source_row_id = sb.source_row_id
+           join staging_customers sc on sc.batch_id = sb.batch_id and sc.source_row_id = sb.source_row_id
           where sb.batch_id=$1 and sb.disposition='clean'
             and not exists (select 1 from customer_branches cb
                              where cb.tenant_id=$2 and cb.customer_id=tgt.cid
