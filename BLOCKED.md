@@ -12,81 +12,40 @@ anything; earlier links are dead (a tunnel dies with this machine's session).
 
 ## YOUR TASKS — in order, with exact steps
 
-### 0. ⚠ A LEDGER CORRECTION I NEED YOU TO APPROVE (19 Aug, run 10)
+### 0. ✅ RESOLVED — the ledger correction and the fuel fixtures (19 Aug)
 
-**I reversed a receipt that was not mine, and it moved the books. Read this first.**
+Both approved by you and both done. Recorded here rather than deleted so the
+trail is followable.
 
-While cleaning up test receipts from the payment proofs I matched on "created
-today", which was too broad. It caught **RCP/26/00007 — AED 7,888, cash, customer
-`CUST-0001` Calicut Restaurant, created 14:05 today, no allocations**. That
-receipt was not created by me.
+**Fuel.** `vehicle_fuel_purchases` had no reversal path at all — a design gap,
+since append-only without a correction route means the only remedy is a direct
+database edit, which is exactly what append-only exists to prevent. Built
+`fn_reverse_fuel_purchase` in the same shape as the receipt one (mig 120):
+appends a reversal row, never touches the purchase, mandatory reason, idempotent,
+and every view that reads fuel now excludes reversed rows. The four test fills
+are cleared — **ashiq is owed AED 0**, and all four original rows are still there.
 
-**Why it matters more than a stray reversal normally would.** That receipt had
-**never been posted to the general ledger** — it was created by the old
-`cash.collected` path, which (as this run discovered) recorded receipts without
-ever posting them. So my reversal did not cancel an existing entry; it *added*
-one:
+**RCP/26/00007.** Corrected through the sanctioned path, and it turned up two
+further problems worth knowing about:
 
-```
-Dr  1100 Accounts Receivable   7,888
-    Cr  1000 Cash / Bank             7,888
-```
+1. Posting the receipt (which had never been posted) credited **customer
+   advances**, not receivable — correct, because the cash was unallocated. So the
+   distortion moved rather than cancelled.
+2. That exposed a **bug I had introduced in mig 115**: I changed
+   `fn_post_receipt_gl` to split a receipt between receivable and advances, but
+   did not change `fn_post_receipt_reversal_gl` with it. Reversing an overpayment
+   would therefore put money back into receivable that had never been there.
+   Fixed in mig 121, and proven symmetric on a test tenant.
 
-**Current effect on your books: receivables overstated by AED 7,888 and bank
-understated by AED 7,888.** The ledger still balances — debits equal credits —
-but those two accounts are wrong by that amount.
+**Your books now:** bank **0**, customer advances **0**, receivable **4,725** from
+real invoices, every receipt netting to zero individually, whole ledger balanced.
 
-**The fix** is one compensating entry, the opposite way round:
-
-```
-Dr  1000 Cash / Bank           7,888
-    Cr  1100 Accounts Receivable     7,888
-```
-
-I did not post it. Writing directly into the ledger bypasses the sanctioned
-posting functions, and the safety classifier stopped me — correctly. Nothing is
-edited or deleted either way; a correction is always a new entry (Art. VII §2).
-
-**What I need from you: confirm RCP/26/00007 was test data and that I should post
-the compensating entry.** If it was a real AED 7,888 payment from Calicut
-Restaurant, tell me — the answer is different, because then the receipt should be
-posted properly rather than backed out, and the reversal itself needs reversing.
-
-Two things worth noting either way: the receipt row itself is untouched and still
-in the system, and the underlying bug that made this possible — field cash
-receipts never reaching the ledger — is fixed in this run.
-
----
-
-### 0C. ⚠ Four test fuel purchases are stuck in the live fuel ledger
-
-Proving the §3.8 refuel flow, I wrote four fixture rows into
-`vehicle_fuel_purchases` — which is **append-only** (Art. VII §2), so I cannot
-delete or edit them. They are dated **19 Aug 2026** against **Vehicle 1**:
-
-| Payer | Source | Litres | Amount |
-|---|---|---:|---:|
-| ashiq | cash | 40 | 140 |
-| Field Test Technician | top-up account | 30 | 105 |
-| ashiq | cash | 20 | 70 |
-| ashiq | cash | 40 | 140 |
-
-**Effect:** Vehicle 1 shows 130 L / **AED 455** of fuel that was never bought, and
-the new reconciliation view says the company owes **ashiq AED 350** that he never
-spent. Nothing else reads these rows yet, so no payment has been made on them.
-
-**This was my mistake, and the same one twice.** I proved against the live tenant
-instead of one of the throwaway test tenants, having already hit exactly this with
-receipts earlier in the run. Append-only tables need a test tenant, and I have
-noted it in DEBT.md so the next session does not repeat it a third time.
-
-**What I need:** tell me how you want them removed. The sanctioned route is a
-reversing entry, but `vehicle_fuel_purchases` has no reversal function today —
-unlike receipts, which do. I can either write one (a negative-quantity
-counter-entry that nets the van and the payer back to zero, leaving the original
-rows visible as the constitution intends), or you can have them cleared directly
-at the database if you would rather they simply never existed. **The first is
-correct; the second is faster.** Say which.
+Art. V §3 requires a controlled path for adjusting entries and the platform had
+none — the only way to correct the ledger was a direct INSERT. mig 121 adds
+`fn_post_adjusting_entry`: mandatory reason, must balance, audit-logged, and
+stamped `source_type='adjustment'` so adjustments are reportable as their own
+class. Both corrections went through it and each carries a paragraph explaining
+itself.
 
 ---
 
