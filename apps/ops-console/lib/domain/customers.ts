@@ -5,6 +5,12 @@ import { audit } from "./audit";
 import type { ListParams } from "../list";
 
 export interface Customer {
+  required_info?: string | null;
+  reconciliation_note?: string | null;
+  reconciled_to_code?: string | null;
+  place_of_supply?: string | null;
+  contact_person?: string | null;
+  whatsapp?: string | null;
   id: string;
   code: string | null;
   legal_name: string | null;
@@ -114,8 +120,10 @@ export async function restoreCustomer(tenantId: string, id: string): Promise<voi
 
 export async function getCustomer(tenantId: string, id: string): Promise<Customer | null> {
   const { rows } = await scopedRead(tenantId, 
-    `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active
-       from customers where id = $1 and tenant_id = $2`,
+    `select id, code, legal_name, trade_name, trn, trade_license, customer_type, emirate, is_assumed, is_active,
+            required_info, reconciliation_note, place_of_supply, contact_person, whatsapp,
+            (select r.code from customers r where r.id = c.reconciled_to_customer_id) as reconciled_to_code
+       from customers c where id = $1 and tenant_id = $2`,
     [id, tenantId],
   );
   return (rows[0] as Customer) ?? null;
@@ -294,4 +302,56 @@ export async function defaultBranchId(tenantId: string, customerId: string): Pro
     `select id from customer_branches where tenant_id = $1 and customer_id = $2 and is_active limit 2`,
     [tenantId, customerId]);
   return rows.length === 1 ? rows[0].id : null;
+}
+
+// ── REQUIRED_INFO: the flags that complete a record through daily use ────────
+// The master file recorded, per customer, what it could NOT tell us — "ASK: EMAIL;
+// ASK: PHONE/MOBILE". 555 of the 599 live customers carry at least one. Rather
+// than a data-cleanup project, the profile asks for exactly those fields the first
+// time anyone opens the customer, and each answer clears its own flag.
+export interface RequiredFlag { token: string; label: string; fields: string[]; }
+
+const FLAG_MAP: { match: RegExp; label: string; fields: string[] }[] = [
+  { match: /^ASK:\s*EMAIL$/i,                    label: "Email address",            fields: ["contact_email"] },
+  { match: /^ASK:\s*PHONE\/MOBILE$/i,            label: "Phone or mobile",          fields: ["contact_phone", "contact_mobile"] },
+  { match: /^ASK:\s*TRN$/i,                      label: "Tax registration number",  fields: ["trn"] },
+  { match: /^ASK:\s*ADDRESS$/i,                  label: "Address",                  fields: ["site_address"] },
+  { match: /^ASK:\s*EMIRATE\/PLACE_OF_SUPPLY$/i, label: "Emirate / place of supply", fields: ["emirate", "place_of_supply"] },
+  { match: /^ASK:\s*LOCATION_PIN$/i,             label: "Map pin",                  fields: [] },
+  { match: /^ASK:\s*NAME$/i,                     label: "Customer name",            fields: ["trade_name"] },
+];
+
+// Parse the stored string into flags. An unrecognised flag — the free-text
+// questions reconciliation writes, e.g. "ASK: which legacy record …" — is kept and
+// shown as a question to answer, never silently dropped.
+export function parseRequiredInfo(raw: string | null | undefined): RequiredFlag[] {
+  return (raw ?? "").split(";").map((t) => t.trim()).filter(Boolean).map((token) => {
+    const hit = FLAG_MAP.find((f) => f.match.test(token));
+    return hit
+      ? { token, label: hit.label, fields: hit.fields }
+      : { token, label: token.replace(/^ASK:\s*/i, ""), fields: [] };
+  });
+}
+
+// Remove the flags the office has just answered. Everything not named survives —
+// answering "email" must never quietly clear "TRN".
+export async function clearRequiredFlags(
+  tenantId: string, customerId: string, answered: string[],
+): Promise<void> {
+  if (!answered.length) return;
+  await withTenantTx(tenantId, async (c) => {
+    const { rows } = await c.query(
+      `select required_info from customers where id=$1 and tenant_id=$2 for update`, [customerId, tenantId]);
+    const remaining = parseRequiredInfo(rows[0]?.required_info)
+      .filter((f) => !answered.includes(f.token))
+      .map((f) => f.token);
+    await c.query(
+      `update customers set required_info = nullif($2,''), updated_at = now() where id=$1`,
+      [customerId, remaining.join("; ")]);
+    await audit(c, tenantId, {
+      table: "customers", rowId: customerId, action: "update",
+      oldValue: { required_info: rows[0]?.required_info }, newValue: { required_info: remaining.join("; ") || null },
+      note: `captured on the customer profile: ${answered.join("; ")}`,
+    });
+  });
 }

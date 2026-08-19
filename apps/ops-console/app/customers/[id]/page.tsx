@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
-import { getCustomer, getCustomerActivity } from "@/lib/domain/customers";
+import { getCustomer, getCustomerActivity, parseRequiredInfo } from "@/lib/domain/customers";
 import { listBranches } from "@/lib/domain/branches";
 import { listContacts } from "@/lib/domain/contacts";
 import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
@@ -10,11 +10,12 @@ import { listEstimatesForCustomer } from "@/lib/domain/estimation";
 import { listFrequencies, listPricingModels, listFacilityTypes } from "@/lib/domain/reference";
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { PinPicker } from "@/components/PinPicker";
+import { CapturePrompt } from "@/components/CapturePrompt";
 import {
   updateCustomerAction, confirmCustomerAction, createBranchAction,
   updateBranchAction, archiveBranchAction, restoreBranchAction,
   createContactAction, updateContactAction, archiveContactAction, restoreContactAction,
-  createContractAction, activateContractAction,
+  createContractAction, activateContractAction, captureRequiredInfoAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +73,20 @@ export default async function CustomerDetail({ params, searchParams }: {
           </Link>
         </div>
       </div>
+
+      {/* What the old system could not tell us — asked here, once, in context. */}
+      <CapturePrompt customerId={customer.id} flags={parseRequiredInfo(customer.required_info)}
+                     action={captureRequiredInfoAction} />
+
+      {customer.reconciled_to_code && (
+        <div className="rounded-lg border border-neutral-300 bg-neutral-50 p-4 text-sm">
+          <span className="font-medium">This is a legacy record.</span> The customer of record is{" "}
+          <Link href={`/customers?q=${customer.reconciled_to_code}`} className="font-mono text-brand underline">
+            {customer.reconciled_to_code}
+          </Link>. Everything issued against this record stays here and is never rewritten.
+          {customer.reconciliation_note && <p className="mt-1 text-neutral-600">{customer.reconciliation_note}</p>}
+        </div>
+      )}
 
       {/* Edit customer */}
       <section className="rounded-lg border border-neutral-200 bg-white p-5">

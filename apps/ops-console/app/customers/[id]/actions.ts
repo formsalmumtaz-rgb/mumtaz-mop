@@ -3,9 +3,10 @@ import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { drainOnce, consumers } from "@mop/worker";
 import { pool } from "@/lib/db";
+import { withRequest } from "@/lib/rls";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { updateCustomer, confirmCustomer } from "@/lib/domain/customers";
+import { updateCustomer, confirmCustomer, clearRequiredFlags } from "@/lib/domain/customers";
 import { createBranch, updateBranch, archiveBranch, restoreBranch } from "@/lib/domain/branches";
 import { createContact, updateContact, archiveContact, restoreContact } from "@/lib/domain/contacts";
 import { createContract, activateContract } from "@/lib/domain/contracts";
@@ -166,4 +167,68 @@ export async function activateContractAction(formData: FormData): Promise<void> 
     console.error("[activate] fan-out drain failed; event remains queued:", e);
   }
   revalidatePath(`/customers/${customerId}`);
+}
+
+// Capture what the master file could not tell us, from the customer's own profile
+// (§3.1). Each answer clears ONLY its own flag, so answering the email never
+// quietly closes the question about the TRN. Blank stays blank: a field left empty
+// is still unknown and its flag survives.
+export async function captureRequiredInfoAction(formData: FormData): Promise<void> {
+  await requirePermission("customer.edit");
+  const id = String(formData.get("id"));
+  const tenantId = await getTenantId();
+  const serviceLineId = await getServiceLineId(tenantId);
+  const val = (k: string) => String(formData.get(k) ?? "").trim();
+  const answered: string[] = [];
+  const claim = (token: string) => { if (token) answered.push(token); };
+
+  // ── direct customer columns ────────────────────────────────────────────────
+  const direct: Record<string, string> = {};
+  for (const k of ["trn", "emirate", "place_of_supply", "trade_name"]) {
+    if (val(k)) direct[k] = val(k);
+  }
+  if (Object.keys(direct).length) {
+    const sets = Object.keys(direct).map((k, i) => `${k} = $${i + 3}`).join(", ");
+    await withRequest({ tenantId }, (c) => c.query(
+      `update customers set ${sets}, updated_at = now() where id = $1 and tenant_id = $2`,
+      [id, tenantId, ...Object.values(direct)]));
+  }
+
+  // ── a contact, when an email or a number was given ─────────────────────────
+  const email = val("contact_email"), phone = val("contact_phone"), mobile = val("contact_mobile");
+  if (email || phone || mobile) {
+    await createContact(tenantId, serviceLineId, id, {
+      name: val("contact_person") || "Primary contact",
+      email: email || undefined, phone: (mobile || phone) || undefined,
+      role: undefined,
+    });
+  }
+
+  // ── the site address goes on the site, not the customer ────────────────────
+  const address = val("site_address");
+  if (address) {
+    await withRequest({ tenantId }, async (c) => {
+      const { rows } = await c.query(
+        `select id from customer_branches where customer_id=$1 and tenant_id=$2 and archived_at is null
+          order by created_at limit 1`, [id, tenantId]);
+      if (rows[0]) {
+        await c.query(`update customer_branches set address=$2, updated_at=now() where id=$1`, [rows[0].id, address]);
+      } else {
+        await c.query(
+          `insert into customer_branches (tenant_id, service_line_id, customer_id, name, address, is_assumed, assumed_note)
+           values ($1,$2,$3,'Main',$4,true,'Captured on the customer profile — confirm and pin')`,
+          [tenantId, serviceLineId, id, address]);
+      }
+    });
+  }
+
+  // Only the tokens whose value actually arrived are cleared.
+  for (const token of formData.getAll("answered_token").map(String)) {
+    // the form submits the token alongside its input(s); claim it only if at
+    // least one of those inputs came back with something in it
+    const fields = String(formData.get(`fields_for:${token}`) ?? "").split(",").filter(Boolean);
+    if (fields.length && fields.some((f) => val(f))) claim(token);
+  }
+  await clearRequiredFlags(tenantId, id, answered);
+  revalidatePath(`/customers/${id}`);
 }
