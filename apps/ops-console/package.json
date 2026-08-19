@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "next dev -p 3100",
     "lint:rls": "node scripts/rls-gate.mjs",
-    "prebuild": "node scripts/rls-gate.mjs",
+    "prebuild": "node scripts/rls-gate.mjs && node --env-file=../../.env.local scripts/perm-gate.mjs",
     "build": "next build",
     "start": "next start -p 3100",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint:perms": "node --env-file=../../.env.local scripts/perm-gate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
