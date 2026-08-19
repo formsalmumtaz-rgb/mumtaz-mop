@@ -77,7 +77,12 @@ export async function GET(req: Request) {
                 'dilution_ratio', rv.dilution_ratio,
                 'coverage_per_unit', rv.coverage_per_unit, 'coverage_unit', cu.code,
                 'notes', rv.notes, 'is_assumed', rv.is_assumed
-              ) end as recipe
+              ) end as recipe,
+            -- DEFECT 2B: what this job's chemical dose SHOULD be, computed
+            -- server-side and shipped with the job so the screen renders it with
+            -- no signal. One definition (fn_expected_dose, mig 131) shared with
+            -- the console and the office variance report.
+            fn_expected_dose(j.tenant_id, j.id) as expected
        from jobs j
        join customers c on c.id = j.customer_id
        left join customer_branches b on b.id = j.branch_id
@@ -110,7 +115,7 @@ export async function GET(req: Request) {
   // location ("<team name> Van", seeded 065); no team pin → empty list (honest).
   const { rows: vanStock } = await scopedRead(
     session.tenantId,
-    `select it.name as item, u_base.code as unit, sum(oh.qty_base)::float8 as qty
+    `select it.id as item_id, it.name as item, u_base.code as unit, sum(oh.qty_base)::float8 as qty
        from technicians t
        join team_assignments ta on ta.technician_id = t.id and ta.effective_to is null
        join teams tm on tm.id = ta.team_id
@@ -119,11 +124,11 @@ export async function GET(req: Request) {
        join items it on it.id = oh.item_id
        left join units u_base on u_base.id = it.base_unit_id
       where t.tenant_id = $1 and t.user_id = $2
-      group by it.name, u_base.code
+      group by it.id, it.name, u_base.code
      having sum(oh.qty_base) > 0
       order by it.name`,
     [session.tenantId, session.userId],
-  ).catch(() => ({ rows: [] as { item: string; unit: string | null; qty: number }[] }));
+  ).catch(() => ({ rows: [] as { item_id: string; item: string; unit: string | null; qty: number }[] }));
   // Vision P5.C — who am I today: current team (operations-assigned) + whether
   // today's attendance confirmation exists yet, and team-lead status.
   const { rows: me } = await scopedRead(
@@ -138,6 +143,44 @@ export async function GET(req: Request) {
       where t.tenant_id = $1 and t.user_id = $2 limit 1`,
     [session.tenantId, session.userId],
   );
+  // DEFECT 2C — the over-dose warning margin, from settings (ASSUMED 100%).
+  // Shipped to the device so the warning still fires with no signal, and so the
+  // owner can change it from settings without anyone shipping a build.
+  const { rows: dosingCfg } = await scopedRead(
+    session.tenantId,
+    `select coalesce((value #>> '{}')::numeric, 100)::float8 as pct from settings
+      where tenant_id = $1 and service_line_id is null and key = 'dosing.over_expected_warn_pct'`,
+    [session.tenantId],
+  ).catch(() => ({ rows: [] as { pct: number }[] }));
+
+  // DEFECT 2B — the equipment list, so the job screen can ask WHICH sprayer did
+  // the work using the same codes the pre-flight ticks. Same vocabulary, one place.
+  const { rows: equipmentOptions } = await scopedRead(
+    session.tenantId,
+    `select code, label from preflight_checklist_items
+      where tenant_id = $1 and kind = 'equipment' and is_active order by sort_order, label`,
+    [session.tenantId],
+  ).catch(() => ({ rows: [] as { code: string; label: string }[] }));
+
+  // DEFECT 2A/2D — what the team lead DECLARED on the van this morning. This,
+  // not the warehouse figure, is what the technician actually has in hand; the
+  // two are shown side by side so a variance is visible rather than argued about.
+  const { rows: declaredStock } = await scopedRead(
+    session.tenantId,
+    `select d.item_id, i.name as item, coalesce(u.code, '') as unit,
+            sum(d.declared_qty_base)::float8 as declared
+       from preflight_stock_declarations d
+       join preflight_checks pc on pc.id = d.preflight_check_id
+       join items i on i.id = d.item_id
+       left join units u on u.id = i.base_unit_id
+      where d.tenant_id = $1 and pc.check_date = current_date
+        and exists (select 1 from technicians t
+                     where t.id = pc.technician_id and t.tenant_id = $1 and t.user_id = $2)
+      group by d.item_id, i.name, u.code
+      order by i.name`,
+    [session.tenantId, session.userId],
+  ).catch(() => ({ rows: [] as { item_id: string; item: string; unit: string; declared: number }[] }));
+
   // Item 3A: office staff for the technician's "approved by" picker.
   const { rows: staff } = await scopedRead(
     session.tenantId,
@@ -149,6 +192,8 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     jobs: rows, inspection_options: inspectionOptions, van_stock: vanStock,
+    declared_stock: declaredStock, equipment_options: equipmentOptions,
+    dosing_warn_over_pct: dosingCfg[0]?.pct ?? 100,
     me: me[0] ?? null, staff,
   }, { headers: cors });
 }

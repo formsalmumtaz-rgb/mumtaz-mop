@@ -96,6 +96,12 @@ const stockDeducter: Consumer = {
     const dose = j.generation_snapshot?.dose as { item_id?: string; quantity?: number; unit_id?: string } | undefined;
     if (!dose?.item_id || !dose.quantity) return; // nothing to deduct
 
+    // The technician's own recorded use (job.materials_recorded, defect 2B) is the
+    // better number and has already moved the stock. Deducting the office's planned
+    // dose on top of it would consume the van twice for one visit.
+    const recorded = await c.query(`select 1 from job_material_usage where job_id = $1 limit 1`, [jobId]);
+    if ((recorded.rowCount ?? 0) > 0) return;
+
     // who performed it lives in job_assignments (nullable for now)
     const tech = (await c.query(`select technician_id from job_assignments where job_id = $1 limit 1`, [jobId])).rows[0];
     const techId = tech?.technician_id ?? null;

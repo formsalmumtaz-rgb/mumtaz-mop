@@ -17,6 +17,7 @@ export const EVENT_TYPES = [
   "job.arrived",
   "job.completed",
   "job.inspected",
+  "job.materials_recorded",
   "job.failed",
   "job.cancelled",
   "job.delayed",
@@ -92,6 +93,36 @@ export const payloadSchemas = {
       infestation_level: z.string().nullish(),
       notes: z.string().nullish(),
     })),
+  }),
+  // DEFECT 2B — what the technician ACTUALLY used, against what the recipe
+  // EXPECTED. Both numbers travel together and both are kept: the variance is
+  // the operational number, and it is meaningless if either half is dropped.
+  // A substitution within the same service type (Fendona for Blitz) is recorded
+  // as a substitution, never normalised back to the expected product.
+  "job.materials_recorded": z.object({
+    job_id: z.string().uuid(),
+    client_uuid: z.string().uuid().nullish(),
+    device_time: z.string().nullish(),
+    lines: z.array(z.object({
+      client_uuid: z.string().uuid(),
+      item_id: z.string().uuid(),
+      recipe_version_id: z.string().uuid().nullish(),
+      expected_qty: z.number().nonnegative().nullish(),
+      actual_qty: z.number().nonnegative(),
+      mixes: z.number().nonnegative().nullish(),
+      water_litres: z.number().nonnegative().nullish(),
+      substituted_for_item_id: z.string().uuid().nullish(),
+      // The technician saw the over-dose warning and carried on. The warning is
+      // SOFT by the owner's explicit instruction: this records that they were
+      // told, and never that they were stopped.
+      over_expected_ack: z.boolean().nullish(),
+      note: z.string().nullish(),
+    })),
+    equipment: z.array(z.object({
+      client_uuid: z.string().uuid(),
+      equipment_code: z.string().min(1),
+      note: z.string().nullish(),
+    })).nullish(),
   }),
   "job.completed": z.object({
     job_id: z.string().uuid(),

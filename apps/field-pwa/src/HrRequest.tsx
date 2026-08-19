@@ -58,7 +58,6 @@ export function HrRequest({ base, onBack, recent }: {
 
   return (
     <div>
-      <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".6rem" }}>← My day</button>
       <div className="card">
         <h3>What do you need?</h3>
         <div className="chips" style={{ marginBottom: ".8rem" }}>

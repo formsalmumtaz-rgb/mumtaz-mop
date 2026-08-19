@@ -39,8 +39,8 @@ type MyDayData = {
 const hhmm = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 
-export function MyDay({ base, online, onBack, jobCount }: {
-  base: string; online: boolean; onBack: () => void; jobCount: number;
+export function MyDay({ base, online, jobCount }: {
+  base: string; online: boolean; jobCount: number;
 }) {
   const [data, setData] = useState<MyDayData | null>(null);
   const [uniform, setUniform] = useState<Record<string, boolean>>({});
@@ -89,8 +89,6 @@ export function MyDay({ base, online, onBack, jobCount }: {
 
   return (
     <div>
-      <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".6rem" }}>← Jobs</button>
-
       <div className="day-hero">
         <h2>{clockedOut ? "Day finished" : clockedIn ? "You're on shift" : "Good morning"}</h2>
         <div className="sub">

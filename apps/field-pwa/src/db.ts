@@ -14,6 +14,29 @@ export interface RecipeSnapshot {
   coverage_unit: string | null;
 }
 
+// DEFECT 2B — what the recipe says this visit SHOULD take. Computed server-side
+// (fn_expected_dose) and shipped with the job so the screen renders it with no
+// signal — the technician must see the expected dose BEFORE they treat, and the
+// van is where there is least likely to be a bar of coverage.
+export interface ExpectedDose {
+  recipe: string | null;
+  recipe_version_id: string | null;
+  product: { item_id: string; name: string; unit: string; substitution_group: string | null } | null;
+  mixes: number | null;
+  ml_per_mix: number | null;
+  total_qty: number | null;
+  water_litres: number | null;
+  adjuvants: { item_id: string; name: string; qty: number; unit: string }[];
+  category: string | null;
+  category_source: string | null;
+  cap_qty: number | null;
+  why: string;
+  alternatives: { item_id: string; name: string; unit: string }[];
+}
+
+export interface VanStockLine { item_id?: string; item: string; unit: string | null; qty: number }
+export interface DeclaredStockLine { item_id: string; item: string; unit: string; declared: number }
+
 export interface LocalJob {
   id: string;
   customer_name: string;
@@ -25,6 +48,7 @@ export interface LocalJob {
   service_type: string | null;
   access_notes: string | null;
   recipe: RecipeSnapshot | null;
+  expected?: ExpectedDose | null;
   // Item 18: server-derived per service — a cleaning job never asks about treatment.
   checklist_items?: string[] | null;
   local_status: "scheduled" | "in_progress" | "completed";
@@ -110,14 +134,23 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
   if (!res.ok) throw new Error(`sync failed: ${res.status}`);
   const data = (await res.json()) as {
     jobs: LocalJob[]; inspection_options?: InspectionOption[];
-    van_stock?: { item: string; unit: string | null; qty: number }[];
+    van_stock?: VanStockLine[];
+    declared_stock?: DeclaredStockLine[];
+    equipment_options?: { code: string; label: string }[];
+    dosing_warn_over_pct?: number;
     me?: { name: string; is_team_lead: boolean; team_name: string | null; confirmed_today: boolean } | null;
     staff?: { id: string; name: string }[];
   };
   await db.transaction("rw", db.jobs, db.meta, async () => {
     for (const j of data.jobs) {
       const existing = await db.jobs.get(j.id);
-      if (existing && existing.local_status !== "scheduled") continue;
+      if (existing && existing.local_status !== "scheduled") {
+        // A job already in the technician's hands keeps its local state, but the
+        // expected dose is read-only reference data — refresh it, or a job that
+        // was started before the office set the recipe would never show one.
+        await db.jobs.update(j.id, { expected: j.expected ?? null });
+        continue;
+      }
       await db.jobs.put({ ...j, local_status: existing?.local_status ?? "scheduled" });
     }
     // Cache the button-driven inspection option lists for offline use (T4).
@@ -125,6 +158,12 @@ export async function syncPull(baseUrl: string): Promise<{ jobs: number }> {
     // In-hand van stock (Vision P3) — displayed on every screen, decremented
     // optimistically on the device as usage is recorded.
     if (data.van_stock) await db.meta.put({ key: "vanStock", value: data.van_stock });
+    // What the team lead physically COUNTED on the van this morning — the
+    // technician's real in-hand figure, as opposed to what the warehouse believes
+    // it issued. Both are cached; the screen shows the counted one.
+    if (data.declared_stock) await db.meta.put({ key: "declaredStock", value: data.declared_stock });
+    if (data.equipment_options) await db.meta.put({ key: "equipmentOptions", value: data.equipment_options });
+    if (data.dosing_warn_over_pct != null) await db.meta.put({ key: "dosingWarnOverPct", value: data.dosing_warn_over_pct });
     // Who am I today (Vision P5.C): team + confirmation state for the banner.
     if (data.me !== undefined) await db.meta.put({ key: "me", value: data.me });
     if (data.staff) await db.meta.put({ key: "staff", value: data.staff });

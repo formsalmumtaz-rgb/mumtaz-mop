@@ -4,8 +4,10 @@ import imageCompression from "browser-image-compression";
 import { MyDay } from "./MyDay";
 import { HrRequest } from "./HrRequest";
 import { CloseDay } from "./CloseDay";
-import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
+import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption, type DeclaredStockLine, type VanStockLine } from "./db";
 import { calcDose } from "./dose";
+import { MaterialsCard } from "./Materials";
+import { ScreenBar } from "./ScreenBar";
 import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
 
 // Default to same-origin ("") so API calls go to /api/... on whatever host is serving
@@ -56,6 +58,34 @@ export function App() {
   const [showDay, setShowDay] = useState(false);
   const [showHr, setShowHr] = useState(false);
   const [showClose, setShowClose] = useState(false);
+
+  // DEFECT 3, second half — the phone's own back gesture. Every time a screen
+  // opens, one history entry is pushed; a back gesture pops it and closes the
+  // top-most screen instead of leaving the app. The bar's ← button is still the
+  // primary control (installed to the home screen there is no browser chrome at
+  // all), but a technician who swipes back should not be thrown out of the app.
+  const depth = (selectedId ? 1 : 0) + (showPreflight ? 1 : 0) + (showExpense ? 1 : 0)
+    + (showFuel ? 1 : 0) + (showDay ? 1 : 0) + (showHr ? 1 : 0) + (showClose ? 1 : 0);
+  const pushedRef = useRef(0);
+  useEffect(() => {
+    if (depth > pushedRef.current) window.history.pushState({ mopDepth: depth }, "");
+    pushedRef.current = depth;
+  }, [depth]);
+  useEffect(() => {
+    const onPop = () => {
+      pushedRef.current = Math.max(0, pushedRef.current - 1);
+      // Close the top-most screen. Order mirrors the render order below.
+      if (showExpense) return setShowExpense(false);
+      if (showFuel) return setShowFuel(false);
+      if (showPreflight) return setShowPreflight(false);
+      if (showHr) { setShowHr(false); return setShowDay(true); }
+      if (showClose) { setShowClose(false); return setShowDay(true); }
+      if (showDay) return setShowDay(false);
+      if (selectedId) return setSelectedId(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [selectedId, showPreflight, showExpense, showFuel, showDay, showHr, showClose]);
   const [myDayCache, setMyDayCache] = useState<{ requests: { id: string; kind: string; status: string; from_date: string | null; reason: string }[] } | null>(null);
   useEffect(() => { void db.meta.get("myDay").then((m) => setMyDayCache((m?.value as never) ?? null)); }, [showDay]);
 
@@ -124,9 +154,10 @@ export function App() {
   if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
   if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
   if (showDay) return (
-    <div className="app"><div className="content">
-      <MyDay base={SYNC_BASE} online={online} jobCount={jobs.length}
-             onBack={() => setShowDay(false)} />
+    <div className="app">
+      <ScreenBar title="My day" onBack={() => setShowDay(false)} />
+      <div className="content">
+      <MyDay base={SYNC_BASE} online={online} jobCount={jobs.length} />
       <button className="ghost" onClick={() => { setShowDay(false); setShowHr(true); }} style={{ marginTop: ".9rem" }}>
         🤒 Sick leave or another request
       </button>
@@ -134,19 +165,26 @@ export function App() {
         🔒 Close the day (supervisor)
       </button>
       <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
-    </div></div>
+      </div>
+    </div>
   );
   if (showClose) return (
-    <div className="app"><div className="content">
-      <CloseDay base={SYNC_BASE} onBack={() => { setShowClose(false); setShowDay(true); }} />
-      <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
-    </div></div>
+    <div className="app">
+      <ScreenBar title="Close the day" onBack={() => { setShowClose(false); setShowDay(true); }} />
+      <div className="content">
+        <CloseDay base={SYNC_BASE} onBack={() => { setShowClose(false); setShowDay(true); }} />
+        <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
+      </div>
+    </div>
   );
   if (showHr) return (
-    <div className="app"><div className="content">
-      <HrRequest base={SYNC_BASE} recent={myDayCache?.requests ?? []} onBack={() => { setShowHr(false); setShowDay(true); }} />
-      <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
-    </div></div>
+    <div className="app">
+      <ScreenBar title="Request" onBack={() => { setShowHr(false); setShowDay(true); }} />
+      <div className="content">
+        <HrRequest base={SYNC_BASE} recent={myDayCache?.requests ?? []} onBack={() => { setShowHr(false); setShowDay(true); }} />
+        <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
+      </div>
+    </div>
   );
   if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;
   if (showExpense) return <AddExpenseScreen onBack={() => setShowExpense(false)} />;
@@ -156,16 +194,23 @@ export function App() {
 
   return (
     <div className="app">
-      <div className="bar">
-        <strong>Mumtaz Field</strong>
-        <span className="status">
-          <span className={`dot ${online ? "on" : "off"}`} />
-          {online ? "Online" : "Offline"}
-        </span>
-        <span className="pending" title={`events ${status.events} · media ${status.media} · pre-flight ${status.preflight}`}>
-          {status.total === 0 ? (online ? "All synced" : "Nothing pending") : `${status.total} to sync`}
-        </span>
-      </div>
+      {/* DEFECT 3 — an open job IS a screen, so the bar becomes that job's bar
+          with the same top-left back control every other screen has. */}
+      <ScreenBar
+        title={selected ? selected.customer_name : "Mumtaz Field"}
+        onBack={selected ? () => setSelectedId(null) : undefined}
+        right={
+          <span style={{ display: "flex", alignItems: "center", gap: ".5rem", flex: "0 0 auto" }}>
+            <span className="status">
+              <span className={`dot ${online ? "on" : "off"}`} />
+              {online ? "Online" : "Offline"}
+            </span>
+            <span className="pending" title={`events ${status.events} · media ${status.media} · pre-flight ${status.preflight}`}>
+              {status.total === 0 ? (online ? "All synced" : "Nothing pending") : `${status.total} to sync`}
+            </span>
+          </span>
+        }
+      />
       {status.total > 0 && (
         <div style={{ background: online ? "#eff6ff" : "#fffbeb", color: "#334155", padding: ".35rem .9rem", fontSize: ".78rem" }}>
           Waiting to sync: {status.events} event(s), {status.media} media, {status.preflight} pre-flight.
@@ -286,32 +331,43 @@ function ConfirmDayBanner({ online }: { online: boolean }) {
 // (job.completed doses waiting in the outbox) is subtracted OPTIMISTICALLY so
 // the bar moves the moment usage is recorded, not when the server confirms.
 function VanStockBar() {
-  const stock = useLiveQuery(async () =>
-    ((await db.meta.get("vanStock"))?.value as { item: string; unit: string | null; qty: number }[] | undefined) ?? [], [], []);
-  const pendingDoses = useLiveQuery(async () => {
-    const pending = await db.outbox.where("synced").equals(0).toArray();
+  // What the team lead COUNTED on the van this morning is the technician's real
+  // in-hand figure; the warehouse's on-hand is what the office believes it issued.
+  // The counted figure wins where there is one — that is the whole point of the
+  // pre-flight declaration — and the warehouse figure fills the gap before it.
+  const declared = useLiveQuery(async () =>
+    ((await db.meta.get("declaredStock"))?.value as DeclaredStockLine[] | undefined) ?? [], [], []);
+  const warehouse = useLiveQuery(async () =>
+    ((await db.meta.get("vanStock"))?.value as VanStockLine[] | undefined) ?? [], [], []);
+  // Everything recorded on this device today, synced or not, keyed by item id —
+  // no more matching a product name against a recipe name.
+  const usedToday = useLiveQuery(async () => {
     const byItem: Record<string, number> = {};
-    for (const ev of pending) {
-      if (ev.event_type !== "job.completed") continue;
-      const dose = (ev.payload as { dose?: { amount: number; unit: string } | null })?.dose;
-      const job = await db.jobs.get(ev.job_id);
-      const product = job?.recipe?.name;
-      if (dose && product) byItem[product] = (byItem[product] ?? 0) + dose.amount;
+    for (const ev of await db.outbox.toArray()) {
+      if (ev.event_type !== "job.materials_recorded") continue;
+      for (const l of (ev.payload as { lines?: { item_id: string; actual_qty: number }[] }).lines ?? []) {
+        byItem[l.item_id] = (byItem[l.item_id] ?? 0) + Number(l.actual_qty || 0);
+      }
     }
     return byItem;
   }, [], {} as Record<string, number>);
-  if (!stock.length) return null;
+
+  const lines = declared.length
+    ? declared.map((d) => ({ id: d.item_id, name: d.item, unit: d.unit, start: d.declared }))
+    : warehouse.map((w) => ({ id: w.item_id ?? w.item, name: w.item, unit: w.unit ?? "", start: w.qty }));
+  if (!lines.length) return null;
+
   return (
     <div style={{ display: "flex", gap: ".9rem", overflowX: "auto", padding: ".45rem .9rem",
                   background: "#faf7f2", borderBottom: "1px solid #eee5d8", fontSize: ".78rem", whiteSpace: "nowrap" }}>
-      <span style={{ color: "#8a6d3b", fontWeight: 700 }}>VAN</span>
-      {stock.map((s) => {
-        const used = pendingDoses[s.item] ?? 0;
-        const left = Math.max(0, Math.round((s.qty - used) * 100) / 100);
-        const low = s.qty > 0 && left / s.qty < 0.2;
+      <span style={{ color: "#8a6d3b", fontWeight: 700 }}>{declared.length ? "IN VAN" : "WAREHOUSE"}</span>
+      {lines.map((l) => {
+        const used = usedToday[l.id] ?? 0;
+        const left = Math.round((l.start - used) * 100) / 100;
+        const low = l.start > 0 && left / l.start < 0.2;
         return (
-          <span key={s.item} style={{ color: low ? "#b91c1c" : "#44403c" }}>
-            {s.item}: <b>{left}</b>{s.unit ? ` ${s.unit}` : ""}{used > 0 ? ` (−${used} pending)` : ""}
+          <span key={l.id} style={{ color: left < 0 || low ? "#b91c1c" : "#44403c" }}>
+            {l.name}: <b>{left}</b>{l.unit ? ` ${l.unit}` : ""}{used > 0 ? ` (−${used} today)` : ""}
           </span>
         );
       })}
@@ -409,6 +465,9 @@ function StatusPill({ s }: { s: LocalJob["local_status"] }) {
 
 function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const media = useLiveQuery(() => db.media.where("job_id").equals(job.id).toArray(), [job.id], []);
+  // Over-dose warning margin (settings, ASSUMED 100%) — cached so it applies offline.
+  const warnOverPct = useLiveQuery(async () =>
+    Number((await db.meta.get("dosingWarnOverPct"))?.value ?? 100), [], 100);
   const [checklist, setChecklist] = useState<Record<string, boolean>>((job.checklist as Record<string, boolean>) ?? {});
   const [area, setArea] = useState("");
   // Vision P1 — what only the technician knows on site (service report S2/S7/S8):
@@ -506,12 +565,9 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
   const photoCount = media.filter((m) => m.kind === "photo").length;
   const hasSignature = media.some((m) => m.kind === "signature");
   const hasTechSignature = media.some((m) => m.kind === "signature_tech");
-  const dose = calcDose(job.recipe, Number(area));
 
   return (
     <div>
-      <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
-
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <h3>{job.customer_name}</h3><StatusPill s={job.local_status} />
@@ -553,15 +609,18 @@ function JobDetail({ job, onBack }: { job: LocalJob; onBack: () => void }) {
                    onChange={(e) => { const f = e.target.files?.[0]; if (f) addPhoto(f); e.currentTarget.value = ""; }} />
           </div>
 
+          {/* DEFECT 2B — the expected dose, then the actual, then the soft warning.
+              Replaces the old area-only box, which showed a number the technician
+              had to derive an area for and never recorded what they really used. */}
+          <MaterialsCard job={job} warnOverPct={warnOverPct} />
+
           <div className="card">
-            <h3>Chemicals used</h3>
-            <label className="muted" style={{ display: "block", fontSize: ".85rem" }}>Treated area (m²)
+            <h3>Treated area</h3>
+            <label className="muted" style={{ display: "block", fontSize: ".85rem" }}>Area covered (m²) — optional
               <input type="number" placeholder="e.g. 120" value={area} onChange={(e) => setArea(e.target.value)} />
             </label>
-            <p className="muted">
-              {job.recipe
-                ? dose ? `${job.recipe.name}: ${dose.amount} ${dose.unit} — calculated for you from the treated area` : "Enter the treated area and the chemical amount is calculated for you."
-                : "No treatment recipe on this job — tell the office what you used."}
+            <p className="muted" style={{ fontSize: ".8rem" }}>
+              For the service report. The chemical amount comes from what you recorded above, not from this.
             </p>
           </div>
 
@@ -716,7 +775,7 @@ function LoginScreen({ revoked, onDone }: { revoked: boolean; onDone: () => void
 
   return (
     <div className="app">
-      <div className="bar"><strong>Mumtaz Field</strong></div>
+      <ScreenBar title="Mumtaz Field" />
       <div className="content">
         {!authConfigured && (
           <div style={{ background: "#fef2f2", color: "#991b1b", padding: ".6rem .9rem", fontSize: ".85rem", borderRadius: 8, marginBottom: ".8rem" }}>
@@ -859,9 +918,8 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
   if (isLead === false) {
     return (
       <div className="app">
-        <div className="bar"><strong>Pre-flight</strong></div>
+        <ScreenBar title="Pre-flight" onBack={onBack} />
         <div className="content">
-          <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
           <div className="card">
             <h3>Only the team lead submits the pre-flight</h3>
             <p className="muted">Your part is done when you confirm your team for today on the jobs screen. Your team lead records attendance, vehicle and stock.</p>
@@ -873,9 +931,8 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
 
   return (
     <div className="app">
-      <div className="bar"><strong>Pre-flight</strong></div>
+      <ScreenBar title="Pre-flight" onBack={onBack} />
       <div className="content">
-        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Jobs</button>
 
         <div className="card">
           <h3>Team attendance</h3>
@@ -995,9 +1052,8 @@ function AddExpenseScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="app">
-      <div className="bar"><strong>Add expense</strong></div>
+      <ScreenBar title="Add expense" onBack={onBack} />
       <div className="content">
-        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Back</button>
         <div className="card">
           <label className="muted">Photo of the bill (required)
             <input type="file" accept="image/*" capture="environment"
@@ -1057,9 +1113,8 @@ function LogFuelScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="app">
-      <div className="bar"><strong>Log fuel</strong></div>
+      <ScreenBar title="Log fuel" onBack={onBack} />
       <div className="content">
-        <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".7rem" }}>← Back</button>
         <div className="card">
           <div className="muted" style={{ fontSize: ".85rem" }}>Which vehicle?</div>
           <div className="row" style={{ flexWrap: "wrap", gap: ".4rem", margin: ".4rem 0 .6rem" }}>

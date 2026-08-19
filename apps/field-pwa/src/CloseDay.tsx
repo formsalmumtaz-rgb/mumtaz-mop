@@ -60,7 +60,6 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
 
   if (!allowed) return (
     <div>
-      <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".6rem" }}>← My day</button>
       <div className="card"><h3>Your supervisor closes the day</h3>
         <p className="muted">Only the team lead records the van back and confirms the day&rsquo;s figures.</p></div>
     </div>
@@ -82,7 +81,6 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
 
   return (
     <div>
-      <button className="ghost" onClick={onBack} style={{ width: "auto", marginBottom: ".6rem" }}>← My day</button>
       <div className="day-hero"><h2>Closing the day</h2><div className="sub">Van back, then confirm</div></div>
 
       <div className="card">
