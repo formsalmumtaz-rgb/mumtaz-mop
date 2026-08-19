@@ -7,6 +7,7 @@ import { audit } from "./audit";
 // (standard rates, operating basis — no depreciation). Deterministic profit preview.
 
 export interface EstimateHeader {
+  customer_code: string | null;
   id: string;
   estimate_number: string | null;
   customer_id: string | null;
@@ -24,7 +25,7 @@ export interface EstimateHeader {
 
 export async function listEstimates(tenantId: string): Promise<EstimateHeader[]> {
   const { rows } = await scopedRead(tenantId, 
-    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, cu.code as customer_code, e.status,
             e.property_type, e.engagement_type, e.valid_until::text,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
        from estimates e
@@ -39,7 +40,7 @@ export async function listEstimates(tenantId: string): Promise<EstimateHeader[]>
 
 export async function listEstimatesForCustomer(tenantId: string, customerId: string): Promise<EstimateHeader[]> {
   const { rows } = await scopedRead(tenantId, 
-    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, cu.code as customer_code, e.status,
             e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
        from estimates e
@@ -72,7 +73,7 @@ export interface EstimateLine {
 
 export async function getEstimate(tenantId: string, id: string): Promise<{ header: EstimateHeader; lines: EstimateLine[] } | null> {
   const { rows: hdr } = await scopedRead(tenantId, 
-    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, e.status,
+    `select e.id, e.estimate_number, e.customer_id, cu.trade_name as customer, cu.code as customer_code, e.status,
             e.property_type, e.engagement_type, e.valid_until::text, e.contract_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
        from estimates e left join customers cu on cu.id=e.customer_id
@@ -211,7 +212,8 @@ export async function deleteEstimateLine(tenantId: string, lineId: string): Prom
 export async function convertEstimateToContract(tenantId: string, serviceLineId: string, estimateId: string): Promise<string> {
   return withTenantTx(tenantId, async (c) => {
     const e = (await c.query(
-      `select customer_id, branch_id, status, contract_id, service_line_id from estimates where id=$1 and tenant_id=$2 for update`,
+      `select customer_id, branch_id, status, contract_id, service_line_id, engagement_type
+         from estimates where id=$1 and tenant_id=$2 for update`,
       [estimateId, tenantId])).rows[0];
     if (!e) throw new Error("Estimate not found");
     if (e.status !== "accepted") throw new Error("Only accepted estimates can be converted to a contract");
@@ -220,6 +222,13 @@ export async function convertEstimateToContract(tenantId: string, serviceLineId:
     const sl = e.service_line_id ?? serviceLineId;
     const rev = (await c.query(`select coalesce(revenue,0) as r from estimate_profitability where estimate_id=$1`, [estimateId])).rows[0]?.r ?? 0;
 
+    // Recurring is a CHOICE, not the default (§3.2). A one-off estimate becomes a
+    // one-off contract: no frequency, and a term of a single day rather than the
+    // standard year. Everything below that derives a frequency is skipped for it —
+    // deriving one would silently turn a single call-out into an annual AMC, which
+    // is exactly what this fixes.
+    const oneOff = e.engagement_type === "ad_hoc";
+
     // Flow item 8 — the contract INHERITS everything the pipeline already knows:
     //   * pricing model: from the estimate's first line;
     //   * end date: start + 364 days (a standard 1-year term, editable);
@@ -227,7 +236,13 @@ export async function convertEstimateToContract(tenantId: string, serviceLineId:
     //     municipality compliance matrix (fn_visit_frequency, mig 073) and
     //     matched to a frequency whose annualised visit count equals it.
     //     No match / unknown category ⇒ NULL — the page says why, never guesses.
-    const inh = (await c.query(
+    const inh = oneOff
+      ? { pricing_model_id: (await c.query(
+            `select l.pricing_model_id from estimate_lines l
+              where l.estimate_id = $1 and l.tenant_id = $2
+              order by l.seq nulls last, l.created_at limit 1`, [estimateId, tenantId])).rows[0]?.pricing_model_id ?? null,
+          frequency_id: null as string | null, visits_per_year: null as number | null }
+      : (await c.query(
       `with first_line as (
          select l.pricing_model_id from estimate_lines l
           where l.estimate_id = $1 and l.tenant_id = $2
@@ -266,13 +281,18 @@ export async function convertEstimateToContract(tenantId: string, serviceLineId:
     // another series can't poison it). Editable until first invoice.
     const contract = (await c.query(
       `insert into contracts(tenant_id, service_line_id, customer_id, contract_value, currency,
-                             lifecycle_status, start_date, end_date, pricing_model_id, frequency_id, contract_number)
-       select $1,$2,$3,$4,'AED','draft', current_date, current_date + 364, $5, $6,
-              (coalesce(max((split_part(contract_number,'/',1))::int), 1000) + 1)::text || '/' || to_char(now(),'YY')
+                             lifecycle_status, start_date, end_date, pricing_model_id, frequency_id, contract_number,
+                             engagement_type)
+       select $1,$2,$3,$4,'AED','draft', current_date,
+              case when $7::text = 'ad_hoc' then current_date else current_date + 364 end,
+              $5, $6,
+              (coalesce(max((split_part(contract_number,'/',1))::int), 1000) + 1)::text || '/' || to_char(now(),'YY'),
+              $7
          from contracts where tenant_id = $1
           and contract_number ~ ('^\\d+/' || to_char(now(),'YY') || '$')
        returning id`,
-      [tenantId, sl, e.customer_id, rev, inh.pricing_model_id ?? null, inh.frequency_id ?? null])).rows[0];
+      [tenantId, sl, e.customer_id, rev, inh.pricing_model_id ?? null, inh.frequency_id ?? null,
+       e.engagement_type ?? null])).rows[0];
     await c.query(
       `insert into contract_services(tenant_id, service_line_id, contract_id, branch_id, service_type_id, pricing_model_id, unit_price, quantity, notes)
        select $1, $2, $3, $4, l.service_type_id, l.pricing_model_id, l.unit_price, greatest(l.measure,1), nullif(l.description,'')

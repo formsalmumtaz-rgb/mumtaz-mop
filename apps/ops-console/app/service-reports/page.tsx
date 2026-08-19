@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RowLink } from "@/components/RowLink";
+import { ListToolbar } from "@/components/ListControls";
 import { getTenantId } from "@/lib/tenant";
 import { listServiceReports, listCompletedJobsWithoutSR } from "@/lib/domain/servicereports";
 import { listTechnicians } from "@/lib/domain/technicians";
@@ -14,11 +15,20 @@ function ReviewPill({ action }: { action: string | null }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${action ? map[action] : "bg-amber-100 text-amber-800"}`}>{action ?? "pending"}</span>;
 }
 
-export default async function ServiceReportsPage() {
+export default async function ServiceReportsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
   const tenantId = await getTenantId();
-  const [reports, pending, technicians] = await Promise.all([
+  const [allReports, pending, technicians] = await Promise.all([
     listServiceReports(tenantId), listCompletedJobsWithoutSR(tenantId), listTechnicians(tenantId),
   ]);
+  // Search by NUMBER first, then account number, then customer name (§3.2).
+  const q = (sp.q ?? "").trim().toLowerCase();
+  const reports = q
+    ? allReports.filter((r) =>
+        (r.report_number ?? "").toLowerCase().includes(q)
+        || (r.customer_code ?? "").toLowerCase().includes(q)
+        || (r.customer ?? "").toLowerCase().includes(q))
+    : allReports;
 
   return (
     <div className="space-y-6">
@@ -49,20 +59,24 @@ export default async function ServiceReportsPage() {
         )}
       </details>
 
+      <ListToolbar basePath="/service-reports" params={sp} placeholder="Report no., account no. or customer" showArchived={false} />
+
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-neutral-100 text-left text-neutral-600">
             <tr>
-              <th className="px-3 py-2 font-medium">Report #</th><th className="px-3 py-2 font-medium">Customer</th>
+              <th className="px-3 py-2 font-medium">Report #</th><th className="px-3 py-2 font-medium">Account no.</th>
+              <th className="px-3 py-2 font-medium">Customer</th>
               <th className="px-3 py-2 font-medium">Performed by</th><th className="px-3 py-2 font-medium">Completed</th>
               <th className="px-3 py-2 font-medium">Attachments</th><th className="px-3 py-2 font-medium">Approval</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {reports.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-500">No service reports yet.</td></tr>}
+            {reports.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-500">No service reports yet.</td></tr>}
             {reports.map((r) => (
               <RowLink key={r.id} href={`/service-reports/${r.id}`}>
                 <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{r.report_number ?? "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs text-neutral-700">{r.customer_code ?? "—"}</td>
                 <td className="px-3 py-2">{r.customer ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{r.performer ?? "—"}</td>
                 <td className="px-3 py-2 text-neutral-600">{r.server_completed_at?.slice(0, 10) ?? "—"}</td>

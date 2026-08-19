@@ -8,6 +8,7 @@ import { audit } from "./audit";
 // preview and seeds an estimate with no re-keying ("data entered once").
 
 export interface SurveyHeader {
+  customer_code: string | null;
   id: string;
   survey_number: string | null;
   customer_id: string | null;
@@ -45,7 +46,7 @@ export interface SurveyLine {
 
 export async function listSurveys(tenantId: string): Promise<SurveyHeader[]> {
   const { rows } = await scopedRead(tenantId, 
-    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
+    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer, cu.code as customer_code,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
@@ -62,7 +63,7 @@ export async function listSurveys(tenantId: string): Promise<SurveyHeader[]> {
 
 export async function listSurveysForCustomer(tenantId: string, customerId: string): Promise<SurveyHeader[]> {
   const { rows } = await scopedRead(tenantId, 
-    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
+    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer, cu.code as customer_code,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count
@@ -79,7 +80,7 @@ export async function listSurveysForCustomer(tenantId: string, customerId: strin
 
 export async function getSurvey(tenantId: string, id: string): Promise<{ header: SurveyHeader; lines: SurveyLine[] } | null> {
   const { rows: hdr } = await scopedRead(tenantId, 
-    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer,
+    `select s.id, s.survey_number, s.customer_id, cu.trade_name as customer, cu.code as customer_code,
             s.surveyor_id, t.full_name as surveyor, s.survey_date::text, s.status,
             s.property_type, s.estimate_id,
             p.revenue::float8, p.est_cost::float8, p.gross_profit::float8, p.line_count

@@ -8,6 +8,7 @@ import { audit } from "./audit";
 // outflow against a credit note. Refunds are append-only.
 
 export interface CreditNoteHeader {
+  customer_code: string | null;
   id: string; credit_note_number: string | null; customer_id: string | null; customer: string | null;
   invoice_id: string | null; invoice_number: string | null; issue_date: string | null; status: string;
   vat_treatment: string; subtotal: number; vat_total: number; total: number; reason: string | null;
@@ -18,7 +19,7 @@ export interface Refund { id: string; refund_number: string | null; refund_date:
 
 export async function listCreditNotes(tenantId: string): Promise<CreditNoteHeader[]> {
   const { rows } = await scopedRead(tenantId,
-    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
+    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer, cu.code as customer_code,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
             coalesce((select sum(amount) from refunds r where r.credit_note_id=cn.id),0)::float8 as refunded
@@ -38,7 +39,7 @@ export async function listCreditNotesPaged(
   const q = (opts.q ?? "").trim();
   const like = `%${q}%`;
   const filter = q
-    ? `and (cn.credit_note_number ilike $2 or cu.trade_name ilike $2 or i.invoice_number ilike $2 or cn.status = lower($3))`
+    ? `and (cn.credit_note_number ilike $2 or cu.code ilike $2 or cu.trade_name ilike $2 or i.invoice_number ilike $2 or cn.status = lower($3))`
     : ``;
   const params = q ? [tenantId, like, q] : [tenantId];
   const { rows: cnt } = await scopedRead(tenantId,
@@ -47,7 +48,7 @@ export async function listCreditNotesPaged(
        left join invoices i on i.id = cn.invoice_id
       where cn.tenant_id=$1 ${filter}`, params);
   const { rows } = await scopedRead(tenantId,
-    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
+    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer, cu.code as customer_code,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
             coalesce((select sum(amount) from refunds r where r.credit_note_id=cn.id),0)::float8 as refunded
@@ -61,7 +62,7 @@ export async function listCreditNotesPaged(
 
 export async function getCreditNote(tenantId: string, id: string): Promise<{ header: CreditNoteHeader; lines: CreditNoteLine[]; refunds: Refund[] } | null> {
   const { rows: hdr } = await scopedRead(tenantId, 
-    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer,
+    `select cn.id, cn.credit_note_number, cn.customer_id, cu.trade_name as customer, cu.code as customer_code,
             cn.invoice_id, i.invoice_number, cn.issue_date::text, cn.status, cn.vat_treatment,
             cn.subtotal::float8, cn.vat_total::float8, cn.total::float8, cn.reason,
             coalesce((select sum(amount) from refunds r where r.credit_note_id=cn.id),0)::float8 as refunded

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
 import { getTenantId } from "@/lib/tenant";
 import { listJobsPaged, getJobStatusCounts, JOB_STATUSES } from "@/lib/domain/jobs";
 import { parseListParams } from "@/lib/list";
@@ -74,7 +75,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
         <Thead>
           <tr>
             <th className="px-4 py-2.5 font-medium">Date</th>
-            <th className="px-4 py-2.5 font-medium">Customer</th>
+            <th className="px-4 py-2.5 font-medium">Account no. / customer</th>
             <th className="px-4 py-2.5 font-medium">Division</th>
             <th className="px-4 py-2.5 font-medium">Type</th>
             <th className="px-4 py-2.5 font-medium">Team / technicians</th>
@@ -86,10 +87,11 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
             <tr><td colSpan={6} className="px-4 py-6 text-center text-neutral-500">{lp.q || status ? "No jobs match this filter." : "No jobs yet."}</td></tr>
           )}
           {jobs.map((j) => (
-            <tr key={j.id} className="hover:bg-neutral-50">
+            <RowLink key={j.id} href={`/jobs/${j.id}`} className="hover:bg-neutral-50">
               <td className="px-4 py-2.5 whitespace-nowrap text-neutral-700">{j.scheduled_date ?? "—"}{j.scheduled_start ? ` · ${j.scheduled_start}` : ""}</td>
               <td className="px-4 py-2.5">
-                <Link href={`/jobs/${j.id}`} className="font-medium text-brand hover:underline">{j.customer ?? "—"}</Link>
+                <span className="font-mono text-xs text-neutral-500">{j.customer_code ?? "—"}</span>{" "}
+                <span className="font-medium text-neutral-800">{j.customer ?? "—"}</span>
                 {j.branch && <div className="text-xs text-neutral-500">{j.branch}</div>}
               </td>
               <td className="px-4 py-2.5 text-neutral-600">
@@ -99,7 +101,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
               <td className="px-4 py-2.5 text-neutral-600">{j.job_type ?? "—"}</td>
               <td className="px-4 py-2.5 text-neutral-600">{j.technicians ?? j.team ?? "—"}</td>
               <td className="px-4 py-2.5"><Badge tone={STATUS_TONE[j.status] ?? "neutral"}><span className="capitalize">{fmt(j.status)}</span></Badge></td>
-            </tr>
+            </RowLink>
           ))}
         </Tbody>
       </TableWrap>

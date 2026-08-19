@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RowLink } from "@/components/RowLink";
+import { ListToolbar } from "@/components/ListControls";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { listEstimates } from "@/lib/domain/estimation";
@@ -16,12 +17,21 @@ const STATUS_CLASS: Record<string, string> = {
   accepted: "bg-emerald-100 text-emerald-800", rejected: "bg-red-100 text-red-700", expired: "bg-amber-100 text-amber-800",
 };
 
-export default async function EstimatesPage() {
+export default async function EstimatesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const sp = await searchParams;
   const tenantId = await getTenantId();
   const showProfit = await canSeeProfit();
-  const [estimates, customers, serviceLines, activeDivision] = await Promise.all([
+  const [allEstimates, customers, serviceLines, activeDivision] = await Promise.all([
     listEstimates(tenantId), listCustomers(tenantId), listServiceLines(tenantId), getActiveDivision(tenantId),
   ]);
+  // Search by NUMBER first, then account number, then customer name (§3.2).
+  const q = (sp.q ?? "").trim().toLowerCase();
+  const estimates = q
+    ? allEstimates.filter((e) =>
+        (e.estimate_number ?? "").toLowerCase().includes(q)
+        || (e.customer_code ?? "").toLowerCase().includes(q)
+        || (e.customer ?? "").toLowerCase().includes(q))
+    : allEstimates;
 
   return (
     <div className="space-y-6">
@@ -29,6 +39,8 @@ export default async function EstimatesPage() {
         <h1 className="text-2xl font-semibold">Estimates</h1>
         <p className="mt-1 text-sm text-neutral-600">Survey → estimate → profit preview → quotation. Revenue uses pricing models; cost uses standard rates (deterministic).</p>
       </div>
+
+      <ListToolbar basePath="/estimates" params={sp} placeholder="Estimate no., account no. or customer" showArchived={false} />
 
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={estimates.length === 0}>
         <summary className="cursor-pointer font-medium">New estimate</summary>
@@ -70,9 +82,15 @@ export default async function EstimatesPage() {
               <option value="">—</option><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option>
             </select></label>
           <label className="text-sm"><span className="text-neutral-600">Engagement</span>
-            <select name="engagement_type" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
-              <option value="">—</option><option value="recurring">Recurring</option><option value="ad_hoc">Ad-hoc</option>
-            </select></label>
+            {/* Recurring is a CHOICE, never the default (§3.2). Converting this
+                estimate used to build a 12-month AMC whatever was chosen here. */}
+            <select name="engagement_type" required defaultValue="" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+              <option value="" disabled>Choose one…</option>
+              <option value="ad_hoc">One-off — a single visit</option>
+              <option value="recurring">Recurring — repeating maintenance (AMC)</option>
+            </select>
+            <span className="mt-1 block text-xs text-neutral-500">A one-off becomes a contract with one visit; recurring takes a frequency.</span>
+          </label>
           <div className="sm:col-span-2"><button className="w-full rounded bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">Create estimate</button></div>
         </form>
       </details>
@@ -81,6 +99,7 @@ export default async function EstimatesPage() {
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-neutral-100 text-left text-neutral-600">
             <tr>
+              <th className="px-3 py-2 font-medium">Estimate #</th><th className="px-3 py-2 font-medium">Account no.</th>
               <th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
               <th className="px-3 py-2 font-medium text-right">Revenue</th>
@@ -89,11 +108,13 @@ export default async function EstimatesPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {estimates.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-500">No estimates yet — create one above.</td></tr>}
+            {estimates.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-500">No estimates yet — create one above.</td></tr>}
             {estimates.map((e) => {
               const margin = e.revenue > 0 ? ((e.gross_profit / e.revenue) * 100).toFixed(1) + "%" : "—";
               return (
                 <RowLink key={e.id} href={`/estimates/${e.id}`}>
+                  <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{e.estimate_number ?? "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-700">{e.customer_code ?? "—"}</td>
                   <td className="px-3 py-2 text-neutral-700">{e.customer ?? "(no customer)"}</td>
                   <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[e.status] ?? ""}`}>{e.status}</span></td>
                   <td className="px-3 py-2 text-neutral-600">{e.line_count ?? 0}</td>

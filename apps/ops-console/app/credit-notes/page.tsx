@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
 import { getTenantId } from "@/lib/tenant";
 import { listCreditNotesPaged, listIssuedInvoices } from "@/lib/domain/creditnotes";
 import { parseListParams } from "@/lib/list";
@@ -53,22 +54,23 @@ export default async function CreditNotesPage({ searchParams }: { searchParams: 
         <table className="w-full min-w-[820px] text-sm">
           <thead className="bg-neutral-100 text-left text-neutral-600">
             <tr>
-              <th className="px-3 py-2 font-medium">Credit note #</th><th className="px-3 py-2 font-medium">Customer</th>
+              <th className="px-3 py-2 font-medium">Credit note #</th><th className="px-3 py-2 font-medium">Account no.</th><th className="px-3 py-2 font-medium">Customer</th>
               <th className="px-3 py-2 font-medium">Invoice</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium text-right">Total</th><th className="px-3 py-2 font-medium text-right">Refunded</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {notes.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-500">{lp.q ? "No credit notes match your search." : "No credit notes yet."}</td></tr>}
+            {notes.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-500">{lp.q ? "No credit notes match your search." : "No credit notes yet."}</td></tr>}
             {notes.map((n) => (
-              <tr key={n.id}>
-                <td className="px-3 py-2"><Link href={`/credit-notes/${n.id}`} className="font-mono text-xs text-brand underline">{n.credit_note_number ?? "(draft)"}</Link></td>
+              <RowLink key={n.id} href={`/credit-notes/${n.id}`}>
+                <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{n.credit_note_number ?? "(draft)"}</td>
+                <td className="px-3 py-2 font-mono text-xs text-neutral-700">{n.customer_code ?? "—"}</td>
                 <td className="px-3 py-2">{n.customer ?? "—"}</td>
                 <td className="px-3 py-2 font-mono text-xs text-neutral-500">{n.invoice_number ?? "—"}</td>
                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[n.status] ?? ""}`}>{n.status}</span></td>
                 <td className="px-3 py-2 text-right font-medium">{aed(n.total)}</td>
                 <td className="px-3 py-2 text-right text-neutral-600">{aed(n.refunded)}</td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>

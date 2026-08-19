@@ -38,7 +38,7 @@ export default async function PipelinePage() {
           <span>{p.estimates.draft} draft</span><span>{p.estimates.quoted} quoted</span>
           <span>{p.estimates.accepted} accepted</span><span>{p.estimates.rejected} rejected</span>
         </Stage>
-        <Stage title="Contracts" href="/customers" count={p.contracts.total}>
+        <Stage title="Contracts" href="/contracts" count={p.contracts.total}>
           <span>{p.contracts.draft} draft</span><span>{p.contracts.active} active</span>
           <span>{p.estimates.with_contract} from estimates</span>
         </Stage>

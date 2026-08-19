@@ -7,6 +7,7 @@ export const JOB_STATUSES = ["scheduled", "assigned", "en_route", "arrived", "in
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export interface JobRow {
+  customer_code: string | null;
   id: string;
   scheduled_date: string | null;
   scheduled_start: string | null;      // HH:MM (nullable)
@@ -28,7 +29,7 @@ export interface JobRow {
 const SELECT_JOB = `
   select j.id, j.scheduled_date::text as scheduled_date,
          to_char(j.scheduled_start, 'HH24:MI') as scheduled_start, j.est_duration_minutes, j.status,
-         cu.trade_name as customer, b.name as branch, sl.name as service_line,
+         cu.trade_name as customer, cu.code as customer_code, b.name as branch, sl.name as service_line,
          jt.name as job_type, tm.name as team,
          (select string_agg(coalesce(t.full_name, t.code), ', ')
             from job_assignments ja join technicians t on t.id = ja.technician_id
@@ -53,7 +54,10 @@ export async function listJobsPaged(
   const where: string[] = ["j.tenant_id = $1"];
   const params: unknown[] = [tenantId];
   const q = (opts.q ?? "").trim();
-  if (q) { params.push(`%${q}%`); where.push(`cu.trade_name ilike $${params.length}`); }
+  // Search the account number as well as the name (§3.2). A job carries no
+  // document number of its own — it is referenced by its service report — so the
+  // account number is the number to search here.
+  if (q) { params.push(`%${q}%`); where.push(`(cu.code ilike $${params.length} or cu.trade_name ilike $${params.length})`); }
   if (opts.contractId) { params.push(opts.contractId); where.push(`j.contract_id = $${params.length}`); }
   if (opts.status && (JOB_STATUSES as readonly string[]).includes(opts.status)) { params.push(opts.status); where.push(`j.status = $${params.length}`); }
   if (opts.from) { params.push(opts.from); where.push(`j.scheduled_date >= $${params.length}`); }

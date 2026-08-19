@@ -8,6 +8,7 @@ import { audit } from "./audit";
 // mutate the report. Numbering is SR/YY/NNNNN via fn_next_document_number.
 
 export interface ServiceReportHeader {
+  customer_code: string | null;
   id: string;
   report_number: string | null;
   job_id: string;
@@ -22,7 +23,7 @@ export interface ServiceReportHeader {
 
 export async function listServiceReports(tenantId: string): Promise<ServiceReportHeader[]> {
   const { rows } = await scopedRead(tenantId, 
-    `select sr.id, sr.report_number, sr.job_id, sr.customer_id, cu.trade_name as customer,
+    `select sr.id, sr.report_number, sr.job_id, sr.customer_id, cu.trade_name as customer, cu.code as customer_code,
             sr.performed_by, t.full_name as performer, sr.server_completed_at::text,
             st.review_action,
             (select count(*)::int from service_report_attachments a where a.service_report_id = sr.id) as attachment_count

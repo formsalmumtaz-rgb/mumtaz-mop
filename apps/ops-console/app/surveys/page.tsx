@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { RowLink } from "@/components/RowLink";
+import { ListToolbar } from "@/components/ListControls";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { listTechnicians } from "@/lib/domain/technicians";
@@ -20,9 +22,21 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
   const preselect = (sp.customer ?? "").trim() || undefined;
   const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const tenantId = await getTenantId();
-  const [surveys, customers, technicians] = await Promise.all([
+  const [allSurveys, customers, technicians] = await Promise.all([
     listSurveys(tenantId), listCustomers(tenantId), listTechnicians(tenantId),
   ]);
+  // Search by NUMBER first, then account number, then customer name (§3.2).
+  const q = (sp.q ?? "").trim().toLowerCase();
+  const surveys = q
+    ? allSurveys.filter((s) =>
+        (s.survey_number ?? "").toLowerCase().includes(q)
+        || (s.customer_code ?? "").toLowerCase().includes(q)
+        || (s.customer ?? "").toLowerCase().includes(q))
+    : allSurveys;
+  // Arriving from a customer profile: that customer IS the customer. The form
+  // must not offer a picker that can be blanked, and must not offer to create a
+  // different customer — the survey never re-asks who the customer is (§3.2).
+  const carried = preselect ? customers.find((c) => c.id === preselect) ?? null : null;
 
   return (
     <div className="space-y-6">
@@ -31,14 +45,28 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
         <p className="mt-1 text-sm text-neutral-600">Site visit → measurements → profit preview → seed an estimate. Prices with the same engine as estimates (deterministic).</p>
       </div>
 
+      <ListToolbar basePath="/surveys" params={sp} placeholder="Survey no., account no. or customer" showArchived={false} />
+
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={surveys.length === 0 || !!preselect}>
         <summary className="cursor-pointer font-medium">New survey</summary>
         <form action={createSurveyAction} className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="text-sm"><span className="text-neutral-600">Customer</span>
-            <select name="customer_id" defaultValue={preselect ?? ""} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
-              <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.trade_name ?? c.code}</option>)}
-            </select></label>
-          <fieldset className="rounded border border-dashed border-neutral-300 p-3 sm:col-span-2">
+          {carried ? (
+            <div className="text-sm sm:col-span-2">
+              <span className="text-neutral-600">Customer</span>
+              <div className="mt-1 flex flex-wrap items-center gap-2 rounded border border-brand/30 bg-brand/[0.04] px-3 py-2">
+                <span className="font-mono text-xs text-neutral-600">{carried.code}</span>
+                <span className="font-medium text-neutral-900">{carried.trade_name ?? carried.legal_name}</span>
+                <input type="hidden" name="customer_id" value={carried.id} />
+                <Link href="/surveys" className="ml-auto text-xs text-brand underline">Survey a different customer</Link>
+              </div>
+            </div>
+          ) : (
+            <label className="text-sm"><span className="text-neutral-600">Customer</span>
+              <select name="customer_id" defaultValue="" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+                <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.trade_name ?? c.legal_name}</option>)}
+              </select></label>
+          )}
+          {!carried && <fieldset className="rounded border border-dashed border-neutral-300 p-3 sm:col-span-2">
             <legend className="px-1 text-xs font-medium uppercase tracking-wide text-neutral-500">…or a new customer, without leaving the flow</legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <label className="text-sm"><span className="text-neutral-600">Trade name</span>
@@ -52,7 +80,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
             </div>
             <input type="hidden" name="new_customer_type" value="B2B" />
             <p className="mt-2 text-xs text-neutral-500">Leave the customer picker empty and fill this instead — details are completed later on the profile.</p>
-          </fieldset>
+          </fieldset>}
           <label className="text-sm"><span className="text-neutral-600">Surveyor</span>
             <select name="surveyor_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
               <option value="">—</option>{technicians.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
@@ -73,6 +101,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
         <table className="w-full min-w-[760px] text-sm">
           <thead className="bg-neutral-100 text-left text-neutral-600">
             <tr>
+              <th className="px-3 py-2 font-medium">Survey #</th><th className="px-3 py-2 font-medium">Account no.</th>
               <th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Date</th>
               <th className="px-3 py-2 font-medium">Surveyor</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
@@ -81,10 +110,12 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">
-            {surveys.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-500">No surveys yet — create one above.</td></tr>}
+            {surveys.length === 0 && <tr><td colSpan={10} className="px-3 py-6 text-center text-neutral-500">No surveys yet — create one above.</td></tr>}
             {surveys.map((s) => (
-              <tr key={s.id}>
-                <td className="px-3 py-2"><Link href={`/surveys/${s.id}`} className="text-brand underline">{s.customer ?? "(no customer)"}</Link></td>
+              <RowLink key={s.id} href={`/surveys/${s.id}`}>
+                <td className="px-3 py-2 font-mono text-xs font-medium text-brand">{s.survey_number ?? "—"}</td>
+                <td className="px-3 py-2 font-mono text-xs text-neutral-700">{s.customer_code ?? "—"}</td>
+                <td className="px-3 py-2 text-neutral-700">{s.customer ?? "(no customer)"}</td>
                 <td className="px-3 py-2 text-neutral-600">{s.survey_date}</td>
                 <td className="px-3 py-2 text-neutral-600">{s.surveyor ?? "—"}</td>
                 <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[s.status] ?? ""}`}>{s.status}</span></td>
@@ -92,7 +123,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
                 <td className="px-3 py-2 text-right">{aed(s.revenue)}</td>
                 {showProfit && <td className="px-3 py-2 text-right font-medium">{aed(s.gross_profit)}</td>}
                 <td className="px-3 py-2">{s.estimate_id ? <Link href={`/estimates/${s.estimate_id}`} className="text-brand underline">view</Link> : "—"}</td>
-              </tr>
+              </RowLink>
             ))}
           </tbody>
         </table>

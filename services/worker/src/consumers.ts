@@ -60,24 +60,35 @@ const scheduleGenerator: Consumer = {
 
     const { rows: ctRows } = await c.query(
       `select ct.tenant_id, ct.service_line_id, ct.customer_id, ct.frequency_id,
-              ct.contract_value::float8 as contract_value, ct.currency,
+              ct.contract_value::float8 as contract_value, ct.currency, ct.engagement_type,
               ct.start_date::text as start_date, pm.code as pricing_model_code
          from contracts ct left join pricing_models pm on pm.id = ct.pricing_model_id
         where ct.id = $1`,
       [contractId],
     );
     const ct = ctRows[0];
-    if (!ct || !ct.frequency_id || !ct.start_date) return; // cannot schedule without frequency/start
+    if (!ct || !ct.start_date) return; // cannot schedule without a start date
 
-    const { rows: fRows } = await c.query(
-      `select period_unit, period_count, visits_per_period from frequencies where id = $1`,
-      [ct.frequency_id],
-    );
-    const freq = fRows[0] as FrequencySpec;
+    // A one-off is not a degenerate AMC: it is ONE visit on the start date, and it
+    // has no frequency by definition (mig 101). A NULL engagement_type keeps the
+    // pre-existing rule exactly — no frequency means nothing is scheduled yet —
+    // so every contract created before this change behaves as it always did.
+    const oneOff = ct.engagement_type === "ad_hoc";
+    if (!oneOff && !ct.frequency_id) return; // recurring/unspecified: needs a frequency
+
+    const freq = oneOff
+      ? ({ period_unit: "year", period_count: 1, visits_per_period: 1 } as FrequencySpec)
+      : ((await c.query(
+          `select period_unit, period_count, visits_per_period from frequencies where id = $1`,
+          [ct.frequency_id],
+        )).rows[0] as FrequencySpec);
     const settings = await loadSettings(c, ct.tenant_id, ct.service_line_id);
     const recipeVersionId = await resolveRecipeVersion(c, contractId);
 
-    const dates = generateVisitDates(ct.start_date, freq, settings.horizonMonths, settings.spacing);
+    // One-off: exactly the start date. Recurring: the frequency spec decides.
+    const dates = oneOff
+      ? [ct.start_date as string]
+      : generateVisitDates(ct.start_date, freq, settings.horizonMonths, settings.spacing);
     const pricing = buildPricingSnapshot(
       { pricing_model_code: ct.pricing_model_code, contract_value: ct.contract_value, currency: ct.currency },
       freq,
