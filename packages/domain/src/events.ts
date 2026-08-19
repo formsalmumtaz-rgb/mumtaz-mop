@@ -20,6 +20,7 @@ export const EVENT_TYPES = [
   "job.failed",
   "job.cancelled",
   "job.delayed",
+  "job.invoiced",
   "stock.consumed",
   "stock.transferred",
   "purchase.recorded",
@@ -101,6 +102,16 @@ export const payloadSchemas = {
   // technician is the only person who knows why, and by the time the office asks,
   // the day has moved on. Cancelled closes the visit; delayed sends it back to the
   // office to reschedule, which is the opposite.
+  // §3.6 — the technician raises the invoice at the door. The amount is
+  // ADJUSTABLE: what the job is actually worth is settled on site, not by a
+  // pricing table that never saw the premises. Ex-VAT; VAT is applied server-side
+  // at the rate the rest of the invoice uses.
+  "job.invoiced": z.object({
+    job_id: z.string().uuid(),
+    client_uuid: z.string().uuid().nullish(),
+    amount: z.number().positive(),
+    description: z.string().nullish(),
+  }),
   "job.cancelled": z.object({
     job_id: z.string().uuid(),
     client_uuid: z.string().uuid().nullish(),

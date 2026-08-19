@@ -11,17 +11,62 @@ export const cashCollector: Consumer = {
   eventTypes: ["cash.collected"],
   handle: async (c: PoolClient, ev: ParsedEvent) => {
     if (ev.envelope.event_type !== "cash.collected") return;
-    const p = ev.payload as { job_id?: string; amount?: number; note?: string };
+    const p = ev.payload as { job_id?: string; amount?: number; note?: string; method?: string };
     const jobId = p.job_id ?? (ev.envelope.entity_id as string | null);
     if (!jobId || !p.amount || p.amount <= 0) return;
-    // Cash receipt against the job's customer. Number issued by the document
-    // counter; one receipt per event (exactly-once).
-    await c.query(
-      `insert into receipts (tenant_id, service_line_id, receipt_number, customer_id, method, amount, others_note)
-       select $1, j.service_line_id, fn_next_document_number($1,'RCP'), j.customer_id, 'cash', $2, $3
-         from jobs j where j.id = $4 and j.tenant_id = $1`,
-      [ev.envelope.tenant_id, p.amount, p.note ?? null, jobId],
+    const tenantId = ev.envelope.tenant_id;
+
+    // §3.6 — RECORD WHAT WAS ACTUALLY RECEIVED, and put it somewhere real.
+    // This used to insert a bare receipt: not allocated to any invoice and never
+    // posted to the ledger, so cash taken at the door left AR untouched and the
+    // books short. It now settles the job's own invoice as far as the money goes.
+    //
+    //   paid < balance  -> the shortfall stays in AR as an unpaid balance
+    //   paid > balance  -> the excess is money on account (credited to advances)
+    // fn_record_receipt enforces the rest: never allocate more than was received,
+    // never more than the invoice owes.
+    const { rows: inv } = await c.query(
+      `select i.id, ar.balance::numeric as balance, j.customer_id
+         from jobs j
+         left join invoices i on i.job_id = j.id and i.status in ('issued','queued')
+         left join invoice_ar ar on ar.invoice_id = i.id
+        where j.id = $1 and j.tenant_id = $2`,
+      [jobId, tenantId],
     );
+    const target = inv[0];
+    if (!target?.customer_id) return;
+
+    const balance = target.balance != null ? Number(target.balance) : 0;
+    const applied = target.id && balance > 0 ? Math.min(Number(p.amount), balance) : 0;
+    const allocations = applied > 0 ? [{ invoice_id: target.id, amount: applied }] : [];
+
+    const { rows: r } = await c.query(
+      `select fn_record_receipt($1,$2,current_date,$3,$4,null,$5,$6::jsonb) as id`,
+      [tenantId, target.customer_id, p.method ?? "cash", p.amount, p.note ?? null, JSON.stringify(allocations)],
+    );
+    // The voucher the technician hands over is this receipt: numbered by the
+    // document counter inside fn_record_receipt, and now in the books too.
+    //
+    // The RECEIPT is the primary fact — a technician took money and the customer
+    // has the voucher. Posting is downstream of that. If the ledger cannot accept
+    // it yet (a tenant with no chart of accounts configured), the receipt must
+    // still stand: rolling the whole consumer back would discard a record of cash
+    // that has physically changed hands. The savepoint keeps the receipt and lets
+    // the posting fail on its own; fn_post_receipt_gl is idempotent, so a later
+    // run posts it once the accounts exist. Anything OTHER than a configuration
+    // gap is re-raised — a real posting bug must still be loud.
+    await c.query("savepoint post_gl");
+    try {
+      await c.query(`select fn_post_receipt_gl($1)`, [r[0].id]);
+      await c.query("release savepoint post_gl");
+    } catch (err) {
+      await c.query("rollback to savepoint post_gl");
+      const msg = (err as Error).message;
+      if (!/GL accounts not configured/i.test(msg)) throw err;
+      console.error(
+        `[field-finance] receipt recorded but NOT posted to the ledger: ${msg}. ` +
+        `Configure gl.account_code.bank and gl.account_code.receivable; the posting is idempotent and will apply on the next run.`);
+    }
   },
 };
 
@@ -88,4 +133,70 @@ export const fuelLogger: Consumer = {
   },
 };
 
-export const fieldFinanceConsumers: Consumer[] = [cashCollector, expenseRecorder, fuelLogger];
+
+// §3.6 — the technician raises the invoice at completion. The amount is what was
+// agreed at the door; VAT is applied here so the rate can never drift from the
+// rest of the ledger. Issued immediately, because the customer is standing there
+// and needs the document — the technician pressing the button IS the human
+// trigger the "never auto-generated" rule asks for.
+export const invoiceAtCompletion: Consumer = {
+  name: "invoice-at-completion",
+  eventTypes: ["job.invoiced"],
+  handle: async (c: PoolClient, ev: ParsedEvent) => {
+    if (ev.envelope.event_type !== "job.invoiced") return;
+    const p = ev.payload as { job_id?: string; amount?: number; description?: string };
+    const jobId = p.job_id ?? (ev.envelope.entity_id as string | null);
+    if (!jobId || !p.amount || p.amount <= 0) return;
+    const tenantId = ev.envelope.tenant_id;
+
+    // one invoice per job, whatever the sync does
+    const dup = await c.query(`select 1 from invoices where job_id=$1 and status <> 'cancelled' limit 1`, [jobId]);
+    if (dup.rowCount) return;
+
+    const { rows: j } = await c.query(
+      `select j.service_line_id, j.customer_id, j.contract_id,
+              cu.legal_name, cu.trade_name, cu.trn, cu.emirate, cu.customer_type
+         from jobs j join customers cu on cu.id = j.customer_id
+        where j.id = $1 and j.tenant_id = $2`, [jobId, tenantId]);
+    if (!j[0]) return;
+    const subtotal = Math.round(Number(p.amount) * 100) / 100;
+    const vat = Math.round(subtotal * 5) / 100;
+
+    const { rows: inv } = await c.query(
+      `insert into invoices (tenant_id, service_line_id, customer_id, contract_id, job_id, status,
+                             buyer_legal_name, buyer_trn, buyer_address, buyer_customer_type,
+                             currency, vat_treatment, subtotal, vat_total, total, snapshot)
+       values ($1,$2,$3,$4,$5,'queued',$6,$7,$8,$9,'AED','standard',$10,$11,$12,$13)
+       returning id`,
+      [tenantId, j[0].service_line_id, j[0].customer_id, j[0].contract_id, jobId,
+       j[0].legal_name ?? j[0].trade_name, j[0].trn, j[0].emirate, j[0].customer_type,
+       subtotal, vat, subtotal + vat,
+       JSON.stringify({ source: "job.invoiced", raised_by: "technician", vat_rate: 5 })]);
+    await c.query(
+      `insert into invoice_lines (tenant_id, invoice_id, line_no, description, quantity, unit_price,
+                                  currency, vat_rate, vat_amount, line_total)
+       values ($1,$2,1,$3,1,$4,'AED',5,$5,$6)`,
+      [tenantId, inv[0].id, p.description ?? "Pest control service", subtotal, vat, subtotal + vat]);
+    await c.query(`select fn_apply_attestation_charge($1)`, [inv[0].id]);
+
+    // An invoice against a job may only be ISSUED once a completed service report
+    // exists — no invoice without evidence the work happened (mig 034). The gate
+    // is asked BEFORE issuing rather than crashed into: a technician who raises
+    // the invoice before filing the report should get a prepared invoice waiting
+    // for it, not an event that fails on every drain forever. The office (or the
+    // technician, once the report syncs) issues it from the invoices screen.
+    const { rows: gate } = await c.query(
+      `select fn_job_service_report_ok($1, $2,
+                coalesce((select value::text::boolean from settings
+                           where tenant_id=$1 and service_line_id is null
+                             and key='ar.require_sr_approval'), false)) as ok`,
+      [tenantId, jobId]);
+    if (gate[0]?.ok) {
+      await c.query(`select fn_issue_invoice($1)`, [inv[0].id]);
+      await c.query(`select fn_post_invoice_gl($1)`, [inv[0].id]);
+    }
+  },
+};
+
+export const fieldFinanceConsumers: Consumer[] =
+  [cashCollector, expenseRecorder, fuelLogger, invoiceAtCompletion];

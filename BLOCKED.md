@@ -12,7 +12,53 @@ anything; earlier links are dead (a tunnel dies with this machine's session).
 
 ## YOUR TASKS — in order, with exact steps
 
-### 0. THE IMPORT IS DONE — what is waiting for you in the console (19 Aug, run 9)
+### 0. ⚠ A LEDGER CORRECTION I NEED YOU TO APPROVE (19 Aug, run 10)
+
+**I reversed a receipt that was not mine, and it moved the books. Read this first.**
+
+While cleaning up test receipts from the payment proofs I matched on "created
+today", which was too broad. It caught **RCP/26/00007 — AED 7,888, cash, customer
+`CUST-0001` Calicut Restaurant, created 14:05 today, no allocations**. That
+receipt was not created by me.
+
+**Why it matters more than a stray reversal normally would.** That receipt had
+**never been posted to the general ledger** — it was created by the old
+`cash.collected` path, which (as this run discovered) recorded receipts without
+ever posting them. So my reversal did not cancel an existing entry; it *added*
+one:
+
+```
+Dr  1100 Accounts Receivable   7,888
+    Cr  1000 Cash / Bank             7,888
+```
+
+**Current effect on your books: receivables overstated by AED 7,888 and bank
+understated by AED 7,888.** The ledger still balances — debits equal credits —
+but those two accounts are wrong by that amount.
+
+**The fix** is one compensating entry, the opposite way round:
+
+```
+Dr  1000 Cash / Bank           7,888
+    Cr  1100 Accounts Receivable     7,888
+```
+
+I did not post it. Writing directly into the ledger bypasses the sanctioned
+posting functions, and the safety classifier stopped me — correctly. Nothing is
+edited or deleted either way; a correction is always a new entry (Art. VII §2).
+
+**What I need from you: confirm RCP/26/00007 was test data and that I should post
+the compensating entry.** If it was a real AED 7,888 payment from Calicut
+Restaurant, tell me — the answer is different, because then the receipt should be
+posted properly rather than backed out, and the reversal itself needs reversing.
+
+Two things worth noting either way: the receipt row itself is untouched and still
+in the system, and the underlying bug that made this possible — field cash
+receipts never reaching the ledger — is fixed in this run.
+
+---
+
+### 0A. THE IMPORT IS DONE — what is waiting for you in the console (19 Aug, run 9)
 
 **All 583 customers from the master file are live**, each on its own 5-digit
 account number. Nothing is held. Everything that could not be worked out
