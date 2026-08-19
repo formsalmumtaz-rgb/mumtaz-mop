@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Outbox drain — event-driven (webhook) with a scheduled sweeper safety net; idempotent handlers.",
+  "description": "Outbox drain \u2014 event-driven (webhook) with a scheduled sweeper safety net; idempotent handlers.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -11,6 +11,7 @@
     "@mop/documents": "workspace:*",
     "@mop/domain": "workspace:*",
     "exceljs": "^4.4.0",
+    "jspdf": "^2.5.2",
     "pg": "^8.13.1"
   },
   "devDependencies": {
