@@ -104,24 +104,16 @@ question comes up.
 
 ---
 
-### 0F. Two customers carry YOUR TRN
+### 0F. ✅ RESOLVED — house account and the mispasted TRNs (19 Aug)
 
-Your TRN **100072077900003** is on three imported customer records:
-
-| Account | Name |
-|---|---|
-| 11387 | **Al Mumtaz Bldg Clean & Pest Control** — this is *you*, in your own customer list |
-| 11197 | Ocean Oilfield Services (FZE) |
-| 11321 | Brilliant International Private School |
-
-A TRN belongs to one legal entity, so the other two are almost certainly a
-data-entry error in the old system — someone pasted the company's own TRN into a
-customer record. **It matters:** if you invoice Ocean Oilfield with your own TRN
-as the buyer's, that is a VAT error on a tax document.
-
-Tell me the real TRNs (or that they have none) and I will correct them. And say
-whether 11387 should stay a customer at all — some businesses do invoice
-themselves internally, so I have not assumed.
+- **11387 Al Mumtaz Bldg Clean & Pest Control** is now flagged as the **house
+  account**. Kept, because internal work is still worth recording against
+  something, but invoicing it is **refused by the database**, not merely
+  discouraged in a screen — a screen rule would be forgotten by the next screen.
+- **11197 Ocean Oilfield** and **11321 Brilliant International School** had their
+  TRN blanked and are flagged `ASK: TRN`, with a note on each explaining that the
+  old system had pasted the company's own registration in. Zero non-house
+  customers now carry it.
 
 ---
 
