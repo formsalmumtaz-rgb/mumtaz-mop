@@ -81,8 +81,10 @@ export function Badge({ tone = "neutral", className, children }:
 // ── Table ──
 export function TableWrap({ minWidth, children }: { minWidth?: number; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-      <table className="w-full text-sm" style={minWidth ? { minWidth } : undefined}>{children}</table>
+    <div className="card-lift max-h-[70vh] overflow-auto rounded-lg border border-neutral-200 bg-white">
+      {/* §3.9: sticky headers — the office scrolls hundreds of rows and forgets
+          which column is which. One place, so every table gets it. */}
+      <table className="sticky-head w-full text-sm" style={minWidth ? { minWidth } : undefined}>{children}</table>
     </div>
   );
 }
@@ -104,5 +106,46 @@ export function PageHeader({ title, description, actions }:
       </div>
       {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
     </div>
+  );
+}
+
+// ── §3.9 — shared pieces the refresh introduces ─────────────────────────────
+
+// A status pill. Tone is meaning, never decoration: the same state always looks
+// the same on every screen, so the office reads colour rather than words.
+export function StatusPill({ tone, children }: {
+  tone: "ok" | "warn" | "bad" | "info"; children: React.ReactNode;
+}) {
+  return <span className={`pill pill-${tone}`}>{children}</span>;
+}
+
+// An empty state that offers the one thing to do next, rather than apologising.
+export function EmptyState({ title, description, action }: {
+  title: string; description?: string; action?: React.ReactNode;
+}) {
+  return (
+    <div className="empty">
+      <h3>{title}</h3>
+      {description && <p>{description}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+// Placeholder rows that hold the layout still while data arrives, so the page
+// does not jump under the pointer.
+export function SkeletonRows({ rows = 5, cols = 4 }: { rows?: number; cols?: number }) {
+  return (
+    <tbody>
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r}>
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c} className="px-3 py-2">
+              <div className="skeleton h-4" style={{ width: `${55 + ((r + c) % 4) * 12}%` }} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
   );
 }

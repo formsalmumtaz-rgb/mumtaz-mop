@@ -43,8 +43,7 @@ export default async function NotificationsPage() {
           </form>
         }
       />
-      <TableWrap>
-        <table className="w-full min-w-[820px] text-sm">
+      <TableWrap minWidth={820}>
           <Thead>
             <tr>
               <th className="px-3 py-2 text-left font-medium">When</th>
@@ -81,7 +80,6 @@ export default async function NotificationsPage() {
               </tr>
             ))}
           </Tbody>
-        </table>
       </TableWrap>
     </div>
   );

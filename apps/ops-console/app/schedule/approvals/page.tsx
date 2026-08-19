@@ -70,8 +70,7 @@ export default async function ApprovalsPage() {
               <p className="mt-1 text-xs text-neutral-600">areas: {day.areas.join(", ")}</p>
             )}
 
-            <div className="mt-3"><TableWrap>
-              <table className="w-full min-w-[720px] text-sm">
+            <div className="mt-3"><TableWrap minWidth={720}>
                 <Thead>
                   <tr>
                     <th className="px-3 py-2 text-left font-medium">Time</th>
@@ -103,7 +102,6 @@ export default async function ApprovalsPage() {
                     </tr>
                   ))}
                 </Tbody>
-              </table>
             </TableWrap></div>
           </section>
         );

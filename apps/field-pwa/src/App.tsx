@@ -128,11 +128,13 @@ export function App() {
       <button className="ghost" onClick={() => { setShowDay(false); setShowHr(true); }} style={{ marginTop: ".9rem" }}>
         🤒 Sick leave or another request
       </button>
+      <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
     </div></div>
   );
   if (showHr) return (
     <div className="app"><div className="content">
       <HrRequest base={SYNC_BASE} recent={myDayCache?.requests ?? []} onBack={() => { setShowHr(false); setShowDay(true); }} />
+      <p className="muted" style={{ fontSize: ".72rem", marginTop: "1.2rem", textAlign: "center" }}>build {__APP_COMMIT__}</p>
     </div></div>
   );
   if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;

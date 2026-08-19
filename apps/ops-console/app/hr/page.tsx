@@ -90,8 +90,7 @@ export default async function HrPage({ searchParams }: { searchParams: Promise<R
         <p className="text-sm text-neutral-600">
           Straight from each technician&rsquo;s own TIME IN / TIME OUT. This is what a payroll run reads.
         </p>
-        <TableWrap>
-          <table className="w-full min-w-[560px] text-sm">
+        <TableWrap minWidth={560}>
             <Thead>
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Technician</th>
@@ -110,7 +109,6 @@ export default async function HrPage({ searchParams }: { searchParams: Promise<R
                 </tr>
               ))}
             </Tbody>
-          </table>
         </TableWrap>
       </section>
     </div>

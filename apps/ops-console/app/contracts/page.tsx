@@ -40,8 +40,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
                     { value: "expired", label: "Expired" }, { value: "cancelled", label: "Cancelled" }]} />
         <div className="ml-auto"><ExportButtons dataset="contracts" params={sp} /></div>
       </div>
-      <TableWrap>
-        <table className="w-full min-w-[760px] text-sm">
+      <TableWrap minWidth={760}>
           <Thead>
             <tr>
               <th className="px-3 py-2 text-left font-medium">Contract</th>
@@ -86,7 +85,6 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
               </RowLink>
             ))}
           </Tbody>
-        </table>
       </TableWrap>
     </div>
   );

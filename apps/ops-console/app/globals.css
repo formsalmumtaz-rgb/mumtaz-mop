@@ -54,3 +54,78 @@ body {
   0% { opacity: 0; transform: scale(0.6); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+/* ── §3.9 UI refresh — design tokens ────────────────────────────────────────
+   Colours live here as CSS custom properties, not as hardcoded hex in a
+   hundred class attributes. The queue says "dark-ready tokens (do not ship
+   dark mode, just do not hardcode colours)": the dark block below is defined
+   and deliberately NOT enabled, so switching it on later is one line rather
+   than an audit of every screen. */
+@layer base {
+  :root {
+    /* surface */
+    --surface:        255 255 255;
+    --surface-sunken: 250 250 250;
+    --surface-raised: 255 255 255;
+    --line:           229 229 229;
+    /* ink */
+    --ink:            23 23 23;
+    --ink-muted:      107 114 128;
+    --ink-faint:      163 163 163;
+    /* meaning — used for status, never decoration */
+    --ok:     21 128 61;   --ok-bg:   220 252 231;
+    --warn:   180 83 9;    --warn-bg: 254 243 199;
+    --bad:    185 28 28;   --bad-bg:  254 226 226;
+    --info:   3 105 161;   --info-bg: 224 242 254;
+    /* rhythm: an 8px grid, so spacing is a decision made once */
+    --s1: .25rem; --s2: .5rem; --s3: .75rem; --s4: 1rem; --s6: 1.5rem; --s8: 2rem;
+    --radius: .625rem;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 1px 3px rgb(0 0 0 / .06);
+    --shadow-lift: 0 4px 12px rgb(0 0 0 / .08);
+    --motion: 180ms;            /* inside the 150–250ms the queue asks for */
+  }
+  /* Defined, not enabled. Ship dark by adding [data-theme="dark"] to <html>. */
+  :root[data-theme="dark"] {
+    --surface: 24 24 27; --surface-sunken: 9 9 11; --surface-raised: 39 39 42;
+    --line: 63 63 70; --ink: 250 250 250; --ink-muted: 161 161 170; --ink-faint: 113 113 122;
+    --ok-bg: 5 46 22; --warn-bg: 69 26 3; --bad-bg: 69 10 10; --info-bg: 12 74 110;
+  }
+}
+
+@layer components {
+  /* Cards with depth, lifting slightly on hover so a clickable one reads as
+     clickable without needing a border colour change. */
+  .card-lift { box-shadow: var(--shadow-card); transition: box-shadow var(--motion) ease, transform var(--motion) ease; }
+  .card-lift:hover { box-shadow: var(--shadow-lift); transform: translateY(-1px); }
+
+  /* Long tables keep their header visible — the office scrolls hundreds of
+     customers and forgets which column is which. */
+  .sticky-head thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: rgb(var(--surface-sunken)); box-shadow: inset 0 -1px 0 rgb(var(--line));
+  }
+
+  /* Status as a pill, so state is legible at a glance rather than read. */
+  .pill { @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium; }
+  .pill-ok   { background: rgb(var(--ok-bg));   color: rgb(var(--ok)); }
+  .pill-warn { background: rgb(var(--warn-bg)); color: rgb(var(--warn)); }
+  .pill-bad  { background: rgb(var(--bad-bg));  color: rgb(var(--bad)); }
+  .pill-info { background: rgb(var(--info-bg)); color: rgb(var(--info)); }
+
+  /* Loading state that keeps the layout still instead of collapsing it. */
+  .skeleton {
+    background: linear-gradient(90deg, rgb(var(--line)) 25%, rgb(var(--surface-sunken)) 37%, rgb(var(--line)) 63%);
+    background-size: 400% 100%; animation: mop-shimmer 1.2s ease-in-out infinite;
+    border-radius: var(--radius);
+  }
+  @keyframes mop-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+  /* An empty state is a place to start, not an apology. One primary action. */
+  .empty { @apply rounded-lg border border-dashed p-10 text-center; border-color: rgb(var(--line)); }
+  .empty h3 { @apply text-base font-medium; color: rgb(var(--ink)); }
+  .empty p  { @apply mx-auto mt-1 max-w-md text-sm; color: rgb(var(--ink-muted)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
