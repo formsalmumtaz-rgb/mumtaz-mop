@@ -89,6 +89,7 @@ const GROUPS: Group[] = [
     { href: "/expenses", label: "Expenses" },
     { href: "/cash-flow", label: "Cash flow" },
     { href: "/reports", label: "Reports", icon: "reports" },
+    { href: "/reports/corporate-tax", label: "Corporate tax" },
     { href: "/profitability", label: "Profitability" },
     { href: "/management", label: "Management" },
   ] },

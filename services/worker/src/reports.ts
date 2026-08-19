@@ -284,7 +284,9 @@ export async function computeDailyAnalysis(c: PoolClient, tenantId: string, r: D
 // ended), yearly on 1 January (the year just ended). Monthly is available on
 // demand from the console. Every cadence is idempotent by subject.
 
-export type Period = "daily" | "weekly" | "monthly" | "yearly";
+// §3.11 asks for daily / monthly / QUARTERLY / HALF-YEARLY / yearly packs.
+// Quarterly and half-yearly were missing entirely.
+export type Period = "daily" | "weekly" | "monthly" | "quarterly" | "half_yearly" | "yearly";
 
 export interface PeriodRange { period: Period; from: string; to: string; label: string }
 
@@ -310,6 +312,25 @@ export function previousPeriod(period: Period, today: string): PeriodRange {
     const to = isoDate(new Date(Date.UTC(y, m - 1, 0)));
     return { period, from, to, label: from.slice(0, 7) };
   }
+  if (period === "quarterly") {
+    // the quarter that just ended, on calendar quarters
+    const y0 = Number(today.slice(0, 4)), m0 = Number(today.slice(5, 7));
+    const qIndex = Math.floor((m0 - 1) / 3);              // 0..3 for the CURRENT quarter
+    const py = qIndex === 0 ? y0 - 1 : y0;
+    const pq = qIndex === 0 ? 3 : qIndex - 1;             // the one before it
+    const from = isoDate(new Date(Date.UTC(py, pq * 3, 1)));
+    const to = isoDate(new Date(Date.UTC(py, pq * 3 + 3, 0)));
+    return { period, from, to, label: `Q${pq + 1} ${py}` };
+  }
+  if (period === "half_yearly") {
+    const y0 = Number(today.slice(0, 4)), m0 = Number(today.slice(5, 7));
+    const hIndex = m0 <= 6 ? 0 : 1;
+    const py = hIndex === 0 ? y0 - 1 : y0;
+    const ph = hIndex === 0 ? 1 : 0;
+    const from = isoDate(new Date(Date.UTC(py, ph * 6, 1)));
+    const to = isoDate(new Date(Date.UTC(py, ph * 6 + 6, 0)));
+    return { period, from, to, label: `H${ph + 1} ${py}` };
+  }
   const y = Number(today.slice(0, 4)) - 1;
   return { period: "yearly", from: `${y}-01-01`, to: `${y}-12-31`, label: String(y) };
 }
@@ -325,13 +346,16 @@ function comparisonRange(r: PeriodRange): { from: string; to: string } {
     const y = Number(r.from.slice(0, 4)) - 1;
     return { from: `${y}-01-01`, to: `${y}-12-31` };
   }
+  // quarterly and half-yearly compare against the equal-length window immediately
+  // before, which the day-count fallback below already produces correctly.
   const days = Math.round((Date.parse(r.to) - Date.parse(r.from)) / 864e5) + 1;
   return { from: shiftDays(r.from, -days), to: shiftDays(r.from, -1) };
 }
 
 const TITLES: Record<Period, string> = {
   daily: "Daily operations report", weekly: "Weekly operations report",
-  monthly: "Monthly operations report", yearly: "Annual operations report",
+  monthly: "Monthly operations report", quarterly: "Quarterly operations report",
+  half_yearly: "Half-year operations report", yearly: "Annual operations report",
 };
 
 export interface PeriodReport { range: PeriodRange; current: DailyReport; previous: DailyReport }

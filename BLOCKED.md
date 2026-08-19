@@ -49,6 +49,35 @@ itself.
 
 ---
 
+### 0D. Corporate tax — four numbers your accountant must confirm
+
+The corporate tax working figures are built (`/reports/corporate-tax`). It
+arranges what the ledger holds; it does **not** compute a return and must not be
+filed from.
+
+**Every rate and threshold in it is flagged unconfirmed, on purpose.** I seeded
+them from published UAE instruments, but tax law changes and I cannot verify
+current law. A figure that is *probably* right is worse in a tax module than one
+that is visibly unconfirmed. Ask your adviser these four, then I clear the flags:
+
+| Setting | Seeded | Basis I used |
+|---|---|---|
+| Standard CT rate | **9%** | Federal Decree-Law No. 47 of 2022 |
+| 0% threshold | **AED 375,000** | Federal Decree-Law No. 47 of 2022 |
+| Small Business Relief revenue limit | **AED 3,000,000** | Ministerial Decision No. 73 of 2023 |
+| Registered for corporate tax? | **not set** | nobody has told the platform |
+
+Two things the system deliberately will not decide:
+
+- **Deductibility.** Expense categories carry a yes/no/undecided that your
+  accountant sets once. Undecided is reported as undecided, never guessed either
+  way — right now **AED 86** sits in an undecided category.
+- **Whether Small Business Relief applies.** Eligibility has conditions the
+  platform cannot see, so it only ever tells you whether the *revenue test* is
+  met.
+
+---
+
 ### 0B. Google sign-in is built — I need the 11 addresses (19 Aug, run 10)
 
 Your OAuth setup is done, so the allowlist is now built and proven: a Google

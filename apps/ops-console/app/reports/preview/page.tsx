@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" }, { value: "yearly", label: "Yearly" },
+  { value: "monthly", label: "Monthly" }, { value: "quarterly", label: "Quarterly" },
+  { value: "half_yearly", label: "Half-year" }, { value: "yearly", label: "Yearly" },
 ];
 
 export default async function ReportPreviewPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
