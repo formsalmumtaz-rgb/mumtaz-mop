@@ -303,3 +303,27 @@ the 30-second rule terminates it.
 **Repayment trigger.** If a 23/25-class failure recurs, the drain now names it
 in the log. If it recurs *without* a lock message, the cause is different and
 this entry no longer applies — reopen it.
+
+
+---
+
+## D-PROOF1 — Proofs must run against a test tenant, not the live one (19 Aug 2026)
+
+**Twice in one run** I wrote fixture rows into append-only live tables while
+proving a feature, and could not remove them afterwards:
+
+- `receipts` — reversed with `fn_reverse_receipt`, the sanctioned path, and one
+  receipt that was NOT mine got caught by a too-broad "created today" filter
+  (BLOCKED §0).
+- `vehicle_fuel_purchases` — four fixture fills, AED 455, with **no reversal
+  function to undo them** (BLOCKED §0C).
+
+**The rule this establishes.** Before writing proof data, check whether the table
+is append-only. If it is, prove against one of the throwaway test tenants (`MOP
+Test Tenant`, `K2/K4 Test Tenant`, …) — never the Mumtaz tenant. Deleting fixtures
+afterwards is not a fallback that exists there, by design.
+
+**Repayment.** `vehicle_fuel_purchases` should get a reversal function of the same
+shape as `fn_reverse_receipt`, so a mistaken fuel entry has a sanctioned
+correction path at all. Right now it has none, which is why BLOCKED §0C needs a
+decision rather than a fix.

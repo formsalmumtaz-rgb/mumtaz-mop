@@ -58,6 +58,38 @@ receipts never reaching the ledger — is fixed in this run.
 
 ---
 
+### 0C. ⚠ Four test fuel purchases are stuck in the live fuel ledger
+
+Proving the §3.8 refuel flow, I wrote four fixture rows into
+`vehicle_fuel_purchases` — which is **append-only** (Art. VII §2), so I cannot
+delete or edit them. They are dated **19 Aug 2026** against **Vehicle 1**:
+
+| Payer | Source | Litres | Amount |
+|---|---|---:|---:|
+| ashiq | cash | 40 | 140 |
+| Field Test Technician | top-up account | 30 | 105 |
+| ashiq | cash | 20 | 70 |
+| ashiq | cash | 40 | 140 |
+
+**Effect:** Vehicle 1 shows 130 L / **AED 455** of fuel that was never bought, and
+the new reconciliation view says the company owes **ashiq AED 350** that he never
+spent. Nothing else reads these rows yet, so no payment has been made on them.
+
+**This was my mistake, and the same one twice.** I proved against the live tenant
+instead of one of the throwaway test tenants, having already hit exactly this with
+receipts earlier in the run. Append-only tables need a test tenant, and I have
+noted it in DEBT.md so the next session does not repeat it a third time.
+
+**What I need:** tell me how you want them removed. The sanctioned route is a
+reversing entry, but `vehicle_fuel_purchases` has no reversal function today —
+unlike receipts, which do. I can either write one (a negative-quantity
+counter-entry that nets the van and the payer back to zero, leaving the original
+rows visible as the constitution intends), or you can have them cleared directly
+at the database if you would rather they simply never existed. **The first is
+correct; the second is faster.** Say which.
+
+---
+
 ### 0B. Google sign-in is built — I need the 11 addresses (19 Aug, run 10)
 
 Your OAuth setup is done, so the allowlist is now built and proven: a Google

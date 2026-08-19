@@ -120,16 +120,24 @@ export const fuelLogger: Consumer = {
     if (ev.envelope.event_type !== "fuel.logged") return;
     const p = ev.payload as {
       client_uuid?: string; vehicle_id?: string; litres?: number; amount?: number;
+      paid_by_technician_id?: string; payment_source?: string;
+      receipt_photo_key?: string; fuel_band?: number; odometer_km?: number;
     };
     if (!p.vehicle_id || !p.litres || p.litres <= 0 || p.amount == null || p.amount < 0) return;
+    // §3.8 — the payer is recorded, not inferred from the vehicle. A crew that
+    // fuels someone else's van out of their own float is owed that money back,
+    // and fuel_cash_owed_to_technicians reads THIS column to work it out.
     await c.query(
       `insert into vehicle_fuel_purchases
-         (tenant_id, service_line_id, vehicle_id, purchase_date, litres, amount, note, client_uuid, snapshot, created_by)
+         (tenant_id, service_line_id, vehicle_id, purchase_date, litres, amount, note, client_uuid,
+          snapshot, created_by, paid_by_technician_id, payment_source, receipt_photo_key, fuel_band, odometer_km)
        select $1, v.service_line_id, v.id, current_date, $2, $3, 'Logged on device (Log Fuel)', $4,
-              jsonb_build_object('source', 'field_fuel_log'), $5
+              jsonb_build_object('source', 'field_fuel_log'), $5, $7, $8, $9, $10, $11
          from vehicles v where v.id = $6 and v.tenant_id = $1
        on conflict (tenant_id, client_uuid) where client_uuid is not null do nothing`,
-      [ev.envelope.tenant_id, p.litres, p.amount, p.client_uuid ?? null, ev.envelope.actor_id ?? null, p.vehicle_id]);
+      [ev.envelope.tenant_id, p.litres, p.amount, p.client_uuid ?? null, ev.envelope.actor_id ?? null, p.vehicle_id,
+       p.paid_by_technician_id ?? null, p.payment_source ?? null, p.receipt_photo_key ?? null,
+       p.fuel_band ?? null, p.odometer_km ?? null]);
   },
 };
 

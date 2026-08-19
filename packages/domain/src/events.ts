@@ -124,11 +124,20 @@ export const payloadSchemas = {
     reason: z.string().min(1),
     device_time: z.string().nullish(),
   }),
+  // §3.8 — a refuel is not just litres into a van. WHO PAID is the field that
+  // makes reconciliation possible: crews fuel for each other, and a technician
+  // who used their own cash is owed it back. The receipt photo is the evidence
+  // for the amount, and the band is the gauge reading at the pump.
   "fuel.logged": z.object({
     client_uuid: z.string().uuid().nullish(),
     vehicle_id: z.string().uuid(),
     litres: z.number().positive(),
     amount: z.number().min(0),
+    paid_by_technician_id: z.string().uuid().nullish(),
+    payment_source: z.enum(["cash", "top_up_account"]).nullish(),
+    receipt_photo_key: z.string().nullish(),
+    fuel_band: z.number().int().nullish(),
+    odometer_km: z.number().nonnegative().nullish(),
   }),
   "stock.consumed": z.object({
     job_id: z.string().uuid(),
