@@ -340,34 +340,38 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
       where s.batch_id=$1 and s.disposition='pending' and s.source_row_id ~ '^[1-9]{5}$'
         and exists (select 1 from customers cu where cu.tenant_id=s.tenant_id and cu.code = s.source_row_id
                      and cu.id is distinct from s.matched_customer_id)`, [batch]);
-  // The row belongs to a group that ALREADY exists live with customers in it. The
-  // import cannot tell whether this row is a NEW outlet of that group or one of
-  // the outlets already recorded — and creating it blind would put the same
-  // restaurant in the list twice while its contracts stay on the old record.
-  // A human maps outlet to record; the system never guesses (Art. X §4).
+  // The row belongs to a group that already exists live. It is STILL IMPORTED —
+  // the file defines the customer of record — and flagged instead, because only a
+  // human can say which legacy record is the same outlet. Owner ruling, 19 Aug:
+  // "Flag what can't auto-reconcile — I resolve flags from the console, not from
+  // import holds."
   await c.query(
-    `update staging_customers s set disposition='held',
-            reason='group "' || lg.name || '" already exists live with ' || lm.n ||
-                   ' customer(s) — confirm whether this is a new outlet or one of them'
+    `update staging_customers s
+        set required_info = concat_ws('; ', nullif(s.required_info,''),
+              'ASK: which legacy record in the "' || lg.name || '" group is this outlet?')
        from customer_groups lg
-       join lateral (select count(*)::int as n from customers cu
-                      where cu.tenant_id = lg.tenant_id and cu.group_id = lg.id) lm on true
       where s.batch_id=$1 and s.disposition='pending'
-        and lg.tenant_id = s.tenant_id and lm.n > 0
-        and fn_group_key(lg.name) = fn_group_key(s.customer_group)`, [batch]);
-  // …and every other outlet of the SAME legal entity goes with it. A shared TRN is
-  // one tax registration, so these rows are the same company: they must be mapped
-  // as one set, not half imported and half held.
+        and lg.tenant_id = s.tenant_id
+        and fn_group_key(lg.name) = fn_group_key(s.customer_group)
+        and exists (select 1 from customers cu
+                     where cu.tenant_id = lg.tenant_id and cu.group_id = lg.id
+                       and cu.reconciled_to_customer_id is null
+                       -- only a LEGACY record raises the question. A customer that
+                       -- carries a 5-digit account number came from this file, so it
+                       -- is not something to reconcile against.
+                       and cu.code !~ '^[1-9]{5}$')`, [batch]);
+  // A malformed TRN does not hold the customer out of the system either. The
+  // number is dropped rather than imported — a wrong tax number on an invoice is
+  // worse than none — the original string is kept in the notes so the office can
+  // see what was recorded and correct it from the VAT certificate, and the customer
+  // is flagged so its profile prompts for it on first open.
   await c.query(
-    `update staging_customers s set disposition='held',
-            reason='same legal entity (TRN ' || s.trn || ') as a row held for outlet mapping'
-      where s.batch_id=$1 and s.disposition='pending' and s.trn ~ '^1[0-9]{14}$'
-        and exists (select 1 from staging_customers o
-                     where o.batch_id=s.batch_id and o.id <> s.id
-                       and o.trn = s.trn and o.disposition='held'
-                       and o.reason like 'group %already exists live%')`, [batch]);
-  await c.query(
-    `update staging_customers set disposition='held', reason='TRN present but not a valid 15-digit UAE TRN'
+    `update staging_customers
+        set notes = concat_ws(chr(10), nullif(notes,''),
+              'TRN recorded in the legacy file as "' || trn || '" — not a valid 15-digit UAE TRN, ' ||
+              'so it was not imported. Correct it from the VAT certificate.'),
+            required_info = concat_ws('; ', nullif(required_info,''), 'ASK: TRN'),
+            trn = null
       where batch_id=$1 and disposition='pending' and trn is not null and trn !~ '^1[0-9]{14}$'`, [batch]);
   await c.query(
     `update staging_customers s set disposition='held', reason='the same name appears more than once in this file'
@@ -413,7 +417,7 @@ async function validateBatch(c: PoolClient, tenantId: string, batch: string): Pr
 // rows are never written. Account numbers are system-assigned and never reused.
 export async function commitImportBatch(
   tenantId: string, batchId: string,
-): Promise<{ customers: number; sites: number; contacts: number; contracts: number; grouped: number }> {
+): Promise<{ customers: number; sites: number; contacts: number; contracts: number; grouped: number; updated_from_file: number }> {
   return withTenantTx(tenantId, async (c: PoolClient) => {
     const { rows: b } = await c.query(
       `select id, status from import_batches where tenant_id=$1 and id=$2 for update`, [tenantId, batchId]);
@@ -494,17 +498,75 @@ export async function commitImportBatch(
        on conflict (tenant_id, code) do nothing`, [batchId, tenantId, slId]);
     const { rows: gr } = await c.query(
       `with tgt as (
-         select source_row_id, customer_group, coalesce(live_customer_id, matched_customer_id) as cid
-           from staging_customers
-          where batch_id=$1 and nullif(trim(customer_group),'') is not null
-            and coalesce(live_customer_id, matched_customer_id) is not null
+         -- A row carries its group name explicitly, OR shares a TRN with a row that
+         -- does: one tax registration is one legal entity, and the file does not
+         -- repeat the group name on every outlet of it (four of the five Sultan Al
+         -- Arab rows carry no group tag). Grouping by legal entity is exact — it
+         -- reads a registration number, it does not guess from names.
+         select s.source_row_id,
+                coalesce(nullif(trim(s.customer_group),''),
+                         (select nullif(trim(o.customer_group),'') from staging_customers o
+                           where o.batch_id=s.batch_id and o.trn = s.trn
+                             and s.trn ~ '^1[0-9]{14}$'
+                             and nullif(trim(o.customer_group),'') is not null limit 1)) as customer_group,
+                coalesce(s.live_customer_id, s.matched_customer_id) as cid
+           from staging_customers s
+          where s.batch_id=$1 and coalesce(s.live_customer_id, s.matched_customer_id) is not null
+       ), tgt2 as (select * from tgt where customer_group is not null
        ), upd as (
          update customers cu set group_id = g.id
-           from tgt join customer_groups g
-             on g.tenant_id=$2 and fn_group_key(g.name) = fn_group_key(tgt.customer_group)
-          where cu.id = tgt.cid and cu.tenant_id=$2 and cu.group_id is null
+           from tgt2 join customer_groups g
+             on g.tenant_id=$2 and fn_group_key(g.name) = fn_group_key(tgt2.customer_group)
+          where cu.id = tgt2.cid and cu.tenant_id=$2 and cu.group_id is null
          returning 1
        ) select count(*)::int as n from upd`, [batchId, tenantId]);
+
+    // "File is truth. Legacy is history." A row that matched an existing customer
+    // used to be skipped entirely; the file's data is now applied over that
+    // customer. Only fields the FILE actually carries are written — a blank in the
+    // file means unknown and never erases something the office already knows
+    // (Art. VII §5) — so this is "file wins on conflicting fields", not "file
+    // overwrites everything".
+    const { rows: upd } = await c.query(
+      `with tgt as (
+         select s.*, s.matched_customer_id as cid
+           from staging_customers s
+          where s.batch_id=$1 and s.disposition='matched_live' and s.matched_customer_id is not null
+       ), u as (
+         update customers cu set
+           legal_name         = coalesce(t.legal_name, cu.legal_name),
+           trade_name         = coalesce(t.trade_name, cu.trade_name),
+           trn                = coalesce(t.trn, cu.trn),
+           emirate            = coalesce(t.emirate, cu.emirate),
+           place_of_supply    = coalesce(t.place_of_supply, cu.place_of_supply),
+           district           = coalesce(t.district, cu.district),
+           po_box             = coalesce(t.po_box, cu.po_box),
+           alias_name         = coalesce(t.alias_name, cu.alias_name),
+           contact_person     = coalesce(t.contact_person, cu.contact_person),
+           whatsapp           = coalesce(t.whatsapp, cu.whatsapp),
+           priority           = coalesce(case when t.priority in ('High','Medium','Low') then t.priority end, cu.priority),
+           access_notes       = coalesce(t.access_notes, cu.access_notes),
+           location_source    = coalesce(t.location_source, cu.location_source),
+           location_status    = coalesce(case when t.location_status in ('VERIFIED','UNVERIFIED','AREA_APPROX','NO_LOCATION')
+                                              then t.location_status end, cu.location_status),
+           required_info      = coalesce(t.required_info, cu.required_info),
+           notes              = coalesce(t.notes, cu.notes),
+           legacy_code        = coalesce(t.legacy_customer_code, cu.legacy_code),
+           source_ref         = coalesce(cu.source_ref, t.source_row_id),
+           updated_at         = now()
+           from tgt t where cu.id = t.cid and cu.tenant_id = $2
+         returning cu.id
+       ) select count(*)::int as n from u`, [batchId, tenantId]);
+    for (const r of await (async () => (await c.query(
+      `select s.matched_customer_id as id, s.source_row_id from staging_customers s
+        where s.batch_id=$1 and s.disposition='matched_live' and s.matched_customer_id is not null`,
+      [batchId])).rows)()) {
+      await audit(c, tenantId, {
+        table: "customers", rowId: r.id as string, action: "update",
+        newValue: { from_file_row: r.source_row_id },
+        note: "customer import: the master file's data applied over the existing record (file is truth, legacy is history)",
+      });
+    }
 
     const { rows: br } = await c.query(
       `with tgt as (
@@ -594,7 +656,8 @@ export async function commitImportBatch(
         where batch_id=$1 and disposition='clean'`, [batchId]);
 
     const counts = { customers: cust.length, sites: br[0].n as number, contacts: ct[0].n as number,
-                     contracts: k.length, grouped: gr[0].n as number };
+                     contracts: k.length, grouped: gr[0].n as number,
+                     updated_from_file: upd[0].n as number };
     await c.query(
       `update import_batches set status='committed', committed_at=now(),
               report = report || jsonb_build_object('committed', $2::jsonb) where id=$1`,

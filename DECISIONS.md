@@ -410,6 +410,47 @@ the schema:
 - Group names reconcile on `fn_group_key` — case, spacing, punctuation and a
   trailing "GROUP" are not meaning, and nothing looser is ever matched.
 
+## 14 — File is truth, legacy is history (RATIFIED 19 Aug 2026)
+
+**Owner ruling, 19 Aug 2026.** The master file
+(`merge/CUSTOMER_Master_MOP.xlsx`) is authoritative. Records that predate the
+import are history and reconcile **to** the file, never the file to them.
+Anything that cannot auto-reconcile is **flagged for the console**, never held
+out of the import.
+
+**Binding consequences, all implemented:**
+
+1. **No reconciliation holds.** A row is imported and flagged; it is not held
+   back. Holds move a decision into the import; flags leave it where the owner
+   works. Replaces the hold rules added under §13.
+2. **A malformed TRN never holds a customer out.** The number is dropped (a wrong
+   tax number on an invoice is worse than none), the original string is written
+   to the customer's notes so the office can correct it from the VAT certificate,
+   and the customer is flagged `ASK: TRN`.
+3. **File wins on conflicting fields.** A row matching an existing customer now
+   *updates* that customer from the file instead of being skipped — but only
+   where the file carries a value. A blank in the file means unknown and never
+   erases what the office already knows (Art. VII §5).
+4. **Groups follow the legal entity.** A row is attached to its group by its own
+   `CUSTOMER_GROUP`, or by sharing a TRN with a row that has one — the file does
+   not repeat the group name on every outlet (four of the five Sultan Al Arab
+   rows carry no group tag). Reading a tax-registration number is exact; it is
+   not name guessing.
+5. **Reconciliation is a LINK, never a move** (`customers.reconciled_to_customer_id`,
+   migration 100). A legacy record keeps every document ever issued against it.
+   Repointing an issued invoice, a cash receipt or a service report would rewrite
+   a finished record — an append-only violation (Art. VII §2) needing an
+   amendment under Art. XII. The link gives the office the same single view of
+   the business with nothing rewritten. **0 documents were moved.**
+
+**[FACT, 19 Aug 2026] Result of applying it.** All **583** master-file customers
+are live on 5-digit account numbers. **16** legacy records remain: **1** linked
+(Calicut `CUST-0001` → `11193`, owner-directed) and **15** flagged for console
+resolution. Auto-reconciliation matched **zero** of the six Sultan Al Arab legacy
+records, because those records carry no address, no emirate, no TRN and an
+identical name — there is nothing in the database to match on. Each therefore
+keeps its own contract, exactly as the ruling requires.
+
 ## Changelog
 
 | Version | Date | Change |
@@ -429,3 +470,4 @@ the schema:
 | 2.2 | 12 Aug 2026 | §11.7 — Technician app T1 (offline auth): device+server time provenance (Art. VII §4), Bearer re-auth on `/api/field/*`, token revocation with held-for-review (never discarded). **Ratified refinement:** mig 056 extends the `outbox_events` mutable-bookkeeping whitelist to `needs_review`/`review_reason`; event content stays immutable (Art. VII §1 holds). Recorded as a constitutional amendment per the owner's rule. |
 | 2.3 | 19 Aug 2026 | §12 — **Customer account numbers switched to the 5-digit master scheme (11111–11827)**, ratified by the owner. CUST-0001…0600 burned and never reusable; new numbers continue from 11828 skipping any digit-0; every list and document displays the 5-digit number. Calicut → 11193; the six Sultan Al Arab records **merge** into 11662 (unique constraint ⇒ contracts/jobs repoint to the survivor, the other five archived, in one audited transaction). |
 | **2.4** | **19 Aug 2026** | §13 — **Multi-outlet customers ruled (owner): group → customers → branches; the §12 Sultan Al Arab merge is superseded and NOT performed.** Each outlet keeps its own customer record, contract and account number; the group consolidates. Established while implementing: the master file holds five Sultan outlets (11525/11662/11663/11664/11665) sharing one TRN, 11662 the parent; the six live records are indistinguishable and are held pending an owner mapping by contract number; `contracts` has no branch reference, so licence-sharing outlets cannot become branches without a schema change; 14 companies across 41 file records share a TRN. |
+| **2.5** | **19 Aug 2026** | §14 — **"File is truth, legacy is history" ratified (owner).** No reconciliation holds — import and flag. A malformed TRN is dropped, recorded in notes and flagged, never a hold. Matched rows are UPDATED from the file (file wins where the file has a value; blank never erases). Groups attach by legal entity (shared TRN) as well as by group name. Legacy records reconcile by LINK (mig 100), never by moving a document — 0 documents moved. All 583 master-file customers now live on 5-digit numbers; 16 legacy records remain, 1 linked and 15 flagged. |
