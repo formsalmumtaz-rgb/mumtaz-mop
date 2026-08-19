@@ -6,6 +6,8 @@ import { listBom, listBomItemOptions, type BomLine, type ItemOption } from "@/li
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { Card, Badge, Button, TableWrap, Thead, Tbody, PageHeader } from "@/components/ui";
 import { CategoryForm } from "./CategoryForm";
+import { QuickPricePanel } from "@/components/QuickPricePanel";
+import { quickPriceAll } from "@/lib/domain/quickprice";
 import { createCategoryAction, updateCategoryAction, archiveCategoryAction, restoreCategoryAction, addBomLineAction, removeBomLineAction } from "./actions";
 import Link from "next/link";
 
@@ -23,6 +25,10 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
     listCategories(tenantId, sl, includeArchived),
     listPricingModels(tenantId),
   ]);
+  // §3.5 — the picker, costed. ?customer=<id> costs it against a real site so
+  // travel is the actual distance from the depot rather than a blank.
+  const forCustomer = (sp.customer ?? "").trim() || undefined;
+  const quotes = await quickPriceAll(tenantId, { customerId: forCustomer });
   const pmOpts = pricingModels.map((p) => ({ id: p.id, name: p.name }));
   // BOM (materials) per category + the division's item options (shared across categories in this division).
   const itemOpts: ItemOption[] = categories[0] ? await listBomItemOptions(tenantId, categories[0].id) : [];
@@ -44,6 +50,17 @@ export default async function CategoriesPage({ searchParams }: { searchParams: P
           </Link>
         }
       />
+
+      {/* §3.5 — one tap shows what a preset actually costs. */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-medium">Quick pricing</h2>
+        <p className="text-sm text-neutral-600">
+          Dosage drives the chemical, the costing engine&rsquo;s own rates drive labour and the van,
+          and travel is measured from the Ajman depot. Anything still assumed is flagged on the card.
+        </p>
+        <QuickPricePanel presets={quotes} />
+      </section>
+
 
       {assumed > 0 && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">

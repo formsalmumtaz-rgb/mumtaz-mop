@@ -64,10 +64,17 @@ export async function quickPrice(
          (select (value #>> '{}')::numeric from settings
            where tenant_id=$1 and key='cost.fuel_price_per_litre'
            order by service_line_id nulls last limit 1) as fuel_price,
+         -- The costing engine already derives AED/km as fuel price / km per litre
+         -- (cost.standard_vehicle_rate_per_km = 0.698 = 3.49 / 5). Read it rather
+         -- than recomputing: a second copy of a number the platform already owns
+         -- is how two figures start disagreeing. mig 108 added exactly such a
+         -- duplicate and mig 110 removed it.
          (select (value #>> '{}')::numeric from settings
-           where tenant_id=$1 and service_line_id is null and key='cost.vehicle_litres_per_100km') as l_per_100,
+           where tenant_id=$1 and key='cost.standard_vehicle_rate_per_km'
+           order by service_line_id nulls last limit 1) as km_rate,
          (select is_assumed from settings
-           where tenant_id=$1 and service_line_id is null and key='cost.vehicle_litres_per_100km') as consumption_assumed,
+           where tenant_id=$1 and key='cost.standard_vehicle_rate_per_km'
+           order by service_line_id nulls last limit 1) as km_rate_assumed,
          (select is_assumed from settings
            where tenant_id=$1 and service_line_id is null and key='pricing.emirate_factor') as factor_assumed
      ), site as (
@@ -80,7 +87,7 @@ export async function quickPrice(
      select cat.*, batch.per_litre as batch_per_litre, cfg.fallback_per_litre,
             cfg.factors, cfg.factor_assumed, cfg.home,
             cfg.labour_rate, cfg.overhead_rate, cfg.fuel_price,
-            cfg.l_per_100, cfg.consumption_assumed,
+            cfg.km_rate, cfg.km_rate_assumed,
             site.emirate,
             case when site.loc is not null and (cfg.home->>'lat') is not null
                  then round((st_distance(site.loc,
@@ -133,11 +140,11 @@ export async function quickPrice(
     ? `${crew} x ${hours!.toFixed(2)} h at AED ${Number(r.labour_rate).toFixed(2)}/h + AED ${Number(r.overhead_rate ?? 0).toFixed(2)}/h overhead`
     : "no rate configured — set it in Cost setup";
 
-  // Travel: the round trip from the depot, fuel only.
-  const travelCost = distanceKm != null && r.fuel_price != null && r.l_per_100 != null
-    ? +((distanceKm * 2) * (Number(r.l_per_100) / 100) * Number(r.fuel_price)).toFixed(2) : null;
-  if (travelCost != null && r.consumption_assumed) {
-    assumptions.push(`fuel uses an ASSUMED ${Number(r.l_per_100)} L/100km — no reconciled fuel log exists yet`);
+  // Travel: the round trip from the depot at the costing engine's own per-km rate.
+  const travelCost = distanceKm != null && r.km_rate != null
+    ? +((distanceKm * 2) * Number(r.km_rate)).toFixed(2) : null;
+  if (travelCost != null && r.km_rate_assumed) {
+    assumptions.push(`vehicle running cost of AED ${Number(r.km_rate)}/km is ASSUMED`);
   }
 
   const baseTotal = [materialCost, labourCost, travelCost].some((x) => x != null)
@@ -153,10 +160,31 @@ export async function quickPrice(
     material_cost: materialCost, material_basis: materialBasis, price_per_litre: perLitre,
     labour_cost: labourCost, labour_basis: labourBasis,
     distance_km: distanceKm, travel_cost: travelCost,
-    travel_basis: distanceKm != null ? `${distanceKm} km each way from the Ajman depot, round trip` : null,
+    travel_basis: distanceKm != null
+      ? `${distanceKm} km each way from the Ajman depot, round trip at AED ${r.km_rate ?? "?"}/km`
+      : null,
     base_total: baseTotal,
     emirate, emirate_factor: factor,
     suggested_with_factor: baseTotal != null && factor != null ? +(baseTotal * (1 + factor)).toFixed(2) : null,
     assumptions,
   };
+}
+
+// Every preset for a service line, costed, for the picker. One round trip per
+// preset is fine at this size (18 categories) and keeps the costing in ONE place
+// rather than duplicating the SQL into a list query.
+export async function quickPriceAll(
+  tenantId: string, opts: { customerId?: string; prefix?: string } = {},
+): Promise<QuickPrice[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select code from service_categories
+      where tenant_id=$1 and is_active
+        and ($2::text is null or code like $2 || '%')
+      order by code`, [tenantId, opts.prefix ?? null]);
+  const out: QuickPrice[] = [];
+  for (const r of rows as { code: string }[]) {
+    const q = await quickPrice(tenantId, r.code, { customerId: opts.customerId });
+    if (q) out.push(q);
+  }
+  return out;
 }
