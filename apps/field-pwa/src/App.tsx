@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import imageCompression from "browser-image-compression";
+import { MyDay } from "./MyDay";
+import { HrRequest } from "./HrRequest";
 import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption } from "./db";
 import { calcDose } from "./dose";
 import { signIn, signOutLocal, getSession, authedFetch, RevokedError, authConfigured } from "./auth";
@@ -49,6 +51,11 @@ export function App() {
   const [showPreflight, setShowPreflight] = useState(false);
   const [showExpense, setShowExpense] = useState(false);
   const [showFuel, setShowFuel] = useState(false);
+  // §3.7 — the technician's own day, and HR requests.
+  const [showDay, setShowDay] = useState(false);
+  const [showHr, setShowHr] = useState(false);
+  const [myDayCache, setMyDayCache] = useState<{ requests: { id: string; kind: string; status: string; from_date: string | null; reason: string }[] } | null>(null);
+  useEffect(() => { void db.meta.get("myDay").then((m) => setMyDayCache((m?.value as never) ?? null)); }, [showDay]);
 
   useEffect(() => {
     (async () => setAuthed(!!(await getSession())))();
@@ -114,6 +121,20 @@ export function App() {
 
   if (authed === null) return <div className="app"><div className="content"><p className="muted">Loading…</p></div></div>;
   if (!authed) return <LoginScreen revoked={revoked} onDone={() => { setRevoked(false); setAuthed(true); }} />;
+  if (showDay) return (
+    <div className="app"><div className="content">
+      <MyDay base={SYNC_BASE} online={online} jobCount={jobs.length}
+             onBack={() => setShowDay(false)} />
+      <button className="ghost" onClick={() => { setShowDay(false); setShowHr(true); }} style={{ marginTop: ".9rem" }}>
+        🤒 Sick leave or another request
+      </button>
+    </div></div>
+  );
+  if (showHr) return (
+    <div className="app"><div className="content">
+      <HrRequest base={SYNC_BASE} recent={myDayCache?.requests ?? []} onBack={() => { setShowHr(false); setShowDay(true); }} />
+    </div></div>
+  );
   if (showPreflight) return <PreflightScreen online={online} onBack={() => setShowPreflight(false)} />;
   if (showExpense) return <AddExpenseScreen onBack={() => setShowExpense(false)} />;
   if (showFuel) return <LogFuelScreen onBack={() => setShowFuel(false)} />;
@@ -179,6 +200,9 @@ export function App() {
             <div className="row" style={{ marginBottom: ".7rem", gap: ".5rem", flexWrap: "wrap" }}>
               <button className="ghost" onClick={doSync} disabled={!online} style={{ width: "auto" }}>
                 Refresh
+              </button>
+              <button onClick={() => setShowDay(true)} style={{ width: "auto" }}>
+                ☀️ My day
               </button>
               <button className="ghost" onClick={() => setShowPreflight(true)} style={{ width: "auto" }}>
                 Pre-flight

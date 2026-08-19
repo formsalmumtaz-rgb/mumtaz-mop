@@ -114,7 +114,11 @@ export async function POST(req: Request) {
     ppe: (b.ppe as Record<string, boolean>) ?? {},
     equipment: (b.equipment as Record<string, boolean>) ?? {},
     attendance: (b.attendance as Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>) ?? {},
-    fuel_band: b.fuel_band != null && [0, 25, 50, 75, 100].includes(Number(b.fuel_band)) ? Number(b.fuel_band) : null,
+    // §3.8 bands. The old list here was [0,25,50,75,100] — four quarters — while
+    // the column now accepts the eight bands actually specified (mig 117). The API
+    // was silently discarding a technician's real reading and storing null.
+    fuel_band: b.fuel_band != null && [0, 10, 20, 40, 60, 80, 99, 100].includes(Number(b.fuel_band))
+      ? Number(b.fuel_band) : null,
     notes: (b.notes as string) ?? null,
     client_uuid: (b.client_uuid as string) ?? null,
     device_time: (b.device_time as string) ?? null,

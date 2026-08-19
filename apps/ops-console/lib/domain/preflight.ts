@@ -95,3 +95,46 @@ export async function upsertPreflight(tenantId: string, actorId: string, p: Pref
     }
   });
 }
+
+// ── §3.7 — the technician's OWN day ─────────────────────────────────────────
+// Separate from the pre-flight above, which only a team lead may submit. This is
+// the individual's record of themselves and they write it themselves.
+export interface TechnicianDayInput {
+  technicianId: string;
+  work_date?: string | null;
+  present?: boolean;
+  uniform?: Record<string, boolean> | null;
+  time_in?: string | null;
+  time_out?: string | null;
+  client_uuid?: string | null;
+  device_time?: string | null;
+}
+
+export async function upsertTechnicianDay(
+  tenantId: string, actorId: string, p: TechnicianDayInput,
+): Promise<{ time_in: string | null; time_out: string | null; hours: string | null }> {
+  return withRequest({ tenantId, actorId }, async (c) => {
+    const { rows } = await c.query(
+      `insert into technician_day
+         (tenant_id, technician_id, work_date, present, uniform, time_in, time_out, client_uuid, device_time)
+       values ($1,$2,coalesce($3::date,current_date),$4,$5::jsonb,$6,$7,$8::uuid,$9)
+       on conflict (tenant_id, technician_id, work_date) do update set
+         present  = excluded.present,
+         uniform  = coalesce(excluded.uniform, technician_day.uniform),
+         -- TIME IN is set ONCE. Re-opening the app at 09:30 must not move a 07:05
+         -- start, or an hour and a half of pay quietly disappears.
+         time_in  = coalesce(technician_day.time_in, excluded.time_in),
+         time_out = coalesce(excluded.time_out, technician_day.time_out),
+         device_time = coalesce(excluded.device_time, technician_day.device_time),
+         updated_at = now()
+       returning time_in::text, time_out::text`,
+      [tenantId, p.technicianId, p.work_date ?? null, p.present ?? true,
+       p.uniform ? JSON.stringify(p.uniform) : null, p.time_in ?? null, p.time_out ?? null,
+       p.client_uuid ?? null, p.device_time ?? null]);
+    const { rows: h } = await c.query(
+      `select hours::text from technician_working_hours
+        where technician_id = $1 and check_date = coalesce($2::date, current_date)`,
+      [p.technicianId, p.work_date ?? null]);
+    return { time_in: rows[0]?.time_in ?? null, time_out: rows[0]?.time_out ?? null, hours: h[0]?.hours ?? null };
+  });
+}
