@@ -10,7 +10,7 @@ Last updated: 19 Aug 2026.
 
 ## 1. WHERE WE ARE
 
-Last updated: **19 Aug 2026**, head **`cf4e4f0`**.
+Last updated: **19 Aug 2026**, head **`31aabcd`**.
 
 - **[FACT] The 583-customer import is DONE and live.** 583 customers on 5-digit
   account numbers (11111-11827), 24 groups, 464 sites, 403 contacts. 16 legacy
@@ -26,7 +26,7 @@ Last updated: **19 Aug 2026**, head **`cf4e4f0`**.
   engagement type · 102/103 area-window settings (owner-ratified) · 105 schedule
   approvals + home-base pin · 106 team_vehicles · 107 category dosage · 108 fuel
   consumption · 109 invoices-are-triggered.
-- **[FACT] Green at `cf4e4f0`:** `tsc` clean, RLS gate passes, `next build`
+- **[FACT] Green at `31aabcd`:** `tsc` clean, RLS gate passes, `next build`
   compiles, worker suite **26/26**.
 - **[FACT] The intermittent suite failure is CLOSED** - root cause proven, see
   `DEBT.md` D-TEST1. An idle-in-transaction session blocked the drain's claim
@@ -51,11 +51,17 @@ Last updated: **19 Aug 2026**, head **`cf4e4f0`**.
 - **§3.4 complete.** Calendar team/shift/area filters · `/schedule/approvals`
   with **24h customer notices gated on approval, not generation** ·
   `/teams/crews` drag-drop, date-effective, persists day-to-day.
-- **§3.5 data + engine, NO UI.** Restaurant A/D carry the owner's numbers (D's
-  150 ml cap is a CHECK constraint), B/C ASSUMED. `lib/domain/quickprice.ts`
-  computes material + labour + travel from the pinned Ajman depot, Dubai uplift
-  as guidance. **The picker still needs wiring.**
-- **§3.6 started.** Invoices are TRIGGERED (mig 109).
+- **§3.5 complete.** All four restaurant presets carry owner-stated numbers
+  (only D's duration/crew remain ASSUMED; its 150 ml cap is a CHECK constraint).
+  `lib/domain/quickprice.ts` + `QuickPricePanel` on `/categories` show dosage,
+  crew, time and the material/labour/travel breakdown, Dubai +15% as guidance.
+  **Correction:** mig 108 had invented `cost.vehicle_litres_per_100km` = 12 when
+  `cost.vehicle_km_per_litre` = 5 already existed unassumed; mig 110 deleted it
+  and travel now reads `cost.standard_vehicle_rate_per_km`.
+- **§3.6 part done.** Invoices are TRIGGERED (mig 109) — the nightly cron
+  prepares, a human issues. The Sharjah F&B attestation charge (mig 112) is
+  editable via settings, overridable per contract, and removable via
+  `attestation_fee_waived`; six branches proven.
 
 ## 2. THE DECISION JUST MADE — 5-digit account numbers (RATIFIED)
 
@@ -180,8 +186,10 @@ in one tap:
 - **DONE:** invoices are triggered, never auto-generated (mig 109). The nightly
   cron prepares; a human issues, which numbers and GL-posts. Two tests pin down
   both halves.
-- **REMAINING:** Sharjah F&B **AED 250 + VAT attestation charge** on the first
-  invoice, **editable AND removable**; **technician invoice at completion**
+- **DONE:** Sharjah F&B AED 250 + VAT attestation charge (mig 112) — settings
+  rate, per-contract override, per-contract waiver, first invoice only,
+  idempotent.
+- **REMAINING:** **technician invoice at completion**
   (prepopulated, adjustable, partial/overpayment accepted, receipt voucher from
   the app); **job status from the app** — completed / cancelled / delayed with
   reason, flowing to ops and the schedule.
