@@ -78,7 +78,28 @@ WORLD · 11487 Nev Real Estate (16 digits) · 11535 Mother & Fetuses Medical Cen
 `Zenith Cafeteria`. All flagged. Say the word and I archive them — `CUST-0009`
 carries 35 test jobs so it cannot simply vanish.
 
-#### 0.6 — Still open from before: should a contract be able to name an outlet?
+#### 0.6 — Two scheduling values I had to assume (§3.3)
+
+First-visit scheduling needs two numbers nobody has ratified. They are seeded
+**ASSUMED**, editable from settings without a deploy, and every suggestion that
+leans on one says so:
+
+- **The working week starts Monday.** This decides what "this week" means when
+  slotting a first visit. If your week starts Sunday or Saturday, say so.
+- **"Near" is 5 km.** A team passing within 5 km of a site counts as near enough
+  to add the first visit to that day as an extra job. Tell me the number you
+  actually work to.
+
+#### 0.7 — 271 customers have no area recorded
+
+First-visit scheduling slots a new contract into the round a team is already
+doing in that area. The area is the **district** on the customer, and 271 of the
+583 imported customers have none — for those the system will say so plainly
+("No area recorded — set the district and the first visit can be slotted into a
+team's existing round") rather than guess. The district is one of the fields the
+profile now prompts for, so this fills in through daily use.
+
+#### 0.8 — Still open from before: should a contract be able to name an outlet?
 
 `contracts` points at a customer, not at a branch. Until that changes, outlets
 that share one trade licence cannot become branches of a single customer without
