@@ -9,6 +9,7 @@
 // looks fine. With auth enforced — how it actually runs — every one of those
 // screens throws. A feature that only works with the guard switched off is not
 // built, and a human reading the diff will not catch it. This will.
+import "./load-env.mjs";   // .env.local when present; the platform's env otherwise
 import { execSync } from "node:child_process";
 import pg from "pg";
 

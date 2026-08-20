@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-// Startup gate for DEBT D6 — refuses to start a console that would serve
+// Auth gate for DEBT D6 — refuses to BUILD or START a console that would serve
 // without a login anywhere but a local development machine.
+//
+// It runs in `prebuild` as well as `predev` because the throw inside
+// authEnforced() otherwise surfaces during static prerendering, as
+// `Error occurred prerendering page "/settings"` — a message that names a page
+// instead of the environment variable that is actually wrong. Deploy logs are
+// read in a hurry; the first line should say what to change.
 //
 // authEnforced() already fails closed and throws on the illegal combination.
 // This runs that SAME function — imported, not restated — before the server
@@ -8,6 +14,7 @@
 // instead of 500-ing on whichever request happens to ask first, and so nobody
 // discovers it from a tunnel. One rule, one place; a gate that reimplemented it
 // would be a second rule waiting to drift.
+import "./load-env.mjs";   // .env.local when present; the platform's env otherwise
 import { authEnforced } from "../lib/auth-flags.ts";
 
 try {

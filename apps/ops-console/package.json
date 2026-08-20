@@ -6,14 +6,13 @@
   "scripts": {
     "dev": "next dev -p 3100",
     "lint:rls": "node scripts/rls-gate.mjs",
-    "prebuild": "node scripts/rls-gate.mjs && node --env-file=../../.env.local scripts/perm-gate.mjs",
+    "prebuild": "node scripts/rls-gate.mjs && node scripts/perm-gate.mjs && node --import tsx scripts/auth-gate.mjs",
     "build": "next build",
     "start": "AUTH_REQUIRED=true next start -p 3100",
     "typecheck": "tsc --noEmit",
-    "lint:perms": "node --env-file=../../.env.local scripts/perm-gate.mjs",
-    "predev": "node --env-file=../../.env.local --import tsx scripts/auth-gate.mjs",
-    "prestart": "AUTH_REQUIRED=true node --env-file=../../.env.local --import tsx scripts/auth-gate.mjs",
-    "lint:auth": "node --env-file=../../.env.local --import tsx scripts/auth-gate.mjs"
+    "lint:perms": "node scripts/perm-gate.mjs",
+    "predev": "node --import tsx scripts/auth-gate.mjs",
+    "lint:auth": "node --import tsx scripts/auth-gate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

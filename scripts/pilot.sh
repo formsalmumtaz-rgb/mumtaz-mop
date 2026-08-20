@@ -54,9 +54,11 @@ $PNPM --filter @mop/field-pwa build  >/tmp/mop-pilot-field-build.log 2>&1 \
 
 echo "2/5  Starting the console on :3100 WITH LOGIN ENFORCED…"
 # Belt and braces. Since D6 was closed, `npm run start` forces AUTH_REQUIRED=true
-# itself and prestart refuses to boot on any illegal combination — this override
-# is no longer the only thing standing between the console and the open internet,
+# itself and authEnforced() fails closed on every request path — this override is
+# no longer the only thing standing between the console and the open internet,
 # which is exactly the point. It stays because it costs nothing and states intent.
+# The gate is run explicitly first so a misconfigured machine stops here.
+( cd apps/ops-console && npm run lint:auth ) || exit 1
 ( cd apps/ops-console && AUTH_REQUIRED=true npm run start ) >"$RUNDIR/console.log" 2>&1 &
 pids+=($!)
 wait_for http://localhost:3100/login "console"
