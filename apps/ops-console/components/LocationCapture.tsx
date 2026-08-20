@@ -1,6 +1,12 @@
 "use client";
 import { useState, useTransition } from "react";
-import type { ResolvedLocation } from "@/app/customers/location-actions";
+// NOTHING is imported from the actions module here — not the action, not even
+// a type. That module imports requirePermission, which imports lib/auth, which
+// imports "server-only" and pg; pulling any of it into the client graph breaks
+// hydration for the WHOLE route, and the only symptom is Next's streaming
+// scripts failing with "Cannot read properties of null (reading parentNode)".
+// The action arrives as a prop; the types come from a neutral module.
+import type { ResolvedLocation, ResolveLocationResult } from "@/lib/domain/location-types";
 
 // Item 2 — capture the pin AT CREATION, because item 12 is what happens when
 // you do not: a technician standing outside a building the system cannot point
@@ -11,17 +17,21 @@ import type { ResolvedLocation } from "@/app/customers/location-actions";
 //   · the link someone sent them  → paste it
 // Either one fills street, area, district, emirate and country from the geocode,
 // so the address is never typed twice (Art. VI).
-export function LocationCapture({ resolve, compact = false }: {
-  resolve: (i: { text?: string; lat?: number; lng?: number }) =>
-    Promise<{ ok: true; value: ResolvedLocation } | { ok: false; error: string }>;
-  compact?: boolean;
-}) {
+async function resolve(i: { text?: string; lat?: number; lng?: number }): Promise<ResolveLocationResult> {
+  const r = await fetch("/api/location/resolve", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(i),
+  });
+  if (!r.ok && r.status !== 200) return { ok: false, error: "Could not reach the server. Try again." };
+  return (await r.json()) as ResolveLocationResult;
+}
+
+export function LocationCapture({ compact = false }: { compact?: boolean }) {
   const [link, setLink] = useState("");
   const [loc, setLoc] = useState<ResolvedLocation | null>(null);
   const [err, setErr] = useState("");
   const [pending, start] = useTransition();
 
-  const apply = (r: Awaited<ReturnType<typeof resolve>>) => {
+  const apply = (r: ResolveLocationResult) => {
     if (r.ok) { setLoc(r.value); setErr(""); } else { setErr(r.error); setLoc(null); }
   };
 

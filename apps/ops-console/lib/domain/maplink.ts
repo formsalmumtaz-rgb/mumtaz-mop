@@ -13,16 +13,8 @@ import "server-only";
 //     Addresses are built from address_components here, and a plus code is
 //     never printed to a customer.
 
-export interface LatLng { lat: number; lng: number }
-
-export interface AddressParts {
-  street: string | null;      // route + street_number
-  area: string | null;        // sublocality / neighbourhood
-  district: string | null;    // locality (the town/city)
-  emirate: string | null;     // administrative_area_level_1
-  country: string | null;
-  formatted: string | null;   // built from the parts above, never a plus code
-}
+export type { LatLng, AddressParts } from "./location-types";
+import type { LatLng, AddressParts } from "./location-types";
 
 // Coordinates that appear directly in the URL. Ordered most reliable first:
 // !3d/!4d is the place's own pin, @lat,lng is the map viewport centre (close

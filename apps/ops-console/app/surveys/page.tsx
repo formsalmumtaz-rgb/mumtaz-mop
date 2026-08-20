@@ -2,7 +2,7 @@ import Link from "next/link";
 import { RowLink } from "@/components/RowLink";
 import { ListToolbar } from "@/components/ListControls";
 import { getTenantId } from "@/lib/tenant";
-import { listCustomers } from "@/lib/domain/customers";
+import { listCustomersForPicker } from "@/lib/domain/customers";
 import { listTechnicians } from "@/lib/domain/technicians";
 import { listSurveys } from "@/lib/domain/survey";
 import { createSurveyAction } from "./actions";
@@ -11,10 +11,16 @@ import { CustomerPicker } from "@/components/CustomerPicker";
 import { EngagementChoice } from "@/components/EngagementChoice";
 import { listFrequencies } from "@/lib/domain/reference";
 import { LocationCapture } from "@/components/LocationCapture";
-import { resolveLocationAction } from "@/app/customers/location-actions";
 import { getServiceLineId, listFacilityTypes } from "@/lib/domain/reference";
 import { listStaffForPicker } from "@/lib/domain/technicians";
 
+// NOTE — there is deliberately no loading.tsx for this route. It made the page
+// a streamed Suspense boundary, and Next put its <template id="P:…">
+// placeholders inside the property-type <select>. The HTML parser drops
+// anything that is not an <option> in there, so the placeholders vanished, the
+// $RS() calls that targeted them threw, and hydration for the whole route died
+// silently — every control on the page rendered but nothing responded. See
+// loading.tsx.disabled.
 export const dynamic = "force-dynamic";
 
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -31,7 +37,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
   const [allSurveys, customers, technicians, facilityTypes, frequencies] = await Promise.all([
-    listSurveys(tenantId), listCustomers(tenantId),
+    listSurveys(tenantId), listCustomersForPicker(tenantId),
     // Item 2 — the surveyor list is the whole staff list, office roles first:
     // a survey is usually booked by whoever is at a desk, not by a technician.
     listStaffForPicker(tenantId), listFacilityTypes(tenantId, sl), listFrequencies(tenantId, sl),
@@ -109,7 +115,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
                   without one is a technician outside a building they cannot find. */}
               <div className="sm:col-span-3">
                 <span className="text-xs font-medium text-muted">Pin the location</span>
-                <div className="mt-1"><LocationCapture resolve={resolveLocationAction} /></div>
+                <div className="mt-1"><LocationCapture /></div>
               </div>
             </div>
             <input type="hidden" name="new_customer_type" value="B2B" />

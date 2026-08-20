@@ -1,0 +1,14 @@
+// DISABLED — see the note in app/surveys/page.tsx.
+//
+// A route-level loading.tsx turns the page into a streamed Suspense boundary.
+// With this file present, Next emitted its streaming placeholders
+// (<template id="P:…">) INSIDE the property-type <select>. The HTML parser
+// discards anything that is not an <option> inside a <select>, so those
+// placeholders never existed in the DOM, every $RS() call that targeted one
+// threw "Cannot read properties of null (reading 'parentNode')", and hydration
+// for the WHOLE route died — React never attached and the form rendered as
+// inert HTML. Nothing in the markup was invalid; the placeholders simply landed
+// somewhere the parser refuses to keep them.
+//
+// Restore only alongside a fix that keeps boundaries out of <select> — e.g.
+// rendering the long option lists from a client component.

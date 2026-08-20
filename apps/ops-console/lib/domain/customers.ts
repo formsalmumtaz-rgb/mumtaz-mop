@@ -400,3 +400,23 @@ export async function clearRequiredFlags(
     });
   });
 }
+
+/**
+ * The picker's list: id, account number, name. Nothing else.
+ *
+ * listCustomers returns eleven columns for 600 customers, and CustomerPicker is
+ * a client component — so every one of those columns crossed into the browser in
+ * the RSC payload on every page carrying a picker. Three columns is what the
+ * control actually renders, and it cuts the payload by roughly two thirds.
+ */
+export async function listCustomersForPicker(
+  tenantId: string,
+): Promise<{ id: string; code: string | null; trade_name: string | null; legal_name: string | null }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, trade_name, legal_name
+       from customers
+      where tenant_id = $1 and archived_at is null
+      order by code nulls last`,
+    [tenantId]);
+  return rows as { id: string; code: string | null; trade_name: string | null; legal_name: string | null }[];
+}
