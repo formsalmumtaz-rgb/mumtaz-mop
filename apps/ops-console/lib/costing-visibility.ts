@@ -22,7 +22,7 @@ import { canSeeProfit } from "./auth";
 export const COST_FIELDS = [
   "est_cost", "gross_profit", "est_material_cost", "est_labour_hours",
   "labour_rate", "vehicle_rate", "overhead_rate", "overhead_enabled",
-  "material_rate_spray_per_m2", "material_rate_gel_per_m2",
+  "material_rate_spray_per_m2", "material_rate_gel_per_m2", "material_floor_aed",
   "target_margin", "margin", "margin_pct", "cost", "direct_cost",
   "est_distance_km",
 ] as const;

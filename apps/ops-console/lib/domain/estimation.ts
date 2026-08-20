@@ -436,6 +436,12 @@ export interface LineDefaults {
   distance_basis: string;         // human basis: route computed vs company default
   material_rate_spray_per_m2: number;  // Σ qty/m² × landed cost (visit_type=spray)
   material_rate_gel_per_m2: number;
+  // Item 6 — THE FLOOR. A spray visit is at minimum one mix: 50 ml of
+  // concentrate plus its adjuvant, mixed into water and carried to site. The
+  // per-m² rate produced 0.03 AED of material for a small restaurant, which is
+  // not a cheap visit — it is an impossible one. The rate only ADDS above this.
+  material_floor_aed: number;
+  material_floor_basis: string;
   labour_rate: number;
   vehicle_rate: number;
   overhead_enabled: boolean;
@@ -508,6 +514,27 @@ async function getLineDefaultsUnredacted(
        (select num from sv where key='cost.target_margin_default') as target_margin,
        (select value from sv where key='pricing.reference_rates') as reference_rates,
        (select rate from rates where visit_type='spray') as rate_spray,
+       -- One mix of the service line's general spray, at real landed batch cost:
+       -- dose_rate of the recipe's product, plus every adjuvant at its per-litre
+       -- rate scaled to the mix's water volume.
+       (select round((
+          coalesce(v.dose_rate, 0) * coalesce(bc.unit_cost, 0)
+          + coalesce((select sum(a.dose_rate * coalesce(abc.unit_cost, 0))
+                        from treatment_recipe_adjuvants a
+                        left join lateral (
+                          select ib.unit_cost from item_batches ib
+                           where ib.item_id = a.item_id and ib.unit_cost is not null
+                           order by ib.received_at desc nulls last limit 1) abc on true
+                       where a.version_id = v.id), 0)
+        )::numeric, 2)
+        from treatment_recipe_versions v
+        join treatment_recipes r on r.id = v.recipe_id
+        left join lateral (
+          select ib.unit_cost from item_batches ib
+           where ib.item_id = v.product_item_id and ib.unit_cost is not null
+           order by ib.received_at desc nulls last limit 1) bc on true
+       where r.tenant_id = $1 and r.code = 'spray_general' and v.effective_to is null
+       order by v.version_no desc limit 1) as one_mix_cost,
        (select rate from rates where visit_type='gel') as rate_gel,
        (select case when pin is not null and (select value from sv where key='cost.base_location') is not null
           then st_distancesphere(
@@ -538,6 +565,10 @@ async function getLineDefaultsUnredacted(
       ? `${straight.toFixed(1)} km straight line × ${roadFactor} road factor × 2 (site pin → base)`
       : `company default ${Number(r.default_km ?? 16)} km one-way — no site pin on this customer`,
     material_rate_spray_per_m2: Number(r.rate_spray ?? 0),
+    material_floor_aed: Number(r.one_mix_cost ?? 0),
+    material_floor_basis: r.one_mix_cost != null
+      ? `minimum one mix — 50 ml concentrate + adjuvant at landed batch cost`
+      : `no general spray recipe set up, so no floor could be computed`,
     material_rate_gel_per_m2: Number(r.rate_gel ?? 0),
     labour_rate: Number(r.labour_rate ?? 0),
     vehicle_rate: Number(r.vehicle_rate ?? 0),

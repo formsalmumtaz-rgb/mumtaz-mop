@@ -18,6 +18,8 @@ export interface LineDefaultsProps {
   distance_basis: string;
   material_rate_spray_per_m2?: number;
   material_rate_gel_per_m2?: number;
+  material_floor_aed?: number;
+  material_floor_basis?: string;
   target_margin?: number | null;
   reference_rates: { label: string; aed: number }[];
   assumed_keys: string[];
@@ -79,10 +81,16 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
   // suggestion comes from the server instead (one number, no cost with it).
   const canCost = !!rates;
   const materialRate = defaults?.material_rate_spray_per_m2 ?? 0;
+  // Item 6 — the per-m² rate ADDS ABOVE a floor, it does not replace it. A spray
+  // visit is at minimum one mix, so a small restaurant cannot cost 0.03 AED of
+  // material however small its floor area is.
+  const floor = defaults?.material_floor_aed ?? 0;
   useEffect(() => {
     if (!defaults || matTouched.current) return;
-    if (area > 0 && materialRate > 0) setMat(String(Math.round(area * materialRate * 100) / 100));
-  }, [area, materialRate, defaults]);
+    const byArea = area > 0 && materialRate > 0 ? area * materialRate : 0;
+    const v = Math.max(floor, byArea);
+    if (v > 0) setMat(String(Math.round(v * 100) / 100));
+  }, [area, materialRate, defaults, floor]);
 
   const revenue = useMemo(() => {
     const mv: Record<string, number> = {};
@@ -203,9 +211,13 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
             onChange={(e) => { matTouched.current = true; setMat(e.target.value); }}
             className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" />
           {defaults && basisNote(
-            materialRate > 0
-              ? (area > 0 ? `recipe: ${fmt(area, 0)} m² × ${fmt(materialRate, 4)}/m² (real batch costs)` : `enter an area above — recipe costs ${fmt(materialRate, 4)}/m²`)
-              : "no consumption recipe for this line — enter if chemicals will be used")}
+            floor > 0 && area * materialRate <= floor
+              ? `${defaults?.material_floor_basis ?? "minimum one mix"} — AED ${fmt(floor)}. The per-m² rate only adds above this.`
+              : materialRate > 0
+                ? (area > 0
+                    ? `${fmt(area, 0)} m² × ${fmt(materialRate, 4)}/m² at real batch costs, above the one-mix floor of AED ${fmt(floor)}`
+                    : `enter an area above — recipe costs ${fmt(materialRate, 4)}/m² above a floor of AED ${fmt(floor)}`)
+                : "no consumption recipe for this line — enter if chemicals will be used")}
         </label>
       </div>}
 
