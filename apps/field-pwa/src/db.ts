@@ -101,6 +101,9 @@ class FieldDB extends Dexie {
   media!: Table<MediaItem, string>;
   meta!: Table<MetaItem, string>;
   preflight!: Table<PreflightItem, string>;
+  // Closing the day happens in a yard, at the end of a shift, where the signal
+  // is worst. It queues exactly like the morning does (T3).
+  postflight!: Table<PreflightItem, string>;
   constructor() {
     super("mop-field");
     this.version(1).stores({
@@ -117,6 +120,7 @@ class FieldDB extends Dexie {
         });
       });
     this.version(3).stores({ preflight: "check_date, synced" });
+    this.version(4).stores({ postflight: "check_date, synced" });
   }
 }
 
@@ -283,14 +287,52 @@ export async function getLocalPreflight(): Promise<PreflightItem | undefined> {
   return db.preflight.get(new Date().toISOString().slice(0, 10));
 }
 
+// The end of the day, queued the same way as the start of it. Keyed by date so
+// a lead who saves, counts a bit more and saves again just overwrites; the
+// server upserts. A confirmation, once queued, is never downgraded by a later
+// unconfirmed save — the same rule the server applies.
+export async function savePostflightLocal(payload: Record<string, unknown>): Promise<void> {
+  const check_date = new Date().toISOString().slice(0, 10);
+  const existing = await db.postflight.get(check_date);
+  const alreadyConfirmed = (existing?.payload as { accountability_confirmed?: boolean } | undefined)?.accountability_confirmed === true;
+  await db.postflight.put({
+    check_date,
+    payload: { ...payload, check_date,
+      accountability_confirmed: alreadyConfirmed || payload.accountability_confirmed === true },
+    device_time: new Date().toISOString(), synced: 0, created_at: new Date().toISOString(),
+  });
+}
+
+export async function syncPostflight(baseUrl: string): Promise<{ uploaded: number }> {
+  const pending = await db.postflight.where("synced").equals(0).toArray();
+  let uploaded = 0;
+  for (const p of pending) {
+    const res = await authedFetch(`${baseUrl}/api/field/postflight`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...p.payload, device_time: p.device_time }),
+    });
+    if (res.ok) { await db.postflight.update(p.check_date, { synced: 1 }); uploaded++; }
+  }
+  return { uploaded };
+}
+
+export async function getLocalPostflight(): Promise<PreflightItem | undefined> {
+  return db.postflight.get(new Date().toISOString().slice(0, 10));
+}
+
 // Honest sync status (T6): everything still waiting to reach the server, plus the
 // last successful sync. Drives the status indicator; nothing is hidden.
 export async function syncStatus(): Promise<{ events: number; media: number; preflight: number; total: number; lastSync?: string }> {
-  const [events, media, preflight, last] = await Promise.all([
+  const [events, media, preflight, postflight, last] = await Promise.all([
     db.outbox.where("synced").equals(0).count(),
     db.media.where("synced").equals(0).count(),
     db.preflight.where("synced").equals(0).count(),
+    db.postflight.where("synced").equals(0).count(),
     db.meta.get("lastSync"),
   ]);
-  return { events, media, preflight, total: events + media + preflight, lastSync: last?.value as string | undefined };
+  // The day-close counts under "pre-flight" in the indicator: to a technician
+  // they are the same thing — a checklist waiting to reach the office.
+  return { events, media, preflight: preflight + postflight,
+           total: events + media + preflight + postflight,
+           lastSync: last?.value as string | undefined };
 }

@@ -4,7 +4,7 @@ import imageCompression from "browser-image-compression";
 import { MyDay } from "./MyDay";
 import { HrRequest } from "./HrRequest";
 import { CloseDay } from "./CloseDay";
-import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, uuid, type LocalJob, type InspectionOption, type DeclaredStockLine, type VanStockLine } from "./db";
+import { db, enqueue, syncStatus, syncPull, syncUp, syncMedia, savePreflightLocal, syncPreflight, getLocalPreflight, syncPostflight, uuid, type LocalJob, type InspectionOption, type DeclaredStockLine, type VanStockLine } from "./db";
 import { calcDose } from "./dose";
 import { MaterialsCard } from "./Materials";
 import { ScreenBar } from "./ScreenBar";
@@ -110,6 +110,7 @@ export function App() {
         const ev = await syncUp(SYNC_BASE);
         const md = await syncMedia(SYNC_BASE);
         await syncPreflight(SYNC_BASE);
+        await syncPostflight(SYNC_BASE);
         if (ev.uploaded + md.uploaded > 0) setSyncMsg(`Uploaded ${ev.uploaded} events, ${md.uploaded} media`);
         setSyncErr("");
       } catch (e) {
@@ -1097,8 +1098,12 @@ function AddExpenseScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-// Item 3B — Log Fuel: amount, litres, which vehicle, receipt photo. Posts to
-// the vehicle fuel ledger (offline-safe, idempotent).
+// Item 3B — Log Fuel: which vehicle, litres, amount paid. Posts to the vehicle
+// fuel ledger (offline-safe, idempotent).
+//
+// No receipt photo: the pump slip is not what this record is for. The figures
+// are what feed the vehicle's running cost, and asking for a photo on every
+// fill was one more thing to hold up a technician at a forecourt.
 function LogFuelScreen({ onBack }: { onBack: () => void }) {
   const pf = useLiveQuery(async () =>
     (await db.meta.get("preflightData"))?.value as { vehicles?: { id: string; label: string }[] } | undefined, [], undefined);
@@ -1106,16 +1111,11 @@ function LogFuelScreen({ onBack }: { onBack: () => void }) {
   const [vehicleId, setVehicleId] = useState("");
   const [litres, setLitres] = useState("");
   const [amount, setAmount] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
   const [msg, setMsg] = useState("");
 
   const save = async () => {
     if (!vehicleId || !litres || !amount) return;
     const clientId = uuid();
-    if (photo) {
-      const compressed = await imageCompression(photo, { maxWidthOrHeight: 1600, maxSizeMB: 0.2, fileType: "image/jpeg" });
-      await db.media.add({ id: uuid(), job_id: clientId, kind: "expense_receipt", blob: compressed, created_at: new Date().toISOString(), synced: 0 });
-    }
     await enqueue("fuel.logged", clientId, {
       client_uuid: clientId,
       vehicle_id: vehicleId,
@@ -1135,23 +1135,21 @@ function LogFuelScreen({ onBack }: { onBack: () => void }) {
           <div className="row" style={{ flexWrap: "wrap", gap: ".4rem", margin: ".4rem 0 .6rem" }}>
             {vehicles.map((v) => (
               <button key={v.id} type="button" className={vehicleId === v.id ? "" : "ghost"}
-                style={{ width: "auto", padding: ".5rem .8rem", minHeight: 40 }}
+                style={{ width: "auto", padding: ".5rem .8rem", minHeight: 48 }}
                 onClick={() => setVehicleId(vehicleId === v.id ? "" : v.id)}>{v.label}</button>
             ))}
             {vehicles.length === 0 && <span className="muted">Open Pre-flight once online to load the vehicle list.</span>}
           </div>
-          <div className="row" style={{ gap: ".5rem" }}>
-            <label className="muted" style={{ flex: 1 }}>Litres filled
-              <input type="number" inputMode="decimal" value={litres} onChange={(e) => setLitres(e.target.value)} /></label>
-            <label className="muted" style={{ flex: 1 }}>Amount paid (AED)
-              <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
+          <div className="row" style={{ gap: ".5rem", alignItems: "flex-end" }}>
+            <label className="muted" style={{ flex: 1, display: "block" }}>Litres filled
+              <input type="number" inputMode="decimal" value={litres} onChange={(e) => setLitres(e.target.value)}
+                     style={{ width: "100%", minHeight: 52 }} /></label>
+            <label className="muted" style={{ flex: 1, display: "block" }}>Amount paid (AED)
+              <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)}
+                     style={{ width: "100%", minHeight: 52 }} /></label>
           </div>
-          <label className="muted">Receipt photo
-            <input type="file" accept="image/*" capture="environment"
-              onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
-          </label>
           {msg && <p className="muted">{msg}</p>}
-          <button onClick={save} disabled={!vehicleId || !litres || !amount}>Log fuel</button>
+          <button onClick={save} disabled={!vehicleId || !litres || !amount} style={{ marginTop: ".7rem" }}>Log fuel</button>
         </div>
       </div>
     </div>

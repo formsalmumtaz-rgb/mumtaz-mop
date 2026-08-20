@@ -47,6 +47,18 @@ export const cashCollector: Consumer = {
     // The voucher the technician hands over is this receipt: numbered by the
     // document counter inside fn_record_receipt, and now in the books too.
     //
+    // Who physically took the money (mig 134). The actor is the login the device
+    // authenticated as; the technician is whoever that login operates as. Stamped
+    // here rather than typed, so it cannot be got wrong or left out.
+    await c.query(
+      `update receipts set collected_by_technician_id = t.id
+         from technicians t
+        where receipts.id = $1
+          and t.tenant_id = receipts.tenant_id
+          and t.user_id = $2`,
+      [r[0].id, ev.envelope.actor_id ?? null],
+    );
+
     // The RECEIPT is the primary fact — a technician took money and the customer
     // has the voucher. Posting is downstream of that. If the ledger cannot accept
     // it yet (a tenant with no chart of accounts configured), the receipt must
