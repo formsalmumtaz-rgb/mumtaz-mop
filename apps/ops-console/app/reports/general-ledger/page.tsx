@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getGeneralLedger } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function GeneralLedgerPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const sp = await searchParams;
   const tenantId = await getTenantId();
   const lines = await getGeneralLedger(tenantId, { from: sp.from, to: sp.to });

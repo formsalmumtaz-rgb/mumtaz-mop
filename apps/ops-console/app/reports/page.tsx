@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,9 @@ const REPORTS = [
   ["Revenue", "/reports/revenue", "Recognised revenue by month and by customer."],
 ];
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  await requireView("report.view");   // the index lists the financial reports
+
   return (
     <div className="space-y-6">
       <div>

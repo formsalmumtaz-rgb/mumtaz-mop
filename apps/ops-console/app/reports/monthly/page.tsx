@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { scopedRead } from "@/lib/rls";
-import { canSeeProfit } from "@/lib/auth";
+import { canSeeProfit, requireView } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 
 // Vision P4 — MONTHLY operations pack. Deterministic aggregates with the
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function MonthlyReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requireView("report.financial");   // carries cost and margin
   const sp = await searchParams;
   const tenantId = await getTenantId();
   const showProfit = await canSeeProfit();

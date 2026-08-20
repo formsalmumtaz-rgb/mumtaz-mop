@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getRevenueByMonth, getRevenueByCustomer } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 export default async function RevenuePage() {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const tenantId = await getTenantId();
   const [byMonth, byCustomer] = await Promise.all([getRevenueByMonth(tenantId), getRevenueByCustomer(tenantId)]);
 

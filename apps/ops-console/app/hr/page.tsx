@@ -18,7 +18,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export default async function HrPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  await requireView("technician.edit");
+  await requireView("hr.view")   /* was technician.edit, which operations holds — HR is barred to that role */;
   const tenantId = await getTenantId();
   const status = sp.status && ["submitted", "approved", "declined"].includes(sp.status) ? sp.status : undefined;
   const from = sp.from ?? monthStart(), to = sp.to ?? today();

@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getBalanceSheet } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default async function BalanceSheetPage({ searchParams }: { searchParams: Promise<{ as_of?: string }> }) {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const sp = await searchParams;
   const asOf = sp.as_of || today();
   const tenantId = await getTenantId();

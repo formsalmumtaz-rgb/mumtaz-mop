@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { scopedRead } from "@/lib/rls";
 import { PageHeader } from "@/components/ui";
+import { requireView } from "@/lib/auth";
 
 // Vision P4 — DAILY operations report. Every tile states its formula and
 // drills to the raw rows (traceability principle). Deterministic SQL only.
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function DailyReportPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  await requireView("report.view");   // operational report
   const sp = await searchParams;
   const tenantId = await getTenantId();
   const date = (sp.date ?? "").match(/^\d{4}-\d{2}-\d{2}$/) ? sp.date! : new Date().toISOString().slice(0, 10);

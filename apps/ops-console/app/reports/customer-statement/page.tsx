@@ -2,11 +2,13 @@ import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
 import { getCustomerStatement } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function CustomerStatementPage({ searchParams }: { searchParams: Promise<{ customer?: string }> }) {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const { customer } = await searchParams;
   const tenantId = await getTenantId();
   const customers = await listCustomers(tenantId);

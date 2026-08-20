@@ -33,7 +33,11 @@ export default async function SurveyDetail({ params, searchParams }: { params: P
   const isDraft = header.status === "draft";
   const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const margin = header.revenue > 0 ? ((header.gross_profit / header.revenue) * 100).toFixed(1) + "%" : "—";
-  const rateProps = {
+  // Built only when the session may see cost. Passing this object at all is how
+  // the labour, vehicle and overhead rates reached the browser: LineForm is a
+  // client component, so its props travel in the RSC payload whether or not the
+  // page renders them.
+  const rateProps = !showProfit ? undefined : {
     labour: Number(rates.labour_rate ?? 0), vehicle: Number(rates.vehicle_rate ?? 0),
     overheadOn: rates.overhead_enabled, overhead: Number(rates.overhead_rate ?? 0),
   };

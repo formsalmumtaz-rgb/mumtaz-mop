@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getProfitAndLoss } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -8,6 +9,7 @@ const yearStart = () => new Date().getFullYear() + "-01-01";
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default async function ProfitLossPage({ searchParams }: { searchParams: Promise<{ from?: string; to?: string }> }) {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const sp = await searchParams;
   const from = sp.from || yearStart();
   const to = sp.to || today();

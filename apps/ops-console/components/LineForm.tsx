@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 interface Opt { id: string; name: string | null }
 interface ModelOpt { id: string; name: string; model_type: string; formula_spec?: { base?: number; terms?: { measure_key: string; rate: number }[] } }
+// Absent entirely for a session without profit.view. Not zeroed — absent, so
+// there is nothing to render a misleading 0.00 from and nothing to multiply.
 interface Rates { labour: number; vehicle: number; overheadOn: boolean; overhead: number }
 
 // Flow item 5 — engine-computed prefills. Every value here arrives computed
@@ -14,9 +16,9 @@ export interface LineDefaultsProps {
   labour_hours: number;
   round_trip_km: number;
   distance_basis: string;
-  material_rate_spray_per_m2: number;
-  material_rate_gel_per_m2: number;
-  target_margin: number | null;
+  material_rate_spray_per_m2?: number;
+  material_rate_gel_per_m2?: number;
+  target_margin?: number | null;
   reference_rates: { label: string; aed: number }[];
   assumed_keys: string[];
 }
@@ -36,10 +38,15 @@ function price(mt: string, unit: number, measure: number, spec: ModelOpt["formul
 // prefill: recipe per-m² rate × area. Matches the common measure key names.
 const AREA_KEY = /area|sqm|m2|sq_m/i;
 
-export function LineForm({ action, entityId, idFieldName = "estimate_id", services, models, rates, defaults, showObservedNotes = false, submitLabel = "Add line" }: {
+export function LineForm({ action, entityId, idFieldName = "estimate_id", services, models, rates, defaults, onSuggest, showObservedNotes = false, submitLabel = "Add line" }: {
   action: (fd: FormData) => Promise<void>;
-  entityId: string; idFieldName?: string; services: Opt[]; models: ModelOpt[]; rates: Rates;
+  entityId: string; idFieldName?: string; services: Opt[]; models: ModelOpt[];
+  // Absent for a session without profit.view — the rates never leave the server.
+  rates?: Rates;
   defaults?: LineDefaultsProps;
+  // Server action returning the suggested price ALONE. Used when `rates` is
+  // absent, so the seller still gets a recommendation without the inputs to it.
+  onSuggest?: (i: { labour_hours?: number; distance_km?: number; area_m2?: number }) => Promise<{ suggested: number | null }>;
   showObservedNotes?: boolean; submitLabel?: string;
 }) {
   const [modelId, setModelId] = useState("");
@@ -68,7 +75,10 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
     return AREA_KEY.test(model?.name ?? "") || mt === "per_unit" ? nn(measure) : nn(measure);
   }, [isFormula, model, fMeasures, measure, mt]);
 
-  const materialRate = defaults ? defaults.material_rate_spray_per_m2 : 0;
+  // Sales session: no rates arrived, so no cost can be computed here — and the
+  // suggestion comes from the server instead (one number, no cost with it).
+  const canCost = !!rates;
+  const materialRate = defaults?.material_rate_spray_per_m2 ?? 0;
   useEffect(() => {
     if (!defaults || matTouched.current) return;
     if (area > 0 && materialRate > 0) setMat(String(Math.round(area * materialRate * 100) / 100));
@@ -80,13 +90,30 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
     return price(mt, nn(unit), nn(measure), model?.formula_spec, mv);
   }, [mt, unit, measure, fMeasures, model]);
   const cost = useMemo(() => {
+    if (!rates) return null;
     const c = nn(mat) + rates.labour * nn(hours) + rates.vehicle * nn(km) + (rates.overheadOn ? rates.overhead * nn(hours) : 0);
     return Math.round(c * 100) / 100;
   }, [mat, hours, km, rates]);
-  const margin = revenue > 0 ? ((revenue - cost) / revenue) * 100 : null;
+  const margin = cost != null && revenue > 0 ? ((revenue - cost) / revenue) * 100 : null;
 
   const tm = defaults?.target_margin ?? null;
-  const suggested = tm != null && tm < 1 && cost > 0 ? Math.round((cost / (1 - tm)) * 100) / 100 : null;
+  const localSuggested = tm != null && tm < 1 && cost != null && cost > 0
+    ? Math.round((cost / (1 - tm)) * 100) / 100 : null;
+
+  // Server-computed suggestion for the sales session. Debounced so typing does
+  // not chatter, and it returns a price only — asking the server is the whole
+  // point, because the rates that produce it must not be on this machine.
+  const [remoteSuggested, setRemoteSuggested] = useState<number | null>(null);
+  useEffect(() => {
+    if (canCost || !onSuggest) return;
+    const t = setTimeout(() => {
+      void onSuggest({ labour_hours: nn(hours) || undefined, distance_km: nn(km) || undefined, area_m2: area || undefined })
+        .then((r) => setRemoteSuggested(r.suggested))
+        .catch(() => setRemoteSuggested(null));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [canCost, onSuggest, hours, km, area]);
+  const suggested = canCost ? localSuggested : remoteSuggested;
   const setPrice = (v: number) => {
     if (isFlat || !isFormula) setUnit(String(v));
   };
@@ -139,8 +166,10 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
           {suggested != null && (
             <button type="button" onClick={() => setPrice(suggested)}
               className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800 hover:bg-emerald-100"
-              title={`Covers the computed cost at the ${((tm ?? 0) * 100).toFixed(0)}% target margin — click to use`}>
-              Suggested {fmt(suggested)} at {((tm ?? 0) * 100).toFixed(0)}%{assumed("cost.target_margin_default") ? " (assumed)" : ""}
+              title={canCost
+                ? `Covers the computed cost at the ${((tm ?? 0) * 100).toFixed(0)}% target margin — click to use`
+                : "The price the engine recommends for this line — click to use"}>
+              Suggested {fmt(suggested)}{canCost ? ` at ${((tm ?? 0) * 100).toFixed(0)}%` : ""}{canCost && assumed("cost.target_margin_default") ? " (assumed)" : ""}
             </button>
           )}
           {defaults.reference_rates.map((rr) => (
@@ -153,8 +182,11 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
         </div>
       )}
 
-      {/* cost inputs — COMPUTED, shown with their basis, editable (never asked blind) */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* cost inputs — COMPUTED, shown with their basis, editable (never asked
+          blind). Rendered ONLY for a session that may see cost: for a sales
+          session the server fills these from the engine on save, so the line is
+          still costed correctly by someone who never saw the figures. */}
+      {canCost && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="text-sm"><span className="text-neutral-600">Labour hours</span>
           <input name="est_labour_hours" type="number" min="0" step="any" value={hours} onChange={(e) => setHours(e.target.value)} className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" />
           {defaults && basisNote(
@@ -175,7 +207,7 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
               ? (area > 0 ? `recipe: ${fmt(area, 0)} m² × ${fmt(materialRate, 4)}/m² (real batch costs)` : `enter an area above — recipe costs ${fmt(materialRate, 4)}/m²`)
               : "no consumption recipe for this line — enter if chemicals will be used")}
         </label>
-      </div>
+      </div>}
 
       {showObservedNotes && (
         <label className="block text-sm"><span className="text-neutral-600">Observed on site</span>
@@ -184,8 +216,10 @@ export function LineForm({ action, entityId, idFieldName = "estimate_id", servic
 
       <div className="rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-4 py-3 text-sm flex flex-wrap gap-x-6">
         <span>Revenue <span className="font-semibold">AED {fmt(revenue)}</span></span>
-        <span>Est. cost <span className="font-semibold">AED {fmt(cost)}</span></span>
-        <span>Margin <span className={`font-semibold ${margin != null && tm != null && margin < tm * 100 ? "text-red-600" : margin != null ? "text-emerald-700" : ""}`}>{margin == null ? "—" : margin.toFixed(1) + "%"}</span>{tm != null && <span className="text-neutral-400"> (target {(tm * 100).toFixed(0)}%)</span>}</span>
+        {canCost && <>
+          <span>Est. cost <span className="font-semibold">AED {fmt(cost!)}</span></span>
+          <span>Margin <span className={`font-semibold ${margin != null && tm != null && margin < tm * 100 ? "text-red-600" : margin != null ? "text-emerald-700" : ""}`}>{margin == null ? "—" : margin.toFixed(1) + "%"}</span>{tm != null && <span className="text-neutral-400"> (target {(tm * 100).toFixed(0)}%)</span>}</span>
+        </>}
       </div>
       <button className="w-full rounded bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">{submitLabel}</button>
     </form>

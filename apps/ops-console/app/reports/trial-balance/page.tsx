@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { getTenantId } from "@/lib/tenant";
 import { getTrialBalance } from "@/lib/domain/reports";
+import { requireView } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => (n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function TrialBalancePage({ searchParams }: { searchParams: Promise<{ as_of?: string }> }) {
+  await requireView("report.financial");   // financial report — operations must never see the ledger, cost or margin
   const { as_of } = await searchParams;
   const tenantId = await getTenantId();
   const tb = await getTrialBalance(tenantId, as_of);

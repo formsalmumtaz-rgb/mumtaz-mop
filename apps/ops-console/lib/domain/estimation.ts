@@ -1,4 +1,5 @@
 import "server-only";
+import { redactCosting, costVisible } from "../costing-visibility";
 import { scopedRead } from "../rls";
 import { withTenantTx } from "./tx";
 import { audit } from "./audit";
@@ -35,7 +36,10 @@ export async function listEstimates(tenantId: string): Promise<EstimateHeader[]>
       order by e.created_at desc`,
     [tenantId],
   );
-  return rows as EstimateHeader[];
+  // Redacted at the data layer, not the screen: without profit.view the cost and
+  // margin keys are ABSENT from the response, so nothing downstream — server
+  // component, client component prop, or RSC payload — can carry them.
+  return redactCosting(rows as EstimateHeader[]);
 }
 
 export async function listEstimatesForCustomer(tenantId: string, customerId: string): Promise<EstimateHeader[]> {
@@ -50,7 +54,7 @@ export async function listEstimatesForCustomer(tenantId: string, customerId: str
       order by e.created_at desc`,
     [tenantId, customerId],
   );
-  return rows as EstimateHeader[];
+  return redactCosting(rows as EstimateHeader[]);
 }
 
 export interface EstimateLine {
@@ -92,7 +96,10 @@ export async function getEstimate(tenantId: string, id: string): Promise<{ heade
       where l.tenant_id=$1 and l.estimate_id=$2 order by l.seq nulls last, l.created_at`,
     [tenantId, id],
   );
-  return { header: hdr[0] as EstimateHeader, lines: lines as EstimateLine[] };
+  return {
+    header: await redactCosting(hdr[0] as EstimateHeader),
+    lines: await redactCosting(lines as EstimateLine[]),
+  };
 }
 
 export async function createEstimate(
@@ -442,6 +449,20 @@ export async function getLineDefaults(
   tenantId: string, serviceLineId: string, estimateId: string,
   source: "estimates" | "surveys" = "estimates",
 ): Promise<LineDefaults> {
+  // A session without profit.view gets the OPERATIONAL prefills — hours, travel
+  // distance, the basis sentence, the reference rates — and none of the rates
+  // those were costed at. The client component then cannot compute a cost or a
+  // margin, because it never receives the inputs.
+  return redactCosting(await getLineDefaultsUnredacted(tenantId, serviceLineId, estimateId, source));
+}
+
+// The engine's own view — every rate, unredacted. Server-side only, and never
+// returned to a caller that renders: suggestLinePrice uses it to produce one
+// number. Not exported.
+async function getLineDefaultsUnredacted(
+  tenantId: string, serviceLineId: string, estimateId: string,
+  source: "estimates" | "surveys" = "estimates",
+): Promise<LineDefaults> {
   // One round trip: settings + per-m² material rates + the estimate's/survey's
   // site-pin distance (PostGIS straight-line × road factor) in a single query.
   // `source` picks the header table (identical customer/branch shape) — never
@@ -508,7 +529,7 @@ export async function getLineDefaults(
   const roundTrip = Math.round(oneWay * 2 * 10) / 10;
   const speed = Number(r.travel_speed ?? 0);
   const travelHours = speed > 0 ? Math.round((roundTrip / speed) * 100) / 100 : 0;
-  return {
+  const full: LineDefaults = {
     treatment_hours: treat,
     travel_hours: travelHours,
     labour_hours: Math.round((treat + travelHours) * 100) / 100,
@@ -526,6 +547,39 @@ export async function getLineDefaults(
     reference_rates: Array.isArray(r.reference_rates) ? r.reference_rates : [],
     assumed_keys: Array.isArray(r.assumed_keys) ? r.assumed_keys : [],
   };
+  // Raw, by contract — suggestLinePrice needs the real rates to produce the one
+  // number it returns. Nothing that renders may call this.
+  return full;
+}
+
+// The suggested price, and ONLY the suggested price.
+//
+// The estimate screen's suggestion depends on what the user is typing, so it
+// cannot be precomputed — but it must not be computed in the browser either,
+// because that needs the cost rates. So it is computed here, per request, and
+// returns one number. No cost, no margin, no target percentage: knowing "we
+// aim for 70%" is itself margin information, and the role that calls this is
+// the role barred from it.
+export async function suggestLinePrice(
+  tenantId: string, serviceLineId: string, estimateId: string,
+  inputs: { labour_hours?: number; distance_km?: number; material_cost?: number; area_m2?: number },
+  source: "estimates" | "surveys" = "estimates",
+): Promise<{ suggested: number | null }> {
+  const d = await getLineDefaultsUnredacted(tenantId, serviceLineId, estimateId, source);
+  const tm = d.target_margin;
+  if (tm == null || tm >= 1) return { suggested: null };
+  const hours = Number(inputs.labour_hours ?? d.labour_hours) || 0;
+  const km = Number(inputs.distance_km ?? d.round_trip_km) || 0;
+  // The caller may send an AREA instead of a material cost — a session without
+  // profit.view has no per-m² rate to multiply by, so the multiplication happens
+  // here. Operational input in, one price out.
+  const material = inputs.material_cost != null
+    ? Number(inputs.material_cost) || 0
+    : (Number(inputs.area_m2 ?? 0) || 0) * d.material_rate_spray_per_m2;
+  const cost = material + d.labour_rate * hours + d.vehicle_rate * km
+             + (d.overhead_enabled ? d.overhead_rate * hours : 0);
+  if (!(cost > 0)) return { suggested: null };
+  return { suggested: Math.round((cost / (1 - tm)) * 100) / 100 };
 }
 
 // Geocode-and-remember the base departure pin (cost.base_location) from the real

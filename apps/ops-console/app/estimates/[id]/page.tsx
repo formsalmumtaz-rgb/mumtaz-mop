@@ -8,7 +8,7 @@ import { canSeeProfit } from "@/lib/auth";
 import { getEstimate, getPricingGuidance, getLineDefaults, ensureBaseLocation } from "@/lib/domain/estimation";
 import { listCategories } from "@/lib/domain/categories";
 import { LineForm } from "@/components/LineForm";
-import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction, generateQuotationAction } from "../actions";
+import { addLineAction, addLineFromCategoryAction, deleteLineAction, setStatusAction, convertToContractAction, acceptAndConvertAction, generateQuotationAction, suggestLinePriceAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -41,7 +41,16 @@ export default async function EstimateDetail({ params, searchParams }: { params:
   const suggested = tm != null && tm < 1 && header.est_cost > 0 ? header.est_cost / (1 - tm) : null;
   const tryPrice = sp.price != null && sp.price !== "" && !Number.isNaN(Number(sp.price)) ? Number(sp.price) : null;
   const tryMargin = tryPrice != null && tryPrice > 0 ? ((tryPrice - header.est_cost) / tryPrice) * 100 : null;
-  const rateProps = {
+  // Built only when the session may see cost. Passing this object at all is how
+  // the labour, vehicle and overhead rates reached the browser: LineForm is a
+  // client component, so its props travel in the RSC payload whether or not the
+  // page renders them.
+  // Bound to this estimate so the client sends operational inputs only.
+  async function suggestForThisEstimate(i: { labour_hours?: number; distance_km?: number; area_m2?: number }) {
+    "use server";
+    return suggestLinePriceAction(header.id, i);
+  }
+  const rateProps = !showProfit ? undefined : {
     labour: Number(rates.labour_rate ?? 0), vehicle: Number(rates.vehicle_rate ?? 0),
     overheadOn: rates.overhead_enabled, overhead: Number(rates.overhead_rate ?? 0),
   };
@@ -233,7 +242,7 @@ export default async function EstimateDetail({ params, searchParams }: { params:
           <LineForm action={addLineAction} entityId={header.id} idFieldName="estimate_id"
             services={services.map((s) => ({ id: s.id, name: s.name }))}
             models={models.map((m) => ({ id: m.id, name: m.name, model_type: m.model_type, formula_spec: m.formula_spec }))}
-            rates={rateProps} defaults={lineDefaults} />
+            rates={rateProps} onSuggest={suggestForThisEstimate} defaults={lineDefaults} />
         </div>
       ) : (
         <p className="text-sm text-neutral-500">This estimate is {header.status} — reopen to draft to edit lines.</p>

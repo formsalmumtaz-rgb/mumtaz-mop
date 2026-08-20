@@ -1,10 +1,11 @@
 "use server";
+import { costVisible } from "@/lib/costing-visibility";
 import { requirePermission } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getServiceLineId } from "@/lib/domain/reference";
-import { createEstimate, addEstimateLine, addEstimateLineFromCategory, deleteEstimateLine, setEstimateStatus, convertEstimateToContract } from "@/lib/domain/estimation";
+import { createEstimate, addEstimateLine, addEstimateLineFromCategory, deleteEstimateLine, setEstimateStatus, convertEstimateToContract, suggestLinePrice, getLineDefaults } from "@/lib/domain/estimation";
 
 export async function addLineFromCategoryAction(fd: FormData): Promise<void> {
   await requirePermission("estimate.edit");
@@ -57,6 +58,13 @@ export async function addLineAction(fd: FormData): Promise<void> {
   const keys = fd.getAll("measure_key").map(String);
   const vals = fd.getAll("measure_val").map(String);
   keys.forEach((k, i) => { if (k.trim()) measures[k.trim()] = Number(vals[i] ?? "0") || 0; });
+  // Cost inputs are only accepted from a session that may see cost. The sales
+  // role never renders these fields, so anything arriving in them came from a
+  // crafted request — and a zeroed material cost would quietly distort job
+  // costing, contract profitability and every report built on them. Ignored,
+  // and the engine's own figures used instead.
+  const mayCost = await costVisible();
+  const engine = mayCost ? null : await getLineDefaults(tenantId, sl, estimateId);
   await addEstimateLine(tenantId, sl, estimateId, {
     service_type_id: String(fd.get("service_type_id") ?? ""),
     pricing_model_id: String(fd.get("pricing_model_id") ?? ""),
@@ -64,9 +72,9 @@ export async function addLineAction(fd: FormData): Promise<void> {
     unit_price: String(fd.get("unit_price") ?? ""),
     measure: String(fd.get("measure") ?? ""),
     measures,
-    est_labour_hours: String(fd.get("est_labour_hours") ?? ""),
-    est_distance_km: String(fd.get("est_distance_km") ?? ""),
-    est_material_cost: String(fd.get("est_material_cost") ?? ""),
+    est_labour_hours: mayCost ? String(fd.get("est_labour_hours") ?? "") : String(engine!.labour_hours ?? ""),
+    est_distance_km: mayCost ? String(fd.get("est_distance_km") ?? "") : String(engine!.round_trip_km ?? ""),
+    est_material_cost: mayCost ? String(fd.get("est_material_cost") ?? "") : "",
   });
   revalidatePath(`/estimates/${estimateId}`);
 }
@@ -127,4 +135,22 @@ export async function acceptAndConvertAction(fd: FormData): Promise<void> {
   await setEstimateStatus(tenantId, id, "accepted");
   const contractId = await convertEstimateToContract(tenantId, sl, id);
   redirect(`/contracts/${contractId}`);
+}
+
+// The suggested price for a line in progress — ONE number.
+//
+// The suggestion depends on what the user is typing, so it cannot be
+// precomputed; and it must not be computed in the browser, because that needs
+// the labour, vehicle, overhead and material rates. So it is computed here, per
+// call, from operational inputs the seller already knows (hours, distance,
+// area) and returns the price alone — no cost, no margin, no target percentage.
+// A role barred from margin cannot derive it from this.
+export async function suggestLinePriceAction(
+  estimateId: string,
+  inputs: { labour_hours?: number; distance_km?: number; area_m2?: number },
+): Promise<{ suggested: number | null }> {
+  await requirePermission("estimate.edit");
+  const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);
+  return suggestLinePrice(tenantId, sl, estimateId, inputs);
 }
