@@ -1,0 +1,33 @@
+# NOT AN ENV FILE — a template to paste into Vercel.
+#
+# This was named .env.production.local, which Next.js LOADS in production mode,
+# ahead of the repo-root .env.local that next.config.mjs pulls in (that loader
+# only fills variables that are still undefined, and this file had already
+# defined them). Its DATABASE_URL still carried the pre-rotation password, so
+# every production build on this machine — `npm run start`, scripts/pilot.sh,
+# the pilot tunnel — authenticated with the wrong password and 500'd the moment
+# anyone signed in. Development was unaffected, which is why it went unnoticed.
+#
+# Renamed so Next ignores it. Vercel is unaffected either way: this file is
+# git-ignored and untracked, so it never reached the deployment.
+#
+# DO NOT rename it back. If you need these values, paste them into
+# Vercel → Settings → Environment Variables by hand.
+# ---- Paste this whole block into Vercel → Settings → Environment Variables ----
+# Public (safe to expose):
+NEXT_PUBLIC_SUPABASE_URL=https://xpkniuhcjysisfbfiqhn.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhwa25pdWhjanlzaXNmYmZpcWhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4MzI0NzIsImV4cCI6MjEwMDQwODQ3Mn0._GRGElUFwRuSLbmC4178Zsc5E9G2AqHVh_MtX44qm18
+NEXT_PUBLIC_APP_URL=https://mumtaz-mop-ops-console.vercel.app
+
+# Production settings:
+MOP_ENV=production
+AUTH_REQUIRED=true
+OUTBOX_DRAIN_SECRET=1a11054afe6d482f121da19205861c125f5d6bf605979a20
+
+# Secrets carried over from your local .env.local:
+SUPABASE_SERVICE_ROLE_KEY=""
+NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY="AIzaSyD9BxPF-KMl0-2fdFxzHmYWvveOxZ09_2Y"
+GOOGLE_GEOCODING_API_KEY="AIzaSyBzK7rkk96nx14Ctb6A7ZOiH8-b4jNez-Y"
+
+# YOU MUST FILL THIS from Supabase → Connect → Connection pooling → Transaction (port 6543):
+DATABASE_URL=postgresql://postgres.xpkniuhcjysisfbfiqhn:S3FYGXHGLP9koLhA@aws-1-ap-south-1.pooler.supabase.com:6543/postgres

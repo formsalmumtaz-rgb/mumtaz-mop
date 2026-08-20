@@ -585,17 +585,27 @@ export async function suggestLinePrice(
 // Geocode-and-remember the base departure pin (cost.base_location) from the real
 // office address (cost.base_address). Runs at most once — after that the pin is
 // data. Never blocks the caller: geocode failure just leaves the default-km path.
+// Once the pin exists it is data and never disappears, so the answer is
+// memoised for the life of the process. Before this, every render of the survey
+// and estimate screens paid ~110ms — a full connect/preamble/query/commit — to
+// be told again that the pin was already there. Measured: it was 19% of the
+// survey page.
+const basePinKnown = new Set<string>();
+
 export async function ensureBaseLocation(tenantId: string): Promise<void> {
+  if (basePinKnown.has(tenantId)) return;
   const { rows } = await scopedRead(tenantId,
     `select
        (select 1 from settings where tenant_id=$1 and key='cost.base_location' limit 1) as has_pin,
        (select value #>> '{}' from settings where tenant_id=$1 and key='cost.base_address' limit 1) as addr`,
     [tenantId]);
-  if (rows[0]?.has_pin || !rows[0]?.addr) return;
+  if (rows[0]?.has_pin) { basePinKnown.add(tenantId); return; }
+  if (!rows[0]?.addr) return;   // nothing to geocode FROM — recheck next time
   try {
     const { routeProvider } = await import("../route-provider");
     const geo = await routeProvider.geocode(rows[0].addr);
     if (!geo) return;
+    basePinKnown.add(tenantId);
     await withTenantTx(tenantId, (c) =>
       c.query(
         `insert into settings (tenant_id, key, value, description, is_assumed)

@@ -1,5 +1,6 @@
 import "server-only";
 import { scopedRead } from "../rls";
+import { cache } from "react";
 
 export interface Ref {
   id: string;
@@ -55,7 +56,7 @@ export async function getServiceLineId(tenantId: string): Promise<string> {
 // The full active division (id + code + name), resolved from the mop_division
 // cookie (falls back to pest_control, then first active). Used both to scope
 // division-aware queries and to show the operator which division is active.
-export async function getActiveDivision(tenantId: string): Promise<ServiceLine> {
+export const getActiveDivision = cache(async (tenantId: string): Promise<ServiceLine> => {
   const code = await getActiveServiceLineCode();
   const { rows } = await scopedRead(tenantId,
     `select id, code, name from service_lines
@@ -66,7 +67,7 @@ export async function getActiveDivision(tenantId: string): Promise<ServiceLine> 
   );
   if (!rows[0]) throw new Error("No active service line found (apply 010_seed)");
   return rows[0] as ServiceLine;
-}
+});
 
 // Run 8: reference lists for the customer registration question set. Both are
 // editable data, not enums — the owner adds a category without a deploy.

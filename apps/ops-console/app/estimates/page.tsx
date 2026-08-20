@@ -6,6 +6,7 @@ import { listCustomers } from "@/lib/domain/customers";
 import { listEstimates } from "@/lib/domain/estimation";
 import { listServiceLines, getActiveDivision } from "@/lib/domain/reference";
 import { canSeeProfit } from "@/lib/auth";
+import { perf } from "@/lib/perf";
 import { createEstimateAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +20,13 @@ const STATUS_CLASS: Record<string, string> = {
 
 export default async function EstimatesPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const tenantId = await getTenantId();
-  const showProfit = await canSeeProfit();
-  const [allEstimates, customers, serviceLines, activeDivision] = await Promise.all([
+  const P = perf("estimates");
+  const tenantId = await P.step("tenant", getTenantId());
+  const showProfit = await P.step("session", canSeeProfit());
+  const [allEstimates, customers, serviceLines, activeDivision] = await P.step("data", Promise.all([
     listEstimates(tenantId), listCustomers(tenantId), listServiceLines(tenantId), getActiveDivision(tenantId),
-  ]);
+  ]));
+  P.done();
   // Search by NUMBER first, then account number, then customer name (§3.2).
   const q = (sp.q ?? "").trim().toLowerCase();
   const estimates = q

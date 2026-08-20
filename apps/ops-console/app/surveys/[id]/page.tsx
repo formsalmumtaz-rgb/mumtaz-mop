@@ -6,6 +6,7 @@ import { listPricingModels } from "@/lib/domain/pricing";
 import { getCostRates } from "@/lib/domain/costconfig";
 import { getSurvey } from "@/lib/domain/survey";
 import { canSeeProfit } from "@/lib/auth";
+import { perf } from "@/lib/perf";
 import { listCategories } from "@/lib/domain/categories";
 import { getLineDefaults, ensureBaseLocation } from "@/lib/domain/estimation";
 import { LineForm } from "@/components/LineForm";
@@ -17,21 +18,29 @@ const aed = (n: number) => "AED " + (n ?? 0).toLocaleString(undefined, { maximum
 export default async function SurveyDetail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
   const createdCode = ((await searchParams).created ?? "").trim();
-  const tenantId = await getTenantId();
-  const sl = await getServiceLineId(tenantId);
-  await ensureBaseLocation(tenantId);
-  const [data, services, models, rates, categories, lineDefaults] = await Promise.all([
+  const P = perf("surveys/[id]");
+  const tenantId = await P.step("tenant", getTenantId());
+  // The division blocks the data batch (it scopes two of the six queries). The
+  // base-pin backfill blocks nothing — it is a one-time write that happens to
+  // live here — so it runs alongside instead of in front. Measured: the two of
+  // them were 225ms of the page's 572ms, entirely sequential, for no reason.
+  const [sl] = await P.step("division", Promise.all([
+    getServiceLineId(tenantId),
+    ensureBaseLocation(tenantId),
+  ]));
+  const [data, services, models, rates, categories, lineDefaults] = await P.step("data", Promise.all([
     getSurvey(tenantId, id),
     listServiceTypes(tenantId),
     listPricingModels(tenantId),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
     getLineDefaults(tenantId, sl, id, "surveys"),
-  ]);
+  ]));
   if (!data) notFound();
   const { header, lines } = data;
   const isDraft = header.status === "draft";
-  const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
+  const showProfit = await P.step("session", canSeeProfit()); // DOCUMENT 9 §A
+  P.done();
   const margin = header.revenue > 0 ? ((header.gross_profit / header.revenue) * 100).toFixed(1) + "%" : "—";
   // Built only when the session may see cost. Passing this object at all is how
   // the labour, vehicle and overhead rates reached the browser: LineForm is a
