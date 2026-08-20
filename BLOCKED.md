@@ -791,6 +791,67 @@ that line — it is only used for local production runs).
 
 ---
 
+---
+
+## 🔴 A22 — The three console users: SUPABASE_SERVICE_ROLE_KEY is empty
+
+**Asked:** 20 Aug 2026 · **Blocks:** creating sahad@ / operations@ / engineer@ from the console. Nothing else.
+
+**Direct answer to your question: yes, it blocks the console's Invite button, and
+only that.** `inviteUserAction` calls the Supabase Admin API
+(`auth.admin.inviteUserByEmail`), which requires the service-role key. With the
+key empty that action throws. Everything else in user management is plain
+database work and already functions: approving a pending sign-in, changing
+anyone's role, linking a staff record, deactivating, and the audit trail.
+
+You have two ways forward. **I recommend (B).**
+
+### (A) Add the key — 60 seconds, and the console does the whole job
+
+1. Supabase dashboard → your project → **Settings → API Keys**
+2. Copy the **`service_role`** key (the one marked *secret*, NOT `anon`)
+3. Paste it into `.env.local` between the existing quotes:
+   `SUPABASE_SERVICE_ROLE_KEY="eyJ..."`
+4. Vercel → Project → Settings → Environment Variables → add
+   `SUPABASE_SERVICE_ROLE_KEY`, scope **Production**, then redeploy
+5. Console → Settings → Users → *Invite a user by email*, three times
+
+**What you are handing over.** The service-role key bypasses RLS entirely. It
+belongs in the server environment only — never in `NEXT_PUBLIC_*`, never in the
+browser bundle, never in a commit. `.env.local` is git-ignored; Vercel's variable
+store is encrypted. That is the whole risk, and it is the standard one.
+
+### (B) Create the three in the Supabase dashboard — no new secret at all
+
+Since migration 138, a password sign-in the system does not recognise is
+**recorded as pending** exactly like a Google one, so this path now completes
+itself (proved end to end — step 7 of `_onboarding-proof.mts`):
+
+1. Supabase dashboard → **Authentication → Users → Add user**
+2. Create each with *Auto Confirm User* ticked:
+   `sahad@almumtaz.ae` · `operations@almumtaz.ae` · `engineer@almumtaz.ae`
+   Set a temporary password for each; they change it on first sign-in.
+3. Send each person their address and temporary password.
+4. **Each signs in once.** They will see *"Your account is awaiting approval"* —
+   that is correct, not a failure.
+5. You → Console → **Settings → Users** → they are in *Waiting for approval*.
+   Assign: sahad → **Administrator**, operations@ → **Management**,
+   engineer@ → **Operations**. Access begins at that moment.
+
+**Why I recommend (B):** it needs no new secret in two places, it exercises the
+same approval path the technicians will use — so you see the flow before twenty
+people hit it — and the one thing (A) buys you (emailed invites) matters when
+you are onboarding many people, which is what the console is now for.
+
+**Checked, so you do not have to:** approving anyone requires `user.manage`,
+which only `admin` holds — so if the first admin were wrong, nobody could
+approve anybody and the whole flow would deadlock. `sahad@almumtaz.ae` is
+**active and holds `admin`** on the Mumtaz tenant. You can approve from the
+moment you sign in.
+
+**Not blocked by this:** technician and supervisor onboarding. They self-register
+with Google and you approve them from the same screen — no key, no invite.
+
 ## Real-device checklist (🟢 — you run these; I cannot)
 Airplane mode, camera/WebP capture, on-device PDF rendering, GPS and Maps
 deep-links, and full offline-day + reconnect sync are **unverified** until you

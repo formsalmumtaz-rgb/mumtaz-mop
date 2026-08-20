@@ -11,7 +11,11 @@ import { authEnforced } from "@/lib/auth-flags";
 // They must be reachable without a session: mail clients fetch them anonymously,
 // and until this exemption existed every email logo redirected to /login and
 // rendered as a broken image in the recipient's inbox.
-const PUBLIC = ["/login", "/auth", "/brand"];
+// /pending is reachable without an app_user: a self-registered person HAS a
+// Supabase session but no approved account, so every guarded page would bounce
+// them to /login and /login would bounce them back — a loop that reads as a
+// broken app rather than "wait to be approved".
+const PUBLIC = ["/login", "/auth", "/brand", "/pending"];
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next({ request: req });

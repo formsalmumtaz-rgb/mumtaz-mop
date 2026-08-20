@@ -35,21 +35,26 @@ export async function getSession(): Promise<AppSession | null> {
   }
   if (!user) return null;
 
-  // §3.7 — a GOOGLE sign-in is only a session if that address was pre-registered
-  // against an active employee. fn_link_google_identity decides and links on first
-  // use; it returns null for an address nobody registered, for a deactivated
-  // employee, and for a look-alike, and it never creates an app_user. An unknown
-  // Google account therefore gets no session and leaves no trace — rejected, never
-  // auto-provisioned. Email/password is untouched and remains the fallback.
+  // §3.7 / mig 137 — a GOOGLE sign-in is only a session once a human has
+  // approved it. fn_link_google_identity links on first use and returns the
+  // app_user id ONLY for an active one; a first-time address is recorded as
+  // PENDING and returns null, exactly as an unknown address does. Nobody is
+  // auto-provisioned, and pending, deactivated and unknown are indistinguishable
+  // to the caller — all three get no session. Email/password is the fallback.
+  // Mig 138: EVERY identity goes through the same door, Google or password. An
+  // address the system does not know is recorded as pending and returns null —
+  // no session, no data — and the person appears in the console queue instead of
+  // being bounced to /login forever with no trace that they ever tried. Pending,
+  // deactivated and unknown are indistinguishable here, deliberately.
   const viaGoogle = (user.app_metadata?.provider ?? "") === "google"
     || (user.identities ?? []).some((i: { provider?: string }) => i.provider === "google");
-  let actorId: string | null = user.id;
-  if (viaGoogle) {
-    const { rows } = await pool.query(`select fn_link_google_identity($1,$2) as id`,
-      [user.id, user.email ?? ""]);
-    actorId = (rows[0]?.id as string | null) ?? null;
-    if (!actorId) return null;   // not on the allowlist
-  }
+  const { rows } = await pool.query(`select fn_link_identity($1,$2,$3,$4) as id`,
+    [user.id, user.email ?? "",
+     (user.user_metadata?.full_name as string | undefined)
+       ?? (user.user_metadata?.name as string | undefined) ?? null,
+     viaGoogle ? "google" : "password"]);
+  const actorId = (rows[0]?.id as string | null) ?? null;
+  if (!actorId) return null;   // pending approval, deactivated, or unknown
 
   const resolved = await resolveActor(actorId);
   // getSession only returns a session for an ACTIVE login (deactivated users are
@@ -126,4 +131,38 @@ export async function requireView(permission: string): Promise<void> {
 export async function canSeeProfit(): Promise<boolean> {
   if (!authEnforced()) return true;
   return can("profit.view");
+}
+
+/**
+ * Who is knocking, for the "awaiting approval" screen.
+ *
+ * getSession() deliberately returns null for a pending or deactivated person —
+ * that is the whole point of it — so /pending cannot use it and still say
+ * anything useful. This is the same identity bootstrap read that resolveActor
+ * does (the one read that precedes tenant scoping, which is why it lives here
+ * and not in a page: the RLS gate keeps bare pool access out of pages, and it
+ * is right to).
+ *
+ * Returns only what the person themselves already typed into Google.
+ */
+export async function getPendingIdentity(): Promise<
+  { email: string | null; fullName: string | null; status: string | null } | null
+> {
+  try {
+    const supabase = await createSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { rows } = await pool.query(
+      `select full_name, status from app_users
+        where id = $1 or lower(google_email) = lower($2) limit 1`,
+      [user.id, user.email ?? ""],
+    );
+    return {
+      email: user.email ?? null,
+      fullName: (rows[0]?.full_name as string | null) ?? null,
+      status: (rows[0]?.status as string | null) ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
