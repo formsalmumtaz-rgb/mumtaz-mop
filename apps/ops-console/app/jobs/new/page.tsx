@@ -1,6 +1,6 @@
 import { getTenantId } from "@/lib/tenant";
 import { listCustomers } from "@/lib/domain/customers";
-import { listJobSources, listServiceTypes, listTeams } from "@/lib/domain/reference";
+import { listJobSources, listServiceTypes, listTeams, getServiceLineId } from "@/lib/domain/reference";
 import { QuickLocation } from "@/components/QuickLocation";
 import { createJobAction } from "./actions";
 
@@ -13,10 +13,11 @@ function today() {
 export default async function NewJobPage({ searchParams }: { searchParams: Promise<{ created?: string; error?: string }> }) {
   const { created, error } = await searchParams;
   const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);   // item 4 — pickers are division-scoped
   const [customers, jobSources, serviceTypes, teams] = await Promise.all([
     listCustomers(tenantId),
     listJobSources(tenantId),
-    listServiceTypes(tenantId),
+    listServiceTypes(tenantId, sl),
     listTeams(tenantId),
   ]);
 

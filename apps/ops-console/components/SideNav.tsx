@@ -57,7 +57,7 @@ const GROUPS: Group[] = [
   { label: "Sales", items: [
     { href: "/customers", label: "Customers", icon: "customers" },
     { href: "/surveys", label: "Surveys", icon: "surveys" },
-    { href: "/estimates", label: "Estimates", icon: "estimates" },
+    { href: "/estimates", label: "Quotations", icon: "estimates" },   // item 8 — the route and the table keep the old word; the person does not
     { href: "/contracts", label: "Contracts", icon: "contracts" },
     { href: "/pipeline", label: "Pipeline", icon: "pipeline" },
   ] },

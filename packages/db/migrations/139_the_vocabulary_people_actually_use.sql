@@ -184,3 +184,15 @@ update pricing_models set is_advanced = true
  where model_type = 'per_visit' and code not in ('per_treatment', 'cln_per_visit', 'fm_per_visit');
 update pricing_models set name = 'Per treatment'
  where model_type = 'per_visit' and not is_advanced;
+
+-- Every division needs all three everyday models. Cleaning had no monthly one,
+-- so a monthly cleaning contract had nothing honest to be priced as.
+insert into pricing_models (tenant_id, service_line_id, code, name, model_type, is_active, is_advanced, is_assumed, assumed_note)
+select sl.tenant_id, sl.id,
+       case sl.code when 'cleaning' then 'cln_per_month' else sl.code || '_per_month' end,
+       'Per month', 'per_month', true, false, true,
+       'ASSUMED: added so every division can price monthly. Confirm in Settings → Master data.'
+  from service_lines sl
+ where not exists (select 1 from pricing_models pm
+                    where pm.tenant_id = sl.tenant_id and pm.service_line_id = sl.id
+                      and pm.model_type = 'per_month');

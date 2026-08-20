@@ -2,6 +2,17 @@ import "server-only";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { pool } from "./db";
 
+// Unset => "production" => assumed costing refused (mig 026). Fail-safe by default.
+//
+// Constrained to a known set and inlined rather than parameterised, because the
+// preamble is a MULTI-STATEMENT simple query and Postgres does not accept bind
+// parameters on those — passing $1 makes pg switch to the extended protocol,
+// which then rejects the multiple statements. Anything unrecognised becomes
+// "production", so a typo fails safe rather than opening the costing gate.
+const ALLOWED_ENVS = ["development", "dev", "staging", "test", "production"];
+const RAW_ENV = (process.env.MOP_ENV || "").toLowerCase().trim();
+const MOP_ENV = ALLOWED_ENVS.includes(RAW_ENV) ? RAW_ENV : "production";
+
 // The single choke point for tenant + actor scoped database access.
 //
 // Phase A1 (now): sets app.current_tenant (+ app.current_actor when known) inside
@@ -49,10 +60,18 @@ export async function withRequest<T>(ctx: RequestContext, fn: (client: PoolClien
     // A3 flip lives here: RLS is the LIVE boundary for every app read/write.
     // `set local` reverts at commit/rollback; the pool gets back a clean
     // (privileged) connection. Values are inlined ONLY after UUID validation.
+    // app.environment rides along in the SAME round trip. It used to be set by
+    // a pool `connect` hook, which fired an unawaited query on a client the pool
+    // then handed straight to a waiting caller — under pool pressure that is the
+    // pg deprecation, and pg 9 removes it. Transaction-scoped (`true`) rather
+    // than session-scoped: a pooled connection should not carry one request's
+    // environment into the next. Unset still reads as production, so the costing
+    // gate stays fail-safe with zero configuration.
     await client.query(
       `begin; set local role mop_app; ` +
       `select set_config('app.current_tenant', '${ctx.tenantId}', true), ` +
-      `set_config('app.current_actor', '${actor}', true)`,
+      `set_config('app.current_actor', '${actor}', true), ` +
+      `set_config('app.environment', '${MOP_ENV}', true)`,
     );
     const result = await fn(client);
     await client.query("commit");

@@ -34,7 +34,7 @@ export default async function PipelinePage() {
           <span>{p.surveys.draft} draft</span><span>{p.surveys.completed} completed</span>
           <span>{p.surveys.converted} → estimate</span>
         </Stage>
-        <Stage title="Estimates" href="/estimates" count={p.estimates.total}>
+        <Stage title="Quotations" href="/estimates" count={p.estimates.total}>
           <span>{p.estimates.draft} draft</span><span>{p.estimates.quoted} quoted</span>
           <span>{p.estimates.accepted} accepted</span><span>{p.estimates.rejected} rejected</span>
         </Stage>
@@ -71,7 +71,7 @@ export default async function PipelinePage() {
           <div className="mt-1 text-xs text-neutral-500">Revenue of accepted estimates.</div>
         </div>
       </div>
-      <p className="text-xs text-neutral-500">Estimate revenue is the indicative quote total (before VAT); it becomes the contract value on conversion.</p>
+      <p className="text-xs text-neutral-500">Quotation revenue is the indicative total (before VAT); it becomes the contract value on conversion.</p>
     </div>
   );
 }

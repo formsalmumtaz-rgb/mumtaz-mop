@@ -4,6 +4,7 @@
 // the handler side effect commit in the SAME transaction, so a replay is a no-op.
 import type { Pool, PoolClient } from "pg";
 import { parseEvent, type EventType } from "@mop/domain";
+import { bindEnvironment } from "./db";
 
 export interface EmitInput {
   tenant_id: string;
@@ -85,11 +86,13 @@ export async function drainOnce(
   // the rest share this connection. Exactly-once is untouched: the claim insert
   // and the handler side effect still commit in ONE transaction per pair.
   let client = await pool.connect();
+  await bindEnvironment(client);   // costing gate — awaited, before anything else
   const freshClient = async (): Promise<void> => {
     // Only used when the connection itself dies; a rollback on a dead client
     // throws, and continuing with it would fail every remaining event.
     try { client.release(); } catch { /* already gone */ }
     client = await pool.connect();
+    await bindEnvironment(client);
   };
 
   try {

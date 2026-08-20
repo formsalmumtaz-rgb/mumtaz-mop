@@ -8,6 +8,8 @@ import { listSurveys } from "@/lib/domain/survey";
 import { createSurveyAction } from "./actions";
 import { canSeeProfit } from "@/lib/auth";
 import { CustomerPicker } from "@/components/CustomerPicker";
+import { EngagementChoice } from "@/components/EngagementChoice";
+import { listFrequencies } from "@/lib/domain/reference";
 import { LocationCapture } from "@/components/LocationCapture";
 import { resolveLocationAction } from "@/app/customers/location-actions";
 import { getServiceLineId, listFacilityTypes } from "@/lib/domain/reference";
@@ -28,11 +30,11 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
   const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const tenantId = await getTenantId();
   const sl = await getServiceLineId(tenantId);
-  const [allSurveys, customers, technicians, facilityTypes] = await Promise.all([
+  const [allSurveys, customers, technicians, facilityTypes, frequencies] = await Promise.all([
     listSurveys(tenantId), listCustomers(tenantId),
     // Item 2 — the surveyor list is the whole staff list, office roles first:
     // a survey is usually booked by whoever is at a desk, not by a technician.
-    listStaffForPicker(tenantId), listFacilityTypes(tenantId),
+    listStaffForPicker(tenantId), listFacilityTypes(tenantId, sl), listFrequencies(tenantId, sl),
   ]);
   // Search by NUMBER first, then account number, then customer name (§3.2).
   const q = (sp.q ?? "").trim().toLowerCase();
@@ -113,6 +115,10 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
             <input type="hidden" name="new_customer_type" value="B2B" />
             <p className="mt-3 text-xs text-neutral-500">Leave the customer picker empty and fill this instead. Starred fields are required; the rest of the profile is completed later.</p>
           </fieldset>}
+          {/* Item 7 — asked FIRST, because it decides everything after it. */}
+          <EngagementChoice frequencies={frequencies as { id: string; name: string }[]}
+            premisesSelectName="new_facility_type_id" premises={facilityTypes as never} />
+
           <label className="text-sm"><span className="text-neutral-600">Surveyor</span>
             <select name="surveyor_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
               <option value="">—</option>
@@ -149,7 +155,7 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
               <th className="px-3 py-2 font-medium">Surveyor</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
               <th className="px-3 py-2 font-medium text-right">Revenue</th>{showProfit && <th className="px-3 py-2 font-medium text-right">Gross profit</th>}
-              <th className="px-3 py-2 font-medium">Estimate</th>
+              <th className="px-3 py-2 font-medium">Quotation</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-100">

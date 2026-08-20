@@ -21,8 +21,8 @@ export default async function EstimateDetail({ params, searchParams }: { params:
   await ensureBaseLocation(tenantId); // one-time geocode of the office pin (no-op after)
   const [data, services, models, rates, categories, guidance, lineDefaults] = await Promise.all([
     getEstimate(tenantId, id),
-    listServiceTypes(tenantId),
-    listPricingModels(tenantId),
+    listServiceTypes(tenantId, sl),
+    listPricingModels(tenantId, sl),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
     getPricingGuidance(tenantId, sl),
@@ -71,7 +71,7 @@ export default async function EstimateDetail({ params, searchParams }: { params:
       )}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <Link href="/estimates" className="text-sm text-brand underline">← Estimates</Link>
+          <Link href="/estimates" className="text-sm text-brand underline">← Quotations</Link>
           <h1 className="mt-1 text-2xl font-semibold">{header.customer ?? "(no customer)"}</h1>
           <p className="mt-1 text-sm text-neutral-600">
             Status <span className="font-medium">{header.status}</span>

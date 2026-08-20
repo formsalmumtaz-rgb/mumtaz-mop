@@ -20,18 +20,21 @@ export const pool = new Pool({
   max: 4,
 });
 
-// Environment binding for the costing gate (mig 026). The gate treats an unset
-// app.environment as 'production' and refuses assumed-costing there, so production
-// is fail-safe with zero config. Non-production sets MOP_ENV to opt in. Session
-// pooler => a session-level set_config on connect persists for the connection.
-const MOP_ENV = process.env.MOP_ENV || "production";
-  // Unawaited on purpose, and the swallowed error is on purpose. See DEBT.md
-  // D-KEEP1 before changing this: it does not cause the pg deprecation (the
-  // queue drains before the pool hands the client over), and if it fails the
-  // session's app.environment stays unset, which makes the costing gate treat
-  // the environment as production and REFUSE assumed costing. It fails strict.
-pool.on("connect", (c) => {
-  c.query("select set_config('app.environment', $1, false)", [MOP_ENV]).catch((e) =>
-    console.error("[db] failed to set app.environment:", (e as Error).message),
-  );
-});
+// The costing-gate environment binding used to live in a `connect` hook here.
+// It fired an unawaited query on a client the pool then handed straight to a
+// waiting caller; under pool pressure pg warns, and pg 9 removes that path.
+// It now happens in bindEnvironment(), awaited, where a client is acquired.
+// See DEBT.md D-KEEP1 — including why keeping it was the wrong call.
+const MOP_ENV_ALLOWED = ["development", "dev", "staging", "test", "production"];
+const RAW = (process.env.MOP_ENV || "").toLowerCase().trim();
+export const MOP_ENV = MOP_ENV_ALLOWED.includes(RAW) ? RAW : "production";
+
+/**
+ * Bind the costing gate's environment on a freshly acquired client. Awaited, so
+ * nothing else is issued on this client while it is in flight. Unset still
+ * reads as production, so a failure here refuses assumed costing rather than
+ * allowing it.
+ */
+export async function bindEnvironment(c: { query: (q: string) => Promise<unknown> }): Promise<void> {
+  await c.query(`select set_config('app.environment', '${MOP_ENV}', false)`);
+}

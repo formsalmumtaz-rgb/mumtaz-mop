@@ -7,7 +7,7 @@ import { listContacts } from "@/lib/domain/contacts";
 import { listContracts, getScheduleSummary } from "@/lib/domain/contracts";
 import { listSurveysForCustomer } from "@/lib/domain/survey";
 import { listEstimatesForCustomer } from "@/lib/domain/estimation";
-import { listFrequencies, listPricingModels, listFacilityTypes } from "@/lib/domain/reference";
+import { listFrequencies, listPricingModels, listFacilityTypes, getServiceLineId } from "@/lib/domain/reference";
 import { AssumedBadge } from "@/components/AssumedBadge";
 import { PinPicker } from "@/components/PinPicker";
 import { CapturePrompt } from "@/components/CapturePrompt";
@@ -30,6 +30,7 @@ export default async function CustomerDetail({ params, searchParams }: {
   const sp = await searchParams;
   const includeArchived = sp.archived === "1";
   const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);   // item 4 — pickers are division-scoped
   const customer = await getCustomer(tenantId, id);
   if (!customer) notFound();
 
@@ -38,7 +39,7 @@ export default async function CustomerDetail({ params, searchParams }: {
     listContacts(tenantId, id, includeArchived),
     listContracts(tenantId, id),
     listFrequencies(tenantId),
-    listPricingModels(tenantId),
+    listPricingModels(tenantId, sl),
     listFacilityTypes(tenantId),
     listSurveysForCustomer(tenantId, id),
     listEstimatesForCustomer(tenantId, id),
@@ -294,7 +295,7 @@ export default async function CustomerDetail({ params, searchParams }: {
       {/* Estimates */}
       <section className="rounded-lg border border-neutral-200 bg-white p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-medium">Estimates <span className="text-neutral-400">({estimates.length})</span></h2>
+          <h2 className="font-medium">Quotations <span className="text-neutral-400">({estimates.length})</span></h2>
           <Link href="/estimates" className="text-sm text-brand underline">+ New estimate</Link>
         </div>
         <div className="space-y-2">

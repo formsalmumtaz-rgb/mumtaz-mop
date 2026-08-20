@@ -22,20 +22,10 @@ function createPool(): pg.Pool {
     // refresh item 1.)
     max: 12,
   });
-  // Environment binding for the costing gate (mig 026): unset app.environment =>
-  // 'production' => assumed costing denied, so production is fail-safe with zero
-  // config. Non-production opts in via MOP_ENV.
-  const MOP_ENV = process.env.MOP_ENV || "production";
-  // Unawaited on purpose, and the swallowed error is on purpose. See DEBT.md
-  // D-KEEP1 before changing this: it does not cause the pg deprecation (the
-  // queue drains before the pool hands the client over), and if it fails the
-  // session's app.environment stays unset, which makes the costing gate treat
-  // the environment as production and REFUSE assumed costing. It fails strict.
-  p.on("connect", (c) => {
-    c.query("select set_config('app.environment', $1, false)", [MOP_ENV]).catch((e) =>
-      console.error("[db] failed to set app.environment:", (e as Error).message),
-    );
-  });
+  // The costing-gate environment binding used to live in a `connect` hook here.
+  // It moved into the withRequest preamble (lib/rls.ts) — same round trip, no
+  // unawaited query on a client the pool is about to hand to someone else.
+  // See DEBT.md D-KEEP1 for why it was kept for a while, and why that was wrong.
   return p;
 }
 

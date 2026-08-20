@@ -39,14 +39,14 @@ export default async function EstimatesPage({ searchParams }: { searchParams: Pr
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Estimates</h1>
+        <h1 className="text-2xl font-semibold">Quotations</h1>
         <p className="mt-1 text-sm text-neutral-600">Survey → estimate → profit preview → quotation. Revenue uses pricing models; cost uses standard rates (deterministic).</p>
       </div>
 
-      <ListToolbar basePath="/estimates" params={sp} placeholder="Estimate no., account no. or customer" showArchived={false} />
+      <ListToolbar basePath="/estimates" params={sp} placeholder="Quotation no., account no. or customer" showArchived={false} />
 
       <details className="rounded-lg border border-neutral-200 bg-white p-4" open={estimates.length === 0}>
-        <summary className="cursor-pointer font-medium">New estimate</summary>
+        <summary className="cursor-pointer font-medium">New quotation</summary>
         <form action={createEstimateAction} className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm"><span className="text-neutral-600">Customer</span>
             <select name="customer_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
@@ -94,7 +94,7 @@ export default async function EstimatesPage({ searchParams }: { searchParams: Pr
             </select>
             <span className="mt-1 block text-xs text-neutral-500">A one-off becomes a contract with one visit; recurring takes a frequency.</span>
           </label>
-          <div className="sm:col-span-2"><button className="w-full rounded bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">Create estimate</button></div>
+          <div className="sm:col-span-2"><button className="w-full rounded bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">Create quotation</button></div>
         </form>
       </details>
 
@@ -102,7 +102,7 @@ export default async function EstimatesPage({ searchParams }: { searchParams: Pr
         <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-neutral-100 text-left text-neutral-600">
             <tr>
-              <th className="px-3 py-2 font-medium">Estimate #</th><th className="px-3 py-2 font-medium">Account no.</th>
+              <th className="px-3 py-2 font-medium">Quotation #</th><th className="px-3 py-2 font-medium">Account no.</th>
               <th className="px-3 py-2 font-medium">Customer</th><th className="px-3 py-2 font-medium">Status</th>
               <th className="px-3 py-2 font-medium">Lines</th>
               <th className="px-3 py-2 font-medium text-right">Revenue</th>

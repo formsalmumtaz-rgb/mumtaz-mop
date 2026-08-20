@@ -3,25 +3,39 @@ import { scopedRead } from "../rls";
 import { cache } from "react";
 
 export interface Ref {
+  default_frequency_id?: string | null;
+  default_night_shift?: boolean | null;
+  billing_category?: string | null;
   id: string;
   code: string | null;
   name: string;
   is_assumed: boolean;
 }
 
-async function listRef(table: string, tenantId: string): Promise<Ref[]> {
+// Item 4 — these lists are PER DIVISION. Unscoped, a pest control flow offered
+// AC duct cleaning and facilities management, and the premises list showed
+// "Cafeteria" three times because each division carries its own row. Scoping is
+// the default; a caller wanting every division has to say so.
+async function listRef(table: string, tenantId: string, serviceLineId?: string | null): Promise<Ref[]> {
   // table names are internal literals, never user input
-  const { rows } = await scopedRead(tenantId, 
-    `select id, code, name, is_assumed from ${table} where tenant_id = $1 and is_active order by name`,
-    [tenantId],
+  const { rows } = await scopedRead(tenantId,
+    `select id, code, name, is_assumed,
+            ${table === "service_types" || table === "facility_types" ? "sort_order" : "null::int as sort_order"},
+            ${table === "facility_types" ? "default_frequency_id, default_night_shift, billing_category"
+                                          : "null::uuid as default_frequency_id, null::boolean as default_night_shift, null::text as billing_category"}
+       from ${table}
+      where tenant_id = $1 and is_active
+        and ($2::uuid is null or service_line_id = $2::uuid)
+      order by sort_order nulls last, name`,
+    [tenantId, serviceLineId ?? null],
   );
   return rows as Ref[];
 }
 
-export const listFrequencies = (t: string) => listRef("frequencies", t);
-export const listPricingModels = (t: string) => listRef("pricing_models", t);
-export const listFacilityTypes = (t: string) => listRef("facility_types", t);
-export const listServiceTypes = (t: string) => listRef("service_types", t);
+export const listFrequencies = (t: string, sl?: string | null) => listRef("frequencies", t, sl);
+export const listPricingModels = (t: string, sl?: string | null) => listRef("pricing_models", t, sl);
+export const listFacilityTypes = (t: string, sl?: string | null) => listRef("facility_types", t, sl);
+export const listServiceTypes = (t: string, sl?: string | null) => listRef("service_types", t, sl);
 export const listJobSources = (t: string) => listRef("job_sources", t);
 export const listTeams = (t: string) => listRef("teams", t);
 

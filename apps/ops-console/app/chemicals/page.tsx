@@ -70,11 +70,12 @@ export default async function ChemicalsPage({ searchParams }: { searchParams: Pr
   const sp = await searchParams;
   const includeArchived = sp.archived === "1";
   const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);   // item 4 — pickers are division-scoped
   await getServiceLineId(tenantId);
   const [items, units, serviceTypes] = await Promise.all([
     listItems(tenantId, includeArchived),
     listUnits(tenantId),
-    listServiceTypes(tenantId),
+    listServiceTypes(tenantId, sl),
   ]);
   const stName = new Map(serviceTypes.map((s) => [s.id, s.name]));
 

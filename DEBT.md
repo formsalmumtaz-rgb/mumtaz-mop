@@ -401,9 +401,59 @@ Until that has been done once, "rebuilds from empty" is a claim, not a fact.
 
 ---
 
-## D-KEEP1 — The unawaited `set_config` on pool connect is deliberate. Do not "fix" it. (20 Aug 2026)
+## D-KEEP1 — ~~The unawaited `set_config` on pool connect is deliberate~~ — WRONG, and now fixed (20 Aug 2026)
 
-**Status:** **DECIDED — no repayment trigger.** This entry exists to stop a
+**Status:** **SUPERSEDED the same day it was written.** The decision below was
+made on evidence gathered under the wrong conditions. Left in place, struck
+through rather than deleted, because how a wrong call was reached is worth more
+than the tidy version.
+
+**What was wrong.** Point 1 claimed the hook does not cause the pg deprecation,
+"proven, not assumed": `_pulseQueryQueue()` shifts the query into `activeQuery`
+synchronously, so the queue is empty again before `pool.connect()` resolves.
+That is true **on a cold pool with one caller** — which is exactly how I tested
+it, and the only way I tested it.
+
+Under pool pressure it is false. When callers are already queued, `pg-pool`
+acquires the client and hands it to a `PendingItem` in the same tick the connect
+hook fires, so the caller's query lands while the `set_config` is still in
+`_queryQueue`. It surfaced within a day, as soon as a page issued enough
+parallel reads to exhaust the pool:
+
+```
+DeprecationWarning: Calling client.query() when the client is already executing a query
+    at PendingItem.callback   (pg-pool/index.js:467)
+    at BoundPool._acquireClient (pg-pool/index.js:357)
+```
+
+Point 2 (the failure mode is fail-safe) still holds and is why nothing was
+broken by it. Point 3 (relocating it costs risk) was real but the price of
+being right, not a reason to stay wrong.
+
+**Fixed by doing what the entry said to do "if pg 9":**
+- `withRequest`'s preamble now carries `set_config('app.environment', …, true)`
+  in the same round trip it already makes. Transaction-scoped, so a pooled
+  connection cannot carry one request's environment into the next.
+- The worker binds it in `bindEnvironment()`, awaited, on every client
+  `drainOnce` acquires — including the replacement after a dead connection.
+- Both `connect` hooks are gone.
+- Constrained to a known set and inlined, because the preamble is a
+  multi-statement simple query and Postgres rejects bind parameters on those.
+  Anything unrecognised becomes `production`, so a typo still fails safe.
+
+Verified: `development → development`, `staging → staging`,
+`production → production`, unset → `production`, `garbage → production`; and
+the deprecation warning count on the page that triggered it went 1 → 0.
+
+**The lesson worth keeping.** "Proven, not assumed" was written about a test
+that only exercised the uncontended path. A concurrency claim tested without
+concurrency is an assumption wearing a proof's clothes.
+
+---
+
+### The original entry, as written:
+
+**Status:** ~~DECIDED — no repayment trigger.~~ This entry exists to stop a
 future session tidying away a working safety mechanism.
 
 Unlike every other entry in this file, this is not a shortcut awaiting repayment.

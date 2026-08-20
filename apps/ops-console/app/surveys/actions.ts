@@ -36,6 +36,20 @@ export async function createSurveyAction(fd: FormData): Promise<void> {
     property_type: String(fd.get("property_type") ?? ""),
     notes: String(fd.get("notes") ?? ""),
   });
+  // Item 7 — recorded at CREATION so nothing downstream re-asks. A one-off
+  // carries no frequency at all rather than a null that later reads as
+  // "not chosen yet". Item 3 — the premises type travels with it.
+  const engagement = String(fd.get("engagement_type") ?? "").trim();
+  const facilityTypeId = String(fd.get("facility_type_id") ?? "").trim() || null;
+  const frequencyId = engagement === "recurring"
+    ? (String(fd.get("frequency_id") ?? "").trim() || null) : null;
+  if (engagement || facilityTypeId) {
+    const { withRequest } = await import("@/lib/rls");
+    await withRequest({ tenantId }, (c) => c.query(
+      `update surveys set engagement_type = nullif($2,''), facility_type_id = $3::uuid, frequency_id = $4::uuid
+        where id = $1 and tenant_id = $5`,
+      [id, engagement, facilityTypeId, frequencyId, tenantId]));
+  }
   redirect(cust.created ? `/surveys/${id}?created=${encodeURIComponent(cust.code ?? "")}` : `/surveys/${id}`);
 }
 

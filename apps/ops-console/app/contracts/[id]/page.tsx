@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTenantId } from "@/lib/tenant";
 import { getContract, getScheduleSummary, getFrequencyBasis } from "@/lib/domain/contracts";
-import { listFrequencies, listPricingModels } from "@/lib/domain/reference";
+import { listFrequencies, listPricingModels, getServiceLineId } from "@/lib/domain/reference";
 import { TermDates } from "@/components/TermDates";
 import { scopedRead } from "@/lib/rls";
 import { suggestFirstVisit } from "@/lib/domain/firstvisit";
@@ -24,12 +24,13 @@ export default async function ContractDetail({ params, searchParams }: { params:
   const { id } = await params;
   const sp = await searchParams;
   const tenantId = await getTenantId();
+  const sl = await getServiceLineId(tenantId);   // item 4 — pickers are division-scoped
   const ct = await getContract(tenantId, id);
   if (!ct) notFound();
   const [sum, frequencies, pricingModels, freqBasis, attRows, episodes, firstVisit, bookedRows] = await Promise.all([
     getScheduleSummary(tenantId, id),
     listFrequencies(tenantId),
-    listPricingModels(tenantId),
+    listPricingModels(tenantId, sl),
     getFrequencyBasis(tenantId, id),
     scopedRead(tenantId,
       `select ct.attestation_status, ct.attestation_submitted_at::text, ct.attested_at::text,

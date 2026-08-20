@@ -15,6 +15,7 @@ export const MODEL_TYPES = [
 
 export interface FormulaSpec { base?: number; terms?: { measure_key: string; rate: number }[] }
 export interface PricingModel {
+  is_advanced?: boolean;
   id: string;
   code: string | null;
   name: string;
@@ -25,12 +26,27 @@ export interface PricingModel {
   is_active?: boolean;
 }
 
-export async function listPricingModels(tenantId: string, includeArchived = false): Promise<PricingModel[]> {
+/**
+ * The pricing picker.
+ *
+ * Scoped to the division (item 4) and to the everyday three (item 5): per
+ * treatment, per month, per year. The other fourteen are real but rare, and a
+ * 26-item dropdown is how a new person picks the wrong one — they are returned
+ * only when `includeAdvanced` is set, for the screen that offers "advanced".
+ */
+export async function listPricingModels(
+  tenantId: string,
+  serviceLineId?: string | null,
+  opts: { includeArchived?: boolean; includeAdvanced?: boolean } = {},
+): Promise<PricingModel[]> {
   const { rows } = await scopedRead(tenantId,
-    `select id, code, name, model_type, formula_spec, is_assumed, assumed_note, is_active
-       from pricing_models where tenant_id=$1 and ($2 or is_active)
-      order by is_active desc, model_type, name`,
-    [tenantId, includeArchived],
+    `select id, code, name, model_type, formula_spec, is_assumed, assumed_note, is_active, is_advanced
+       from pricing_models
+      where tenant_id=$1 and ($2 or is_active)
+        and ($3::uuid is null or service_line_id = $3::uuid)
+        and ($4 or not is_advanced)
+      order by is_active desc, is_advanced, model_type, name`,
+    [tenantId, !!opts.includeArchived, serviceLineId ?? null, !!opts.includeAdvanced],
   );
   return rows as PricingModel[];
 }

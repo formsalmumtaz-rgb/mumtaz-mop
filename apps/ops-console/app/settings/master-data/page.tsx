@@ -310,7 +310,7 @@ export default async function MasterDataPage({ searchParams }: { searchParams: P
     listCatalog(tenantId, "job_sources", inc),
     listFrequenciesAdmin(tenantId, inc),
     listSuppliers(tenantId, inc),
-    listPricingModels(tenantId, inc),
+    listPricingModels(tenantId, null, { includeArchived: inc, includeAdvanced: true }),
     listDocumentBranding(tenantId),
   ]);
 

@@ -30,8 +30,8 @@ export default async function SurveyDetail({ params, searchParams }: { params: P
   ]));
   const [data, services, models, rates, categories, lineDefaults] = await P.step("data", Promise.all([
     getSurvey(tenantId, id),
-    listServiceTypes(tenantId),
-    listPricingModels(tenantId),
+    listServiceTypes(tenantId, sl),
+    listPricingModels(tenantId, sl),
     getCostRates(tenantId),
     listCategories(tenantId, sl),
     getLineDefaults(tenantId, sl, id, "surveys"),
@@ -83,7 +83,7 @@ export default async function SurveyDetail({ params, searchParams }: { params: P
             </form>
           )}
           {header.estimate_id && (
-            <Link href={`/estimates/${header.estimate_id}`} className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Estimate created ✓</Link>
+            <Link href={`/estimates/${header.estimate_id}`} className="rounded border border-emerald-500 px-3 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-50">Quotation created ✓</Link>
           )}
           {(nextStatuses[header.status] ?? []).map((a) => (
             <form key={a.s} action={setSurveyStatusAction}>
