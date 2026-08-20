@@ -398,3 +398,65 @@ edit, just slower.
 **Repayment trigger.** Before any production cutover (BLOCKED §0E option d), run a
 rebuild from empty into a scratch database and diff the schema against staging.
 Until that has been done once, "rebuilds from empty" is a claim, not a fact.
+
+---
+
+## D-KEEP1 — The unawaited `set_config` on pool connect is deliberate. Do not "fix" it. (20 Aug 2026)
+
+**Status:** **DECIDED — no repayment trigger.** This entry exists to stop a
+future session tidying away a working safety mechanism.
+
+Unlike every other entry in this file, this is not a shortcut awaiting repayment.
+It is a decision that *looks* like a defect, was examined on its merits, and was
+kept. Logged here because the next person to run a code sweep will find it and
+reach for it.
+
+**What it looks like.** Both `apps/ops-console/lib/db.ts` and
+`services/worker/src/db.ts` do:
+
+```js
+pool.on("connect", (c) => {
+  c.query("select set_config('app.environment', $1, false)", [MOP_ENV])
+    .catch((e) => console.error("[db] failed to set app.environment:", e.message));
+});
+```
+
+An unawaited query with a swallowed error, on a client the pool is about to hand
+to someone else. Three separate smells in four lines. A sweep for the pg 8
+deprecation — *"Calling client.query() when the client is already executing a
+query"* — lands on it immediately.
+
+**Why it stays.**
+
+1. **It does not cause the deprecation.** Proven, not assumed. pg warns when
+   `_queryQueue.length > 0` (`pg/lib/client.js`); `_pulseQueryQueue()` shifts
+   this query into `activeQuery` synchronously, so the queue is back to empty
+   before `pool.connect()` resolves and the caller queries. Running `withRequest`
+   under `--trace-deprecation` on a cold pool produces no warning. The one real
+   instance of that warning was `services/worker/src/reports.ts` (five queries in
+   one `Promise.all`), fixed 20 Aug in `cab6384`, and is now gated by
+   `scripts/no-concurrent-client-queries.mjs`.
+
+2. **Its failure mode is the correct one.** If the `set_config` fails, the
+   session's `app.environment` stays unset. The costing gate (mig 026) treats
+   unset as `production` and therefore **refuses assumed costing**. A failure
+   here makes the system stricter, never looser — which is the whole design of
+   that gate: production is fail-safe with zero configuration.
+
+3. **Relocating it moves a working safety mechanism for no gain.** The obvious
+   tidy-up is folding it into the `withRequest` preamble, which is genuinely
+   free (that preamble is already one multi-statement round trip). But
+   `withRequest` is not the only path that reaches a client — the worker's
+   consumers take clients straight from the pool, and `resolveActor` is a
+   documented `pool.query` exception. Moving the binding means auditing every one
+   of those paths to re-establish a guarantee that currently holds everywhere by
+   construction. That is real blast radius on the costing gate to satisfy a
+   linter, for a mechanism that is not misbehaving.
+
+**What would change this.** Upgrading to **pg 9**, where the deprecated
+behaviour is removed. If pg 9 throws rather than queues when a client is busy,
+re-examine this — and at that point fold the binding into `withRequest`'s
+preamble *and* add an explicit awaited `set_config` wherever the worker acquires
+a client, rather than dropping the hook and leaving those paths unbound.
+
+**Do not** "fix" this because a scan flagged it. Read points 1–3 first.

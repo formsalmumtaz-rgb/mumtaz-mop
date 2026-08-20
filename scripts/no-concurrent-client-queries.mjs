@@ -12,6 +12,12 @@
 //
 // Found services/worker/src/reports.ts (5 queries, one client) after the
 // DeprecationWarning appeared in production logs.
+//
+// This gate deliberately does NOT flag the unawaited set_config in the two
+// db.ts pool `connect` hooks. That one is examined and kept — see DEBT.md
+// D-KEEP1. It is not an oversight in the pattern below; it is a different
+// pattern (fire-and-forget with a handled error, on a client nobody else holds
+// yet) whose failure mode makes the costing gate stricter, not looser.
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 

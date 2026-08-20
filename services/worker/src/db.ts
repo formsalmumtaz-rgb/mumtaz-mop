@@ -25,6 +25,11 @@ export const pool = new Pool({
 // is fail-safe with zero config. Non-production sets MOP_ENV to opt in. Session
 // pooler => a session-level set_config on connect persists for the connection.
 const MOP_ENV = process.env.MOP_ENV || "production";
+  // Unawaited on purpose, and the swallowed error is on purpose. See DEBT.md
+  // D-KEEP1 before changing this: it does not cause the pg deprecation (the
+  // queue drains before the pool hands the client over), and if it fails the
+  // session's app.environment stays unset, which makes the costing gate treat
+  // the environment as production and REFUSE assumed costing. It fails strict.
 pool.on("connect", (c) => {
   c.query("select set_config('app.environment', $1, false)", [MOP_ENV]).catch((e) =>
     console.error("[db] failed to set app.environment:", (e as Error).message),
