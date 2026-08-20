@@ -42,18 +42,27 @@ export async function GET(req: Request) {
         where p.tenant_id = $1 and p.technician_id = $2 and p.check_date = current_date`,
       [t, tech.id]).then((r) => r.rows[0] ?? null),
 
-    // The equipment vocabulary is the SAME list the morning ticked. Anything
-    // ticked out this morning is what has to come back; the rest is shown too,
-    // because a tool can be picked up during the day.
+    // The equipment check, against the morning COUNT (mig 136) — not against a
+    // tick. Three sprayers out and two back used to reconcile perfectly; now it
+    // does not. The whole vocabulary is listed, because kit can be picked up
+    // during the day and that is worth seeing rather than hiding.
     scopedRead(t,
       `select ci.code, ci.label,
-              coalesce((pc.equipment ->> ci.code)::boolean, false) as taken_out,
-              coalesce((po.equipment ->> ci.code)::boolean, false) as already_back
+              coalesce(pre.qty_out, 0) as went_out,
+              post.qty_back as counted_back
          from preflight_checklist_items ci
-         left join preflight_checks pc
-           on pc.tenant_id = ci.tenant_id and pc.technician_id = $2 and pc.check_date = current_date
-         left join postflight_checks po
-           on po.tenant_id = ci.tenant_id and po.technician_id = $2 and po.check_date = current_date
+         left join (
+           select e.equipment_code, e.qty_out
+             from preflight_equipment_counts e
+             join preflight_checks pc on pc.id = e.preflight_check_id
+            where e.tenant_id = $1 and pc.technician_id = $2 and pc.check_date = current_date
+         ) pre on pre.equipment_code = ci.code
+         left join (
+           select e.equipment_code, e.qty_back
+             from postflight_equipment_counts e
+             join postflight_checks pc on pc.id = e.postflight_check_id
+            where e.tenant_id = $1 and pc.technician_id = $2 and pc.check_date = current_date
+         ) post on post.equipment_code = ci.code
         where ci.tenant_id = $1 and ci.kind = 'equipment' and ci.is_active
         order by ci.sort_order, ci.label`,
       [t, tech.id]).then((r) => r.rows),
@@ -137,6 +146,22 @@ export async function POST(req: Request) {
       { status: 409, headers: cors });
   }
 
+  // A day that is already signed is closed (mig 135). Say so, rather than let a
+  // trigger raise at whichever column happens to be written first.
+  const already = await scopedRead(auth.session.tenantId,
+    `select accountability_confirmed, confirmed_at from postflight_checks
+      where tenant_id = $1 and technician_id = $2 and check_date = coalesce($3::date, current_date)`,
+    [auth.session.tenantId, tech.id, (b.check_date as string) ?? null]).then((r) => r.rows[0]);
+  if (already?.accountability_confirmed) {
+    return NextResponse.json({
+      error: "this day was already confirmed and is closed",
+      confirmed_at: already.confirmed_at,
+    }, { status: 409, headers: cors });
+  }
+
+  // The confirmation is applied LAST, after the counts are in. Written in one
+  // statement with them, the freeze trigger would see a day that had just become
+  // confirmed and refuse the very counts being signed for.
   await withRequest({ tenantId: auth.session.tenantId, actorId: auth.session.userId }, (c) => c.query(
     `insert into postflight_checks
        (tenant_id, service_line_id, technician_id, check_date, vehicle_id, odometer_km, fuel_band,
@@ -162,7 +187,7 @@ export async function POST(req: Request) {
      b.odometer_km != null ? Number(b.odometer_km) : null,
      b.fuel_band != null && BANDS.includes(Number(b.fuel_band)) ? Number(b.fuel_band) : null,
      JSON.stringify(b.equipment ?? {}), JSON.stringify(b.stock_returned ?? {}),
-     (b.incidents as string) ?? null, confirmed, statement || null,
+     (b.incidents as string) ?? null, false, null,
      auth.session.userId, (b.client_uuid as string) ?? null, (b.device_time as string) ?? null]));
 
   // ── The chemical count back onto the van ────────────────────────────
@@ -189,6 +214,52 @@ export async function POST(req: Request) {
            (l.note as string) ?? null, auth.session.userId]);
       }
     });
+  }
+
+  // ── The equipment count back onto the van ───────────────────────────
+  // Same treatment as the chemical: written whenever it is sent, frozen only
+  // by the confirmation. The tick jsonb is kept in step so nothing reading the
+  // old shape breaks, but the count is the record.
+  const kit = Array.isArray(b.equipment_counts) ? (b.equipment_counts as Record<string, unknown>[]) : [];
+  if (kit.length > 0) {
+    await withRequest({ tenantId: auth.session.tenantId, actorId: auth.session.userId }, async (c) => {
+      const pf = (await c.query(
+        `select id from postflight_checks
+          where tenant_id = $1 and technician_id = $2 and check_date = current_date`,
+        [auth.session.tenantId, tech.id])).rows[0];
+      if (!pf) return;
+      for (const e of kit) {
+        if (!e.code || !Number.isInteger(Number(e.qty_back)) || Number(e.qty_back) < 0) continue;
+        await c.query(
+          `insert into postflight_equipment_counts
+             (tenant_id, postflight_check_id, equipment_code, qty_back, note, created_by)
+           values ($1,$2,$3,$4,$5,$6)
+           on conflict (postflight_check_id, equipment_code)
+             do update set qty_back = excluded.qty_back, note = excluded.note`,
+          [auth.session.tenantId, pf.id, e.code, Number(e.qty_back),
+           (e.note as string) ?? null, auth.session.userId]);
+      }
+      await c.query(
+        `update postflight_checks
+            set equipment = (select coalesce(jsonb_object_agg(equipment_code, qty_back > 0), '{}'::jsonb)
+                               from postflight_equipment_counts where postflight_check_id = $1)
+          where id = $1 and not accountability_confirmed`, [pf.id]);
+    });
+  }
+
+  // ── The signature, now that everything it covers is written ─────────
+  if (confirmed) {
+    await withRequest({ tenantId: auth.session.tenantId, actorId: auth.session.userId }, (c) => c.query(
+      `update postflight_checks
+          set accountability_confirmed = true,
+              accountability_statement = $4,
+              confirmed_by = $3::uuid,
+              confirmed_at = now(),
+              updated_at = now(), updated_by = $3::uuid
+        where tenant_id = $1 and technician_id = $2
+          and check_date = coalesce($5::date, current_date)
+          and not accountability_confirmed`,
+      [auth.session.tenantId, tech.id, auth.session.userId, statement, (b.check_date as string) ?? null]));
   }
 
   // ── Sign out ────────────────────────────────────────────────────────

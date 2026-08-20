@@ -21,7 +21,7 @@ const BANDS = [
   { v: 99, label: "nearly full" }, { v: 100, label: "FULL" },
 ];
 
-interface EquipItem { code: string; label: string; taken_out: boolean; already_back: boolean }
+interface EquipItem { code: string; label: string; went_out: number; counted_back: number | null }
 interface StockLine {
   item_id: string; product: string; unit: string;
   opened_with: number; recorded_used: number; should_have_left: number; counted_back: number | null;
@@ -42,7 +42,7 @@ const n1 = (x: number) => Math.round(x * 10) / 10;
 export function CloseDay({ base, onBack }: { base: string; onBack: () => void }) {
   const [today, setToday] = useState<Today | null>(null);
   const [equipment, setEquipment] = useState<EquipItem[]>([]);
-  const [back, setBack] = useState<Record<string, boolean>>({});
+  const [back, setBack] = useState<Record<string, string>>({});
   const [stock, setStock] = useState<StockLine[]>([]);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -69,10 +69,11 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
     if (d.today?.odometer_km != null) setOdo(String(d.today.odometer_km));
     if (d.today?.fuel_band != null) setBand(d.today.fuel_band);
     if (d.today?.incidents) setIncidents(d.today.incidents);
-    // Anything already ticked back, or already counted, comes back pre-filled —
-    // a supervisor interrupted halfway never counts the van twice.
+    // Anything already counted comes back pre-filled — a supervisor interrupted
+    // halfway never counts the van twice.
     setBack((v) => (Object.keys(v).length ? v
-      : Object.fromEntries((d.equipment ?? []).filter((e) => e.already_back).map((e) => [e.code, true]))));
+      : Object.fromEntries((d.equipment ?? []).filter((e) => e.counted_back != null)
+          .map((e) => [e.code, String(e.counted_back)]))));
     setCounts((v) => (Object.keys(v).length ? v
       : Object.fromEntries((d.stock ?? []).filter((s) => s.counted_back != null)
           .map((s) => [s.item_id, String(s.counted_back)]))));
@@ -100,7 +101,9 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
       if (q.odometer_km != null) setOdo(String(q.odometer_km));
       if (q.fuel_band != null) setBand(Number(q.fuel_band));
       if (q.incidents) setIncidents(String(q.incidents));
-      if (q.equipment) setBack((v) => (Object.keys(v).length ? v : q.equipment as Record<string, boolean>));
+      const kitLines = q.equipment_counts as { code: string; qty_back: number }[] | undefined;
+      if (kitLines?.length) setBack((v) => (Object.keys(v).length ? v
+        : Object.fromEntries(kitLines.map((l) => [l.code, String(l.qty_back)]))));
       const lines = q.stock_counted as { item_id: string; qty: number }[] | undefined;
       if (lines?.length) setCounts((v) => (Object.keys(v).length ? v
         : Object.fromEntries(lines.map((l) => [l.item_id, String(l.qty)]))));
@@ -114,7 +117,13 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
     const body = {
       client_uuid: uuid(), device_time: new Date().toISOString(),
       odometer_km: odo ? Number(odo) : null, fuel_band: band, incidents: incidents.trim() || null,
-      equipment: Object.fromEntries(equipment.map((e) => [e.code, !!back[e.code]])),
+      // The tick map goes too so nothing reading the old shape breaks; the count
+      // is what the reconciliation reads.
+      equipment: Object.fromEntries(equipment.map((e) => [e.code, Number(back[e.code] ?? 0) > 0])),
+      equipment_counts: equipment
+        .filter((e) => back[e.code] !== undefined && back[e.code] !== "")
+        .map((e) => ({ code: e.code, qty_back: Math.max(0, Math.trunc(Number(back[e.code]))) }))
+        .filter((e) => Number.isFinite(e.qty_back)),
       stock_counted: stock
         .filter((s) => counts[s.item_id] !== undefined && counts[s.item_id] !== "")
         .map((s) => ({ item_id: s.item_id, qty: Number(counts[s.item_id]) })),
@@ -162,7 +171,13 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
   );
 
   const km = today?.odo_out != null && odo ? Number(odo) - today.odo_out : null;
-  const missingKit = equipment.filter((e) => e.taken_out && !back[e.code]);
+  // Short = fewer came back than went out. Counted, so "three out, two back"
+  // is now something the screen can actually say.
+  const shortKit = equipment
+    .map((e) => ({ ...e, short: e.went_out - (back[e.code] !== undefined && back[e.code] !== "" ? Number(back[e.code]) : e.went_out) }))
+    .filter((e) => e.short > 0);
+  const kitCounted = equipment.filter((e) => back[e.code] !== undefined && back[e.code] !== "").length;
+  const kitExpected = equipment.filter((e) => e.went_out > 0).length;
   const counted = stock.filter((s) => counts[s.item_id] !== undefined && counts[s.item_id] !== "");
   const canConfirm = !!statement && !busy;
 
@@ -202,23 +217,53 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
       <div className="card">
         <h3>Equipment back on the van</h3>
         <p className="muted" style={{ marginTop: 0, fontSize: ".8rem" }}>
-          Tap each one you have. What went out this morning is marked. Anything missing is recorded — it does not stop you closing.
+          Count each one back. What went out this morning is shown beside it. Anything short is recorded — it does not stop you closing.
         </p>
         {equipment.length === 0 && <p className="muted">Equipment list loads when online.</p>}
-        {equipment.map((e) => (
-          <button key={e.code} type="button" className="tick" aria-pressed={!!back[e.code]}
-                  onClick={() => setBack((all) => ({ ...all, [e.code]: !all[e.code] }))}>
-            <span className="box">{back[e.code] ? "✓" : ""}</span>
-            <span style={{ flex: 1, textAlign: "left" }}>
-              {e.label}
-              {e.taken_out && <span className="muted" style={{ display: "block", fontSize: ".76rem", fontWeight: 400 }}>went out this morning</span>}
-            </span>
-          </button>
-        ))}
-        {missingKit.length > 0 && (
-          <p style={{ color: "var(--warn)", fontSize: ".85rem", marginTop: ".5rem" }}>
-            {missingKit.length} item{missingKit.length === 1 ? "" : "s"} went out and {missingKit.length === 1 ? "is" : "are"} not back:
-            {" "}{missingKit.map((e) => e.label).join(", ")}. Say so in the notes below.
+        {equipment.map((e) => {
+          const v = back[e.code];
+          const entered = v !== undefined && v !== "";
+          const diff = entered ? Math.trunc(Number(v)) - e.went_out : null;
+          return (
+            <div key={e.code} style={{ padding: ".5rem 0", borderBottom: "1px solid #f0ece6" }}>
+              <div className="row" style={{ justifyContent: "space-between", gap: ".6rem" }}>
+                <span style={{ flex: 1 }}>
+                  {e.label}
+                  <span className="muted" style={{ display: "block", fontSize: ".76rem" }}>
+                    {e.went_out > 0 ? `${e.went_out} went out this morning` : "none went out this morning"}
+                  </span>
+                </span>
+                <div className="row" style={{ gap: ".35rem", flex: "0 0 auto" }}>
+                  <button type="button" className="ghost" aria-label={`One fewer ${e.label}`}
+                    style={{ width: 52, minHeight: 52, padding: 0, fontSize: "1.3rem" }}
+                    onClick={() => setBack((all) => ({ ...all, [e.code]: String(Math.max(0, Math.trunc(Number(all[e.code] ?? 0)) - 1)) }))}>−</button>
+                  <input type="number" inputMode="numeric" value={v ?? ""} placeholder="count"
+                    onChange={(ev) => setBack((all) => ({ ...all, [e.code]: ev.target.value }))}
+                    style={{ width: "4.6rem", minHeight: 52, fontSize: "1.05rem", textAlign: "center" }} />
+                  <button type="button" className="ghost" aria-label={`One more ${e.label}`}
+                    style={{ width: 52, minHeight: 52, padding: 0, fontSize: "1.3rem" }}
+                    onClick={() => setBack((all) => ({ ...all, [e.code]: String(Math.max(0, Math.trunc(Number(all[e.code] ?? 0))) + 1) }))}>+</button>
+                </div>
+              </div>
+              {diff !== null && diff < 0 && (
+                <div style={{ fontSize: ".8rem", marginTop: ".25rem", color: "var(--warn)" }}>
+                  {Math.abs(diff)} short — recorded for the office.
+                </div>
+              )}
+              {diff !== null && diff > 0 && (
+                <div style={{ fontSize: ".8rem", marginTop: ".25rem", color: "var(--info)" }}>
+                  {diff} more than went out — picked up during the day.
+                </div>
+              )}
+              {diff === 0 && e.went_out > 0 && (
+                <div style={{ fontSize: ".8rem", marginTop: ".25rem", color: "var(--ok)" }}>All back ✓</div>
+              )}
+            </div>
+          );
+        })}
+        {shortKit.length > 0 && (
+          <p style={{ color: "var(--warn)", fontSize: ".85rem", marginTop: ".6rem" }}>
+            Not everything is back: {shortKit.map((e) => `${e.short} × ${e.label}`).join(", ")}. Say what happened in the notes below.
           </p>
         )}
       </div>
@@ -287,7 +332,7 @@ export function CloseDay({ base, onBack }: { base: string; onBack: () => void })
                   : `${summary.chemical_products_used} chemical${summary.chemical_products_used === 1 ? "" : "s"} recorded as used across your jobs — the amounts are in the check above.`}
               </li>
               <li>AED {summary.cash_collected.toFixed(2)} collected in cash{summary.expenses_logged > 0 ? `, AED ${summary.expenses_logged.toFixed(2)} spent on expenses` : ""}.</li>
-              <li>{counted.length} of {stock.length} chemical{stock.length === 1 ? "" : "s"} counted back, {equipment.filter((e) => back[e.code]).length} of {equipment.length} kit items ticked.</li>
+              <li>{counted.length} of {stock.length} chemical{stock.length === 1 ? "" : "s"} counted back, {kitCounted} of {kitExpected} kit line{kitExpected === 1 ? "" : "s"} counted.</li>
             </ul>
           </>
         )}

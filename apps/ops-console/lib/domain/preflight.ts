@@ -22,6 +22,8 @@ export interface PreflightInput {
   technicianId: string; serviceLineId: string | null; check_date?: string | null; present?: boolean;
   vehicle_id?: string | null; odometer_km?: number | null; fuel_litres?: number | null; fuel_amount?: number | null;
   ppe?: Record<string, boolean>; equipment?: Record<string, boolean>; notes?: string | null;
+  // Equipment counted out of the yard, per code (mig 136). A count, not a tick.
+  equipment_counts?: { code: string; qty_out: number; note?: string | null }[];
   // Per-member attendance with uniform/hygiene flags (mig 088) and the tank
   // fuel band 0/25/50/75/100 — bands, never free entry.
   attendance?: Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>;
@@ -78,6 +80,27 @@ export async function upsertPreflight(tenantId: string, actorId: string, p: Pref
              do update set declared_qty_base = excluded.declared_qty_base, note = excluded.note`,
           [tenantId, preflightId, s.item_id, s.qty_base, s.note ?? null, actorId]);
       }
+    }
+
+    // Equipment counted OUT (mig 136). The tick in preflight_checks.equipment is
+    // kept in step — present means at least one went out — so everything reading
+    // the old jsonb keeps working, but the COUNT is now the record.
+    if (preflightId && p.equipment_counts) {
+      for (const e of p.equipment_counts) {
+        if (!e.code || !Number.isInteger(e.qty_out) || e.qty_out < 0) continue;
+        await c.query(
+          `insert into preflight_equipment_counts
+             (tenant_id, preflight_check_id, equipment_code, qty_out, note, created_by)
+           values ($1,$2,$3,$4,$5,$6)
+           on conflict (preflight_check_id, equipment_code)
+             do update set qty_out = excluded.qty_out, note = excluded.note`,
+          [tenantId, preflightId, e.code, e.qty_out, e.note ?? null, actorId]);
+      }
+      await c.query(
+        `update preflight_checks
+            set equipment = (select coalesce(jsonb_object_agg(equipment_code, qty_out > 0), '{}'::jsonb)
+                               from preflight_equipment_counts where preflight_check_id = $1)
+          where id = $1`, [preflightId]);
     }
 
     const litres = p.fuel_litres ?? null;

@@ -38,7 +38,7 @@ export async function GET(req: Request) {
   // the vehicle list, and the ISSUED van stock to compare declarations against.
   const { scopedRead } = await import("@/lib/rls");
   const t = auth.session.tenantId;
-  const [teamMembers, vehicles, issued, yesterday] = tech
+  const [teamMembers, vehicles, issued, yesterday, equipmentCounts] = tech
     ? await Promise.all([
         scopedRead(t,
           `select t2.id, coalesce(t2.full_name, t2.code, 'Technician') as name, t2.code
@@ -88,14 +88,44 @@ export async function GET(req: Request) {
               and pc.check_date = (select max(check_date) from preflight_checks
                                     where tenant_id = $1 and technician_id = $2 and check_date < current_date)`,
           [t, tech.id]).then((r) => r.rows).catch(() => []),
+
+        // Equipment, COUNTED not ticked (mig 136). Every code in the vocabulary,
+        // with what this van last took out and anything already counted today.
+        // Last time's count is today's starting point — the same rule the
+        // chemicals follow, and for the same reason: a van's kit list barely
+        // changes day to day, so re-typing it is exactly what Art. VI forbids.
+        scopedRead(t,
+          `select ci.code, ci.label,
+                  coalesce(today.qty_out, last_time.qty_out) as suggested_qty,
+                  today.qty_out as counted_today,
+                  last_time.qty_out as last_time_qty
+             from preflight_checklist_items ci
+             left join (
+               select e.equipment_code, e.qty_out
+                 from preflight_equipment_counts e
+                 join preflight_checks pc on pc.id = e.preflight_check_id
+                where e.tenant_id = $1 and pc.technician_id = $2 and pc.check_date = current_date
+             ) today on today.equipment_code = ci.code
+             left join (
+               select e.equipment_code, e.qty_out
+                 from preflight_equipment_counts e
+                 join preflight_checks pc on pc.id = e.preflight_check_id
+                where e.tenant_id = $1 and pc.technician_id = $2
+                  and pc.check_date = (select max(check_date) from preflight_checks
+                                        where tenant_id = $1 and technician_id = $2
+                                          and check_date < current_date)
+             ) last_time on last_time.equipment_code = ci.code
+            where ci.tenant_id = $1 and ci.kind = 'equipment' and ci.is_active
+            order by ci.sort_order, ci.label`,
+          [t, tech.id]).then((r) => r.rows).catch(() => []),
       ])
-    : [[], [], [], []];
+    : [[], [], [], [], []];
 
   return NextResponse.json({
     checklist, today, hasTechnician: !!tech,
     is_team_lead: !!tech?.is_team_lead,
     team_members: teamMembers, vehicles, issued_stock: issued,
-    yesterday_declared: yesterday,
+    yesterday_declared: yesterday, equipment_counts: equipmentCounts,
   }, { headers: cors });
 }
 
@@ -143,6 +173,11 @@ export async function POST(req: Request) {
       ? (b.stock as { item_id?: string; qty_base?: number; note?: string }[])
           .filter((s) => s && typeof s.item_id === "string" && Number.isFinite(Number(s.qty_base)))
           .map((s) => ({ item_id: s.item_id!, qty_base: Number(s.qty_base), note: s.note ?? null }))
+      : undefined,
+    equipment_counts: Array.isArray(b.equipment_counts)
+      ? (b.equipment_counts as { code?: string; qty_out?: number; note?: string }[])
+          .filter((e) => e && typeof e.code === "string" && Number.isInteger(Number(e.qty_out)))
+          .map((e) => ({ code: e.code!, qty_out: Number(e.qty_out), note: e.note ?? null }))
       : undefined,
   });
   return NextResponse.json({ ok: true }, { headers: cors });

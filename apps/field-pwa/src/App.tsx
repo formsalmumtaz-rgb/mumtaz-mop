@@ -820,6 +820,11 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
   const [vehicles, setVehicles] = useState<{ id: string; label: string }[]>([]);
   const [vehicleId, setVehicleId] = useState("");
   const [issued, setIssued] = useState<{ item_id: string; name: string; unit: string | null; issued_qty: number; warehouse_shows_none?: boolean }[]>([]);
+  // Equipment is COUNTED out of the yard, not ticked present (mig 136). Three
+  // sprayers leaving and two coming back has to be visible in the evening, and
+  // a tick cannot say that.
+  const [equipCounts, setEquipCounts] = useState<{ code: string; label: string; suggested_qty: number | null; last_time_qty: number | null }[]>([]);
+  const [kit, setKit] = useState<Record<string, string>>({});
   const [declared, setDeclared] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [msg, setMsg] = useState("");
@@ -837,12 +842,23 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
             vehicles: { id: string; label: string }[];
             issued_stock: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
             yesterday_declared?: { item_id: string; qty: number }[];
+            equipment_counts?: { code: string; label: string; suggested_qty: number | null; counted_today: number | null; last_time_qty: number | null }[];
           };
           setItems(data.checklist ?? []);
           setIsLead(!!data.is_team_lead);
           setMembers(data.team_members ?? []);
           setVehicles(data.vehicles ?? []);
           setIssued(data.issued_stock ?? []);
+          setEquipCounts(data.equipment_counts ?? []);
+          // Last time's count is today's starting point, exactly like the
+          // chemicals — a van's kit list barely changes, and re-typing what the
+          // system already holds is what Art. VI forbids.
+          if (data.equipment_counts?.length) {
+            setKit((k) => (Object.keys(k).length ? k
+              : Object.fromEntries(data.equipment_counts!
+                  .filter((e) => e.suggested_qty != null)
+                  .map((e) => [e.code, String(e.suggested_qty)]))));
+          }
           // yesterday's count is today's starting point (item 2 preload) —
           // still fully editable before saving
           if (data.yesterday_declared?.length) {
@@ -860,6 +876,7 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         vehicles?: { id: string; label: string }[];
         issued_stock?: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
         yesterday_declared?: { item_id: string; qty: number }[];
+        equipment_counts?: { code: string; label: string; suggested_qty: number | null; last_time_qty: number | null }[];
       } | undefined;
       if (cached) {
         if (cached.yesterday_declared?.length) {
@@ -871,6 +888,13 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         setMembers((v) => (v.length ? v : cached.team_members ?? []));
         setVehicles((v) => (v.length ? v : cached.vehicles ?? []));
         setIssued((v) => (v.length ? v : cached.issued_stock ?? []));
+        setEquipCounts((v) => (v.length ? v : cached.equipment_counts ?? []));
+        if (cached.equipment_counts?.length) {
+          setKit((k) => (Object.keys(k).length ? k
+            : Object.fromEntries(cached.equipment_counts!
+                .filter((e) => e.suggested_qty != null)
+                .map((e) => [e.code, String(e.suggested_qty)]))));
+        }
         setAttendance((a) => Object.keys(a).length ? a : Object.fromEntries((cached.team_members ?? []).map((m) => [m.id, { present: true, uniform_ok: true, hygiene_ok: true }])));
       }
       const local = await getLocalPreflight();
@@ -898,7 +922,14 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
       present: true,
       vehicle_id: vehicleId || null,
       ppe: pick(ppe),
-      equipment: pick(equip),
+      // The tick map is still sent so nothing reading the old shape breaks; the
+      // server derives it from the counts anyway. The COUNT is the record.
+      equipment: Object.fromEntries((equipCounts.length ? equipCounts : equip.map((i) => ({ code: i.code })))
+        .map((e) => [e.code, Number(kit[e.code] ?? 0) > 0])),
+      equipment_counts: equipCounts
+        .filter((e) => kit[e.code] !== undefined && kit[e.code] !== "")
+        .map((e) => ({ code: e.code, qty_out: Math.max(0, Math.trunc(Number(kit[e.code]))) }))
+        .filter((e) => Number.isFinite(e.qty_out)),
       attendance,
       stock,
       notes: notes || null,
@@ -986,8 +1017,42 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
           <h3>PPE</h3>
           {ppe.length === 0 && <p className="muted">Checklist loads when online.</p>}
           {ppe.map((i) => <Toggle key={i.code} i={i} />)}
-          <h3 style={{ marginTop: ".8rem" }}>Equipment</h3>
-          {equip.map((i) => <Toggle key={i.code} i={i} />)}
+        </div>
+
+        {/* Counted out of the yard, so the evening has a number to count back
+            against. Pre-filled with what this van took last time. */}
+        <div className="card">
+          <h3>Equipment leaving the yard</h3>
+          <p className="muted" style={{ marginTop: 0, fontSize: ".8rem" }}>
+            How many of each are going out. Leave a zero if you are not taking any — the count is what the
+            evening check compares against.
+          </p>
+          {equipCounts.length === 0 && equip.length === 0 && <p className="muted">Equipment list loads when online.</p>}
+          {equipCounts.map((e) => (
+            <div key={e.code} className="row" style={{ justifyContent: "space-between", gap: ".6rem",
+                                                       padding: ".45rem 0", borderBottom: "1px solid #f0ece6" }}>
+              <span style={{ flex: 1 }}>
+                {e.label}
+                {e.last_time_qty != null && (
+                  <span className="muted" style={{ display: "block", fontSize: ".76rem" }}>
+                    last time: {e.last_time_qty}
+                  </span>
+                )}
+              </span>
+              <div className="row" style={{ gap: ".35rem", flex: "0 0 auto" }}>
+                <button type="button" className="ghost" aria-label={`One fewer ${e.label}`}
+                  style={{ width: 52, minHeight: 52, padding: 0, fontSize: "1.3rem" }}
+                  onClick={() => setKit((all) => ({ ...all, [e.code]: String(Math.max(0, Math.trunc(Number(all[e.code] ?? 0)) - 1)) }))}>−</button>
+                <input type="number" inputMode="numeric" value={kit[e.code] ?? ""}
+                  placeholder="0"
+                  onChange={(ev) => setKit((all) => ({ ...all, [e.code]: ev.target.value }))}
+                  style={{ width: "4.2rem", minHeight: 52, fontSize: "1.05rem", textAlign: "center" }} />
+                <button type="button" className="ghost" aria-label={`One more ${e.label}`}
+                  style={{ width: 52, minHeight: 52, padding: 0, fontSize: "1.3rem" }}
+                  onClick={() => setKit((all) => ({ ...all, [e.code]: String(Math.max(0, Math.trunc(Number(all[e.code] ?? 0))) + 1) }))}>+</button>
+              </div>
+            </div>
+          ))}
         </div>
 
         {issued.length > 0 && (

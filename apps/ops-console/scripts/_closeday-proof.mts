@@ -51,11 +51,18 @@ const pc = (await q(
    values ($1,$2,$3,current_date,true,$4,41200,80,
      '{"gloves":true,"mask":true}'::jsonb,
      '{"sprayer":true,"torch":true,"ladder":true}'::jsonb) returning id`, [T, sl, tech.id, veh.id]))[0].id;
+// Equipment COUNTED out of the yard (mig 136) — three sprayers, not "sprayer: true".
+for (const [code, n] of [["sprayer", 3], ["torch", 2], ["ladder", 1]] as const) {
+  await q(`insert into preflight_equipment_counts (tenant_id, preflight_check_id, equipment_code, qty_out)
+           values ($1,$2,$3,$4) on conflict (preflight_check_id, equipment_code)
+             do update set qty_out = excluded.qty_out`, [T, pc, code, n]);
+}
 for (const [item, qty] of [[blitz, 800], [surf, 250]] as const) {
   await q(`insert into preflight_stock_declarations (tenant_id, preflight_check_id, item_id, declared_qty_base)
            values ($1,$2,$3,$4)`, [T, pc, item, qty]);
 }
-line(`  odometer out 41200 · fuel 80% · sprayer, torch, ladder went out`);
+line(`  odometer out 41200 · fuel 80%`);
+line(`  counted out of the yard: 3 sprayers, 2 torches, 1 ladder`);
 line(`  counted onto the van: Blitz 800 ml, Pro Surfactant 250 ml`);
 
 head("THE DAY — one job, materials recorded, cash taken");
@@ -75,14 +82,17 @@ line(`  1 job completed · 100 ml Blitz + 10 ml Pro Surfactant recorded`);
 
 head("CLOSING — what the screen is served");
 const equip = await q(
-  `select ci.code, ci.label,
-          coalesce((pc.equipment ->> ci.code)::boolean, false) as taken_out
+  `select ci.code, ci.label, coalesce(pre.qty_out, 0) as went_out
      from preflight_checklist_items ci
-     left join preflight_checks pc on pc.tenant_id = ci.tenant_id and pc.technician_id = $2 and pc.check_date = current_date
+     left join (
+       select e.equipment_code, e.qty_out from preflight_equipment_counts e
+         join preflight_checks pc on pc.id = e.preflight_check_id
+        where e.tenant_id = $1 and pc.technician_id = $2 and pc.check_date = current_date
+     ) pre on pre.equipment_code = ci.code
     where ci.tenant_id = $1 and ci.kind = 'equipment' and ci.is_active
     order by ci.sort_order, ci.label`, [T, tech.id]);
-line(`  EQUIPMENT CHECK`);
-for (const e of equip) line(`    ${e.taken_out ? "went out ->" : "         "} ${e.label}`);
+line(`  EQUIPMENT CHECK — against the morning COUNT, not a tick`);
+for (const e of equip) line(`    ${String(e.went_out).padStart(2)} out   ${e.label}`);
 
 // the closing record, then the count
 const po = (await q(
@@ -91,7 +101,20 @@ const po = (await q(
    values ($1,$2,$3,current_date,$4,41338,40,'{"sprayer":true,"torch":true,"ladder":false}'::jsonb,
            'Ladder left at the second site — collecting it tomorrow morning')
    returning id`, [T, sl, tech.id, veh.id]))[0].id;
-line(`\n  ticked back: sprayer, torch.  NOT back: ladder -> recorded in the notes, close not blocked`);
+// counted back: one sprayer stayed on a site, the rest returned
+for (const [code, n] of [["sprayer", 2], ["torch", 2], ["ladder", 1]] as const) {
+  await q(`insert into postflight_equipment_counts (tenant_id, postflight_check_id, equipment_code, qty_back)
+           values ($1,$2,$3,$4) on conflict (postflight_check_id, equipment_code)
+             do update set qty_back = excluded.qty_back`, [T, po, code, n]);
+}
+line(`\n  counted back: 2 sprayers, 2 torches, 1 ladder`);
+console.table(await q(
+  `select label, went_out, came_back, difference
+     from technician_day_equipment_reconciliation
+    where tenant_id=$1 and technician_id=$2 and check_date=current_date and (went_out > 0 or came_back is not null)
+    order by label`, [T, tech.id]));
+line(`  A tick could not have said this: "sprayer: true" out and "sprayer: true" back reconciles perfectly.`);
+line(`  The count says one sprayer is missing. Recorded; the close is not blocked.`);
 
 const beforeCount = await q(
   `select product, unit, opened_with::float8, recorded_used::float8, should_have_left::float8, counted_back
@@ -161,6 +184,7 @@ for (const [what, sql, args] of [
   ["the chemical count", `update postflight_stock_declarations set returned_qty_base = 0
                             where postflight_check_id = $1`, [po]],
   ["deleting a count",   `delete from postflight_stock_declarations where postflight_check_id = $1`, [po]],
+  ["the equipment count", `update postflight_equipment_counts set qty_back = 0 where postflight_check_id = $1`, [po]],
 ] as const) {
   try { await q(sql, args as unknown[]); line(`  ${what}: CHANGED — INVARIANT BROKEN`); }
   catch (e) { line(`  ${what}: refused — ${(e as Error).message.split(".")[0]}.`); }
