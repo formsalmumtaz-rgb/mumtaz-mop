@@ -276,20 +276,65 @@ export async function resolveOrCreateInlineCustomer(
   }
   const name = String(fd.get("new_customer_name") ?? "").trim();
   if (!name) throw new Error("Pick a customer or enter a new customer name");
+
+  const str = (k: string) => String(fd.get(k) ?? "").trim();
+  // Item 2 — the contact person is mandatory, and the form marks it so. Checked
+  // HERE as well, because the form is not the boundary: a customer with nobody
+  // to ring is a name that cannot be acted on, and it is far cheaper to refuse
+  // it now than to chase it after a technician is already at the door.
+  const contactName = str("new_contact_name");
+  const contactPhone = str("new_contact_phone") || str("new_customer_phone");
+  const contactEmail = str("new_contact_email");
+  const missing = [!contactName && "contact person name", !contactPhone && "contact phone",
+                   !contactEmail && "contact email"].filter(Boolean);
+  if (missing.length) {
+    throw new Error(`A new customer needs ${missing.join(", ")} — those are the details someone will need to reach them.`);
+  }
+
+  // The geocode's emirate beats the dropdown: it came from the actual pin, and
+  // the dropdown is a default nobody changed.
+  const emirate = str("geocoded_emirate") || str("new_customer_emirate") || "Sharjah";
   const customerId = await createCustomer(tenantId, serviceLineId, {
     trade_name: name,
-    customer_type: String(fd.get("new_customer_type") ?? "B2B") || "B2B",
-    emirate: String(fd.get("new_customer_emirate") ?? "Sharjah") || "Sharjah",
+    customer_type: str("new_customer_type") || "B2B",
+    emirate,
   } as CustomerInput);
-  const phone = String(fd.get("new_customer_phone") ?? "").trim();
-  if (phone) {
-    const { withRequest } = await import("../rls");
-    await withRequest({ tenantId }, (c) =>
-      c.query(
-        `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, is_primary, is_assumed, assumed_note)
-         values ($1,$2,$3,'Primary contact',$4,true,true,'Captured inline at survey/estimate - confirm')`,
-        [tenantId, serviceLineId, customerId, phone]));
-  }
+
+  const { withRequest } = await import("../rls");
+  await withRequest({ tenantId }, async (c) => {
+    await c.query(
+      `insert into contacts (tenant_id, service_line_id, customer_id, name, phone, email, is_primary, is_assumed, assumed_note)
+       values ($1,$2,$3,$4,$5,$6,true,true,'Captured inline at survey/estimate — confirm on the profile')`,
+      [tenantId, serviceLineId, customerId, contactName, contactPhone, contactEmail || null]);
+
+    // The ACCOUNTS mailbox is a different thing from the person: invoices go to
+    // one, questions about a job go to the other. There is no customers.email
+    // column — company addresses live on contacts — so it is a second contact
+    // rather than a field quietly dropped on the way in.
+    const accountsEmail = str("new_customer_email");
+    if (accountsEmail && accountsEmail.toLowerCase() !== contactEmail.toLowerCase()) {
+      await c.query(
+        `insert into contacts (tenant_id, service_line_id, customer_id, name, email, is_primary, is_assumed, assumed_note)
+         values ($1,$2,$3,'Accounts',$4,false,true,'Captured inline at survey/estimate — confirm on the profile')`,
+        [tenantId, serviceLineId, customerId, accountsEmail]);
+    }
+
+    // Item 2c / item 12 — the pin, stored on the SITE at creation. A job with no
+    // site pin is a technician outside a building they cannot find, and the
+    // cheapest moment to have it is now, while someone is looking at the map.
+    const lat = Number(str("site_lat")), lng = Number(str("site_lng"));
+    const hasPin = Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+    const address = str("site_address") || str("new_customer_address") || null;
+    const facilityTypeId = str("new_facility_type_id") || null;
+    await c.query(
+      `insert into customer_branches
+         (tenant_id, service_line_id, customer_id, name, address, emirate, facility_type_id, location, is_active)
+       values ($1,$2,$3,'Main site',$4,$5,$6::uuid,
+               case when $7::boolean then ST_SetSRID(ST_MakePoint($9::float8, $8::float8), 4326)::geography end,
+               true)`,
+      [tenantId, serviceLineId, customerId, address, emirate, facilityTypeId, hasPin, lat || null, lng || null]);
+  });
+
   const { rows } = await scopedRead(tenantId,
     `select code from customers where id = $1 and tenant_id = $2`, [customerId, tenantId]);
   return { id: customerId, created: true, code: rows[0]?.code ?? null, name };

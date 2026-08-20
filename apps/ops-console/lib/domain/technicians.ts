@@ -141,3 +141,31 @@ export async function confirmTechnician(tenantId: string, id: string): Promise<v
     });
   });
 }
+
+/**
+ * Item 2 — the surveyor picker.
+ *
+ * A survey is usually booked by whoever is at a desk, so the list is the whole
+ * staff list with office roles suggested first, not technicians alphabetically.
+ * `is_office` marks anyone holding a console role rather than being a field
+ * technician; the caller groups on it.
+ */
+export async function listStaffForPicker(
+  tenantId: string,
+): Promise<{ id: string; full_name: string; is_office: boolean }[]> {
+  const { rows } = await scopedRead(tenantId,
+    `select t.id,
+            coalesce(t.full_name, t.code, 'Technician') as full_name,
+            false as is_office
+       from technicians t
+      where t.tenant_id = $1 and t.archived_at is null and coalesce(t.is_active, true)
+      union all
+     select u.id,
+            coalesce(u.full_name, u.email, 'Staff') as full_name,
+            true as is_office
+       from app_users u
+      where u.tenant_id = $1 and u.status = 'active' and u.technician_id is null
+      order by is_office desc, full_name`,
+    [tenantId]);
+  return rows as { id: string; full_name: string; is_office: boolean }[];
+}

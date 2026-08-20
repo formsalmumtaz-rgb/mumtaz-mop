@@ -7,6 +7,11 @@ import { listTechnicians } from "@/lib/domain/technicians";
 import { listSurveys } from "@/lib/domain/survey";
 import { createSurveyAction } from "./actions";
 import { canSeeProfit } from "@/lib/auth";
+import { CustomerPicker } from "@/components/CustomerPicker";
+import { LocationCapture } from "@/components/LocationCapture";
+import { resolveLocationAction } from "@/app/customers/location-actions";
+import { getServiceLineId, listFacilityTypes } from "@/lib/domain/reference";
+import { listStaffForPicker } from "@/lib/domain/technicians";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +27,12 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
   const preselect = (sp.customer ?? "").trim() || undefined;
   const showProfit = await canSeeProfit(); // DOCUMENT 9 §A
   const tenantId = await getTenantId();
-  const [allSurveys, customers, technicians] = await Promise.all([
-    listSurveys(tenantId), listCustomers(tenantId), listTechnicians(tenantId),
+  const sl = await getServiceLineId(tenantId);
+  const [allSurveys, customers, technicians, facilityTypes] = await Promise.all([
+    listSurveys(tenantId), listCustomers(tenantId),
+    // Item 2 — the surveyor list is the whole staff list, office roles first:
+    // a survey is usually booked by whoever is at a desk, not by a technician.
+    listStaffForPicker(tenantId), listFacilityTypes(tenantId),
   ]);
   // Search by NUMBER first, then account number, then customer name (§3.2).
   const q = (sp.q ?? "").trim().toLowerCase();
@@ -61,36 +70,70 @@ export default async function SurveysPage({ searchParams }: { searchParams: Prom
               </div>
             </div>
           ) : (
-            <label className="text-sm"><span className="text-neutral-600">Customer</span>
-              <select name="customer_id" defaultValue="" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
-                <option value="">—</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.trade_name ?? c.legal_name}</option>)}
-              </select></label>
+            <div className="sm:col-span-2"><CustomerPicker customers={customers} /></div>
           )}
-          {!carried && <fieldset className="rounded border border-dashed border-neutral-300 p-3 sm:col-span-2">
+          {!carried && <fieldset className="rounded-lg border border-dashed border-neutral-300 p-4 sm:col-span-2">
             <legend className="px-1 text-xs font-medium uppercase tracking-wide text-neutral-500">…or a new customer, without leaving the flow</legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <label className="text-sm"><span className="text-neutral-600">Trade name</span>
-                <input name="new_customer_name" placeholder="e.g. Al Noor Restaurant" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
-              <label className="text-sm"><span className="text-neutral-600">Phone</span>
-                <input name="new_customer_phone" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
-              <label className="text-sm"><span className="text-neutral-600">Emirate</span>
-                <select name="new_customer_emirate" defaultValue="Sharjah" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+              <label className="text-sm sm:col-span-2"><span className="text-xs font-medium text-muted">Trade name</span>
+                <input name="new_customer_name" placeholder="e.g. Al Noor Restaurant" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+              <label className="text-sm"><span className="text-xs font-medium text-muted">Emirate</span>
+                <select name="new_customer_emirate" defaultValue="Sharjah" className="mt-1 w-full rounded-lg border border-line px-3 py-2">
                   {["Sharjah","Dubai","Ajman","Abu Dhabi","Umm Al Quwain","Ras Al Khaimah","Fujairah"].map((e) => <option key={e}>{e}</option>)}
                 </select></label>
+
+              {/* The three that are mandatory: without a person to call, a new
+                  customer is a name nobody can act on. */}
+              <label className="text-sm"><span className="text-xs font-medium text-muted">Contact person *</span>
+                <input name="new_contact_name" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+              <label className="text-sm"><span className="text-xs font-medium text-muted">Contact phone *</span>
+                <input name="new_contact_phone" inputMode="tel" placeholder="05x xxx xxxx" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+              <label className="text-sm"><span className="text-xs font-medium text-muted">Contact email *</span>
+                <input name="new_contact_email" type="email" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+
+              <label className="text-sm"><span className="text-xs font-medium text-muted">Customer email (accounts)</span>
+                <input name="new_customer_email" type="email" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+              <label className="text-sm sm:col-span-2"><span className="text-xs font-medium text-muted">Address (paste it)</span>
+                <input name="new_customer_address" placeholder="paste the address as you have it" className="mt-1 w-full rounded-lg border border-line px-3 py-2" /></label>
+
+              {/* Item 3 — the premises, not the billing bucket. */}
+              <label className="text-sm sm:col-span-3"><span className="text-xs font-medium text-muted">Property type</span>
+                <select name="new_facility_type_id" defaultValue="" className="mt-1 w-full rounded-lg border border-line px-3 py-2">
+                  <option value="">—</option>
+                  {facilityTypes.map((f: { id: string; name: string | null }) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select></label>
+
+              {/* Item 2c / item 12 — the pin, captured HERE, because a job
+                  without one is a technician outside a building they cannot find. */}
+              <div className="sm:col-span-3">
+                <span className="text-xs font-medium text-muted">Pin the location</span>
+                <div className="mt-1"><LocationCapture resolve={resolveLocationAction} /></div>
+              </div>
             </div>
             <input type="hidden" name="new_customer_type" value="B2B" />
-            <p className="mt-2 text-xs text-neutral-500">Leave the customer picker empty and fill this instead — details are completed later on the profile.</p>
+            <p className="mt-3 text-xs text-neutral-500">Leave the customer picker empty and fill this instead. Starred fields are required; the rest of the profile is completed later.</p>
           </fieldset>}
           <label className="text-sm"><span className="text-neutral-600">Surveyor</span>
             <select name="surveyor_id" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
-              <option value="">—</option>{technicians.map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              <option value="">—</option>
+              {technicians.filter((t) => t.is_office).length > 0 && (
+                <optgroup label="Office">
+                  {technicians.filter((t) => t.is_office).map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+                </optgroup>
+              )}
+              <optgroup label="Technicians">
+                {technicians.filter((t) => !t.is_office).map((t) => <option key={t.id} value={t.id}>{t.full_name}</option>)}
+              </optgroup>
             </select></label>
           <label className="text-sm"><span className="text-neutral-600">Survey date</span>
             <input type="date" name="survey_date" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
           <label className="text-sm"><span className="text-neutral-600">Property type</span>
-            <select name="property_type" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
-              <option value="">—</option><option value="residential">Residential</option><option value="commercial">Commercial</option><option value="industrial">Industrial</option>
-            </select></label>
+            <select name="facility_type_id" defaultValue="" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2">
+              <option value="">—</option>
+              {facilityTypes.map((f: { id: string; name: string | null }) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <span className="mt-1 block text-[11px] text-neutral-500">What the premises IS. The billing category (residential / commercial / industrial) follows from it.</span>
+          </label>
           <label className="text-sm sm:col-span-2"><span className="text-neutral-600">Notes</span>
             <input name="notes" className="mt-1 w-full rounded border border-neutral-300 px-2 py-2" /></label>
           <div className="sm:col-span-2"><button className="w-full rounded bg-brand px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-dark sm:w-auto">Create survey</button></div>
