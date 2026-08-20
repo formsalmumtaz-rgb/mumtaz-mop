@@ -32,17 +32,6 @@
         "dev"
       ],
       "port": 3200
-    },
-    {
-      "name": "ops-console-prod",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": [
-        "--config.verify-deps-before-run=false",
-        "--filter",
-        "@mop/ops-console",
-        "start"
-      ],
-      "port": 3100
     }
   ]
 }
