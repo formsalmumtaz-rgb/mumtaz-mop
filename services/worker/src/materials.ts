@@ -53,10 +53,7 @@ const materialsRecorder: Consumer = {
 
     // the van, resolved once — the same location the pre-flight declaration counts
     const vanId = techId
-      ? (await c.query(
-          `select id from stock_locations
-            where tenant_id = $1 and location_type = 'van' and technician_id = $2 and is_active
-            order by created_at limit 1`, [job.tenant_id, techId])).rows[0]?.id ?? null
+      ? (await c.query(`select fn_technician_van($1,$2) as id`, [job.tenant_id, techId])).rows[0]?.id ?? null
       : null;
     const strategy = vanId ? await resolveStrategy(c, job.tenant_id, job.service_line_id) : null;
 

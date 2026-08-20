@@ -117,10 +117,8 @@ export async function GET(req: Request) {
     session.tenantId,
     `select it.id as item_id, it.name as item, u_base.code as unit, sum(oh.qty_base)::float8 as qty
        from technicians t
-       join team_assignments ta on ta.technician_id = t.id and ta.effective_to is null
-       join teams tm on tm.id = ta.team_id
-       join stock_locations sl on sl.tenant_id = t.tenant_id and sl.name = tm.name || ' Van'
-       join batch_stock_on_hand oh on oh.location_id = sl.id and oh.tenant_id = t.tenant_id
+       join batch_stock_on_hand oh
+         on oh.tenant_id = t.tenant_id and oh.location_id = fn_technician_van(t.tenant_id, t.id)
        join items it on it.id = oh.item_id
        left join units u_base on u_base.id = it.base_unit_id
       where t.tenant_id = $1 and t.user_id = $2

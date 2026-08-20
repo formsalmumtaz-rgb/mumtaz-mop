@@ -4,20 +4,45 @@
     {
       "name": "ops-console",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--config.verify-deps-before-run=false", "--filter", "@mop/ops-console", "dev"],
+      "runtimeArgs": [
+        "--config.verify-deps-before-run=false",
+        "--filter",
+        "@mop/ops-console",
+        "dev"
+      ],
       "port": 3100
     },
     {
       "name": "field-pwa",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@mop/field-pwa", "preview"],
+      "runtimeArgs": [
+        "--filter",
+        "@mop/field-pwa",
+        "preview"
+      ],
       "port": 3200
     },
     {
       "name": "field-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--config.verify-deps-before-run=false", "--filter", "@mop/field-pwa", "dev"],
+      "runtimeArgs": [
+        "--config.verify-deps-before-run=false",
+        "--filter",
+        "@mop/field-pwa",
+        "dev"
+      ],
       "port": 3200
+    },
+    {
+      "name": "ops-console-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--config.verify-deps-before-run=false",
+        "--filter",
+        "@mop/ops-console",
+        "start"
+      ],
+      "port": 3100
     }
   ]
 }

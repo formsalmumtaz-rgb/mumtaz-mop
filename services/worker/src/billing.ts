@@ -109,13 +109,7 @@ const stockDeducter: Consumer = {
     // vehicle inventory is the operational source of consumption: the technician's van
     let vanId: string | null = null;
     if (techId) {
-      const van = (await c.query(
-        `select id from stock_locations
-          where tenant_id = $1 and location_type = 'van' and technician_id = $2 and is_active
-          order by created_at limit 1`,
-        [j.tenant_id, techId],
-      )).rows[0];
-      vanId = van?.id ?? null;
+      vanId = (await c.query(`select fn_technician_van($1,$2) as id`, [j.tenant_id, techId])).rows[0]?.id ?? null;
     }
 
     // deterministic batch pick from that van's on-hand (FEFO/FIFO; null under 'manual'

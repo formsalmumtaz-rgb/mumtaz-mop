@@ -51,17 +51,33 @@ export async function GET(req: Request) {
         scopedRead(t,
           `select id, coalesce(nullif(code,''), 'Vehicle') as label
              from vehicles where tenant_id = $1 and coalesce(is_active, true) order by label`, [t]).then((r) => r.rows),
+        // The list to COUNT is everything that could plausibly be on the van:
+        // what the warehouse shows issued to it, UNION what was declared on it
+        // last time. Warehouse-only was wrong — a chemical carried for weeks with
+        // no batch record (an adjuvant decanted from a drum, say) simply had no
+        // row to write a count into, so it could never be declared and never
+        // reconciled. The technician must be able to count what they can see.
         scopedRead(t,
-          `select it.id as item_id, it.name, u.code as unit, sum(oh.qty_base)::float8 as issued_qty
-             from technicians tt
-             join team_assignments ta on ta.technician_id = tt.id and ta.effective_to is null
-             join teams tm on tm.id = ta.team_id
-             join stock_locations sl on sl.tenant_id = tt.tenant_id and sl.name = tm.name || ' Van'
-             join batch_stock_on_hand oh on oh.location_id = sl.id and oh.tenant_id = tt.tenant_id
-             join items it on it.id = oh.item_id
+          `with issued as (
+             select oh.item_id, sum(oh.qty_base)::float8 as qty
+               from batch_stock_on_hand oh
+              where oh.tenant_id = $1 and oh.location_id = fn_technician_van($1, $2)
+              group by oh.item_id having sum(oh.qty_base) > 0
+           ), declared_before as (
+             select d.item_id
+               from preflight_stock_declarations d
+               join preflight_checks pc on pc.id = d.preflight_check_id
+              where d.tenant_id = $1 and pc.technician_id = $2
+              group by d.item_id
+           )
+           select it.id as item_id, it.name, u.code as unit,
+                  coalesce(i.qty, 0)::float8 as issued_qty,
+                  (i.item_id is null) as warehouse_shows_none
+             from (select item_id from issued union select item_id from declared_before) all_items
+             join items it on it.id = all_items.item_id
+             left join issued i on i.item_id = all_items.item_id
              left join units u on u.id = it.base_unit_id
-            where tt.tenant_id = $1 and tt.id = $2
-            group by it.id, it.name, u.code having sum(oh.qty_base) > 0 order by it.name`,
+            order by it.name`,
           [t, tech.id]).then((r) => r.rows).catch(() => []),
         // Yesterday's declared stock — today's starting point (item 2 preload)
         scopedRead(t,

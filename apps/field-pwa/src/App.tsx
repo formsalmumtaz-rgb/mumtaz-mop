@@ -818,7 +818,7 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
   const [attendance, setAttendance] = useState<Record<string, { present: boolean; uniform_ok: boolean; hygiene_ok: boolean }>>({});
   const [vehicles, setVehicles] = useState<{ id: string; label: string }[]>([]);
   const [vehicleId, setVehicleId] = useState("");
-  const [issued, setIssued] = useState<{ item_id: string; name: string; unit: string | null; issued_qty: number }[]>([]);
+  const [issued, setIssued] = useState<{ item_id: string; name: string; unit: string | null; issued_qty: number; warehouse_shows_none?: boolean }[]>([]);
   const [declared, setDeclared] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [msg, setMsg] = useState("");
@@ -858,8 +858,13 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
         team_members?: { id: string; name: string; code: string | null }[];
         vehicles?: { id: string; label: string }[];
         issued_stock?: { item_id: string; name: string; unit: string | null; issued_qty: number }[];
+        yesterday_declared?: { item_id: string; qty: number }[];
       } | undefined;
       if (cached) {
+        if (cached.yesterday_declared?.length) {
+          setDeclared((d) => (Object.keys(d).length ? d
+            : Object.fromEntries(cached.yesterday_declared!.map((y) => [y.item_id, String(y.qty)]))));
+        }
         setItems((v) => (v.length ? v : cached.checklist ?? []));
         setIsLead((v) => (v === null ? !!cached.is_team_lead : v));
         setMembers((v) => (v.length ? v : cached.team_members ?? []));
@@ -994,10 +999,16 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
               return (
                 <div key={s.item_id} style={{ padding: ".4rem 0" }}>
                   <div className="row" style={{ justifyContent: "space-between", gap: ".6rem" }}>
-                    <span style={{ flex: 1 }}>{s.name}<span className="muted"> — issued {s.issued_qty}{s.unit ? ` ${s.unit}` : ""}</span></span>
+                    <span style={{ flex: 1 }}>{s.name}
+                      <span className="muted">
+                        {s.warehouse_shows_none
+                          ? " — the warehouse shows none on this van"
+                          : ` — issued ${s.issued_qty}${s.unit ? ` ${s.unit}` : ""}`}
+                      </span>
+                    </span>
                     <input type="number" inputMode="decimal" placeholder="count" value={d ?? ""}
                       onChange={(e) => setDeclared((all) => ({ ...all, [s.item_id]: e.target.value }))}
-                      style={{ width: "6.5rem" }} />
+                      style={{ width: "6.5rem", minHeight: 52, fontSize: "1.05rem" }} />
                   </div>
                   {diff !== null && diff !== 0 && (
                     <div className="muted" style={{ fontSize: ".78rem", color: "#b45309" }}>
@@ -1010,7 +1021,11 @@ function PreflightScreen({ online, onBack }: { online: boolean; onBack: () => vo
           </div>
         )}
 
-        <label className="muted">Notes<input value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+        <label className="muted" style={{ display: "block" }}>Notes
+          <input value={notes} onChange={(e) => setNotes(e.target.value)}
+                 placeholder="Anything the office should know about the van or the crew"
+                 style={{ width: "100%", minHeight: 52 }} />
+        </label>
         {msg && <p className="muted">{msg}</p>}
         <button onClick={save}>Save pre-flight</button>
       </div>

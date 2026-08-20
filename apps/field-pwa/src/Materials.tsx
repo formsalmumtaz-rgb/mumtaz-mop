@@ -63,6 +63,14 @@ export function MaterialsCard({ job, warnOverPct = 100 }: { job: LocalJob; warnO
 
   const setRow = (key: string, patch: Partial<Row>) =>
     setRows((all) => all.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  // Mixes ± must survive a fast double-tap: derive the new count from the row as
+  // it stands in state, not from the copy this render closed over.
+  const stepMixes = (key: string, by: number) =>
+    setRows((all) => all.map((r) => {
+      if (r.key !== key) return r;
+      const m = Math.max(0, Number(r.mixes || 0) + by);
+      return { ...r, mixes: String(m), actual: String(money(m * Number(r.ml_per_mix || 0))) };
+    }));
 
   // The main chemical row drives mixes; adjuvants follow the water volume.
   const main = rows.find((r) => !r.is_adjuvant);
@@ -178,16 +186,10 @@ export function MaterialsCard({ job, warnOverPct = 100 }: { job: LocalJob; warnO
                   <div className="row" style={{ gap: ".5rem", marginTop: ".45rem", alignItems: "center" }}>
                     <span className="muted" style={{ fontSize: ".8rem", minWidth: "3.2rem" }}>Mixes</span>
                     <button type="button" className="ghost" style={{ width: 52, minHeight: 52, fontSize: "1.3rem", padding: 0 }}
-                      onClick={() => {
-                        const m = Math.max(0, Number(r.mixes || 0) - 1);
-                        setRow(r.key, { mixes: String(m), actual: String(money(m * Number(r.ml_per_mix || 0))) });
-                      }}>−</button>
+                      onClick={() => stepMixes(r.key, -1)}>−</button>
                     <span style={{ fontSize: "1.3rem", fontWeight: 700, minWidth: "2rem", textAlign: "center" }}>{r.mixes || 0}</span>
                     <button type="button" className="ghost" style={{ width: 52, minHeight: 52, fontSize: "1.3rem", padding: 0 }}
-                      onClick={() => {
-                        const m = Number(r.mixes || 0) + 1;
-                        setRow(r.key, { mixes: String(m), actual: String(money(m * Number(r.ml_per_mix || 0))) });
-                      }}>+</button>
+                      onClick={() => stepMixes(r.key, +1)}>+</button>
                     <span className="muted" style={{ fontSize: ".8rem" }}>× {r.ml_per_mix || 0} {r.unit}</span>
                   </div>
                 )}
@@ -260,7 +262,7 @@ export function MaterialsCard({ job, warnOverPct = 100 }: { job: LocalJob; warnO
               </label>
               <input placeholder="Why? (heavy infestation, larger area…)" value={main?.note ?? ""}
                 onChange={(e) => main && setRow(main.key, { note: e.target.value })}
-                style={{ marginTop: ".45rem" }} />
+                style={{ marginTop: ".45rem", width: "100%", minHeight: 52 }} />
             </div>
           )}
 
