@@ -18,10 +18,19 @@ closing it kills both URLs.
 ### Why this is not `phone-test.sh`
 
 `phone-test.sh` deliberately tunnels only the field app and keeps the console on
-your Mac, because the console had **no login** (DEBT D6). `pilot.sh` tunnels both,
-so it **forces the login on** rather than trusting `.env.local` — which currently
-says `AUTH_REQUIRED=false`. An admin console on a public URL without a login would
-expose every customer record, TRN and contact you own.
+your Mac, from when the console had no login. `pilot.sh` tunnels both.
+
+Since D6 was closed (20 Aug 2026) the login is no longer something a script has
+to remember to turn on. `AUTH_REQUIRED` defaults to `true` everywhere; the
+opt-out works only on a machine with `MOP_ENV=development`, and anywhere else the
+server **refuses to start** rather than serve without a login. `pilot.sh` still
+sets the flag explicitly, but it is now belt and braces rather than the only
+thing standing between the console and the open internet.
+
+**The URLs are not written to disk.** Every log that could contain one goes to a
+0700 temp directory that the exit trap truncates and deletes, so closing the
+window is enough — there is nothing left to find afterwards. Do not redirect the
+script's own output to a file; that would put the URLs back on disk.
 
 Verified before writing this:
 

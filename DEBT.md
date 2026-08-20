@@ -165,7 +165,7 @@ applying it to a completely empty database with an identical-schema check
 
 ## D6 — Admin console has no authentication
 
-**Logged:** 24 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** OPEN — **must fix before any non-localhost exposure**
+**Logged:** 24 Jul 2026 · **Owner:** Zaza (project owner) · **Status:** **CLOSED 20 Aug 2026**
 
 **The shortcut.** `apps/ops-console` runs in a single fixed admin context — it
 resolves the seeded Mumtaz tenant directly and has **no login, no user identity,
@@ -185,6 +185,46 @@ localhost.** It must never be deployed publicly in this state.
 actor from the authenticated session, switch DB access to the `authenticated`
 role so RLS is actively enforced (not merely present), and populate
 `created_by`/`actor_id`/`confirmed_by` from the real user.
+
+**Repaid.** The auth itself landed with A2/A3 (DECISIONS §11.4): Supabase Auth,
+51 permission guards, `withRequest` running as `mop_app` so RLS is the live
+boundary, and the actor on every write. What stayed open — and what actually bit
+— was the ENFORCEMENT FLAG being fail-open in practice:
+
+- `AUTH_REQUIRED=false` sat in `.env.local` as the standing value, so every
+  process that inherited that file served the console with no login;
+- the opt-out was honoured for `MOP_ENV` of development, dev, staging **or**
+  test — three of which describe machines reachable from a network;
+- only `scripts/pilot.sh` overrode it, so any other way of starting the server
+  was a way of getting it wrong. On 20 Aug 2026 one was: the console was started
+  from a launch config while `cloudflared` was still tunnelling port 3100, and
+  was briefly reachable on the open internet with no login.
+
+Closed by making the flag fail closed everywhere, not in the callers:
+
+- **`.env.local` and `.env.example` now default to `AUTH_REQUIRED=true`.**
+- `authEnforced()` (`apps/ops-console/lib/auth-flags.ts`) returns true for unset,
+  empty, misspelled, `0`, `no` — anything that is not the exact opt-out.
+- The opt-out is honoured **only** when `MOP_ENV=development`. Staging and test
+  no longer qualify: a console reachable from a network needs a login.
+- `AUTH_REQUIRED=false` in any other environment **throws** rather than quietly
+  enforcing, because the person who set it believes auth is off and has to find
+  out that it is not.
+- `predev`/`prestart` run `scripts/auth-gate.mjs`, which calls that same function
+  (imported, not restated) and **refuses to start** on the illegal combination,
+  before a port is bound. In development with the opt-out taken it prints a
+  standing warning that the process must never be tunnelled.
+- `npm run start` — the production server — forces `AUTH_REQUIRED=true` and does
+  not take the opt-out at all.
+
+Proven across the matrix: `development`+`true` starts enforced · `production`
+with the flag unset starts enforced · `development`+`false` starts with the
+warning · `staging`+`false`, `test`+`false` and unset+`false` all exit 1.
+
+**Related.** `scripts/pilot.sh` no longer leaves tunnel URLs on disk: every log
+that can contain one is written to a 0700 `mktemp -d`, truncated and removed by
+the exit trap. The URLs now die with the session, which is the only lifetime a
+public URL onto this console should have.
 
 ---
 
