@@ -181,8 +181,14 @@ export async function buildRangeExcel(c: PoolClient, tenantId: string, from: str
     for (const r of rows) ws.addRow(r);
   };
 
-  const [jobs, invoices, receipts, expenses, stock] = await Promise.all([
-    c.query(
+  // These five run one after another on purpose. They share a single PoolClient,
+  // and a client executes one query at a time — Promise.all here bought nothing
+  // but a queue five deep, which is what pg deprecates (and removes in 9.0).
+  // Sequential is the same wall-clock and honest about it.
+  //
+  // Not parallelised across five clients either: this is a background report, and
+  // a nightly email is not worth holding five of the pool's connections open.
+  const jobs = await c.query(
       `select j.scheduled_date::text as date, cu.trade_name as customer, b.name as site,
               st.name as service, j.status,
               to_char(coalesce(j.device_started_at, j.started_at), 'HH24:MI') as time_in,
@@ -193,25 +199,25 @@ export async function buildRangeExcel(c: PoolClient, tenantId: string, from: str
          left join service_types st on st.id = j.service_type_id
         where j.tenant_id = $1 and (j.scheduled_date between $2::date and $3::date
                                 or coalesce(j.completed_at::date, '1900-01-01') between $2::date and $3::date)
-        order by j.scheduled_date, j.scheduled_start nulls last`, [tenantId, from, to]),
-    c.query(
+        order by j.scheduled_date, j.scheduled_start nulls last`, [tenantId, from, to]);
+  const invoices = await c.query(
       `select i.invoice_number, cu.trade_name as customer, i.status,
               i.subtotal::float8 as subtotal, i.vat_total::float8 as vat, i.total::float8 as total
          from invoices i join customers cu on cu.id = i.customer_id
         where i.tenant_id = $1 and i.created_at::date between $2::date and $3::date
-        order by i.created_at`, [tenantId, from, to]),
-    c.query(
+        order by i.created_at`, [tenantId, from, to]);
+  const receipts = await c.query(
       `select r.receipt_number, cu.trade_name as customer, r.method, r.amount::float8 as amount
          from receipts r left join customers cu on cu.id = r.customer_id
         where r.tenant_id = $1 and r.receipt_date between $2::date and $3::date
-        order by r.created_at`, [tenantId, from, to]),
-    c.query(
+        order by r.created_at`, [tenantId, from, to]);
+  const expenses = await c.query(
       `select e.expense_date::text as date, coalesce(t.full_name, t.code) as technician,
               e.amount::float8 as amount, e.description, e.status
          from expenses e left join technicians t on t.id = e.technician_id
         where e.tenant_id = $1 and e.expense_date between $2::date and $3::date
-        order by e.created_at`, [tenantId, from, to]),
-    c.query(
+        order by e.created_at`, [tenantId, from, to]);
+  const stock = await c.query(
       `select it.name as item, sm.movement_type, sm.quantity::float8 as qty, u.code as unit,
               cu.trade_name as job_customer
          from stock_movements sm
@@ -220,8 +226,7 @@ export async function buildRangeExcel(c: PoolClient, tenantId: string, from: str
          left join jobs j on j.id = sm.job_id
          left join customers cu on cu.id = j.customer_id
         where sm.tenant_id = $1 and sm.created_at::date between $2::date and $3::date
-        order by sm.created_at`, [tenantId, from, to]),
-  ]);
+        order by sm.created_at`, [tenantId, from, to]);
 
   addSheet("Jobs", [
     { header: "Date", key: "date", width: 12 }, { header: "Customer", key: "customer", width: 28 },

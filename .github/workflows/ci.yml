@@ -1,0 +1,108 @@
+# The check that would have caught all three Vercel breakages the day they
+# landed instead of three days later.
+#
+# 1a8731d added exceljs to apps/ops-console/package.json without updating
+# pnpm-lock.yaml. Vercel installs with --frozen-lockfile, so every deploy died
+# on ERR_PNPM_OUTDATED_LOCKFILE — but nothing in the repo ran that command, so
+# the only signal was a failure email nobody connected to the commit.
+#
+# d54454b then put `node --env-file=../../.env.local` in prebuild. .env.local is
+# git-ignored, so it exists on a developer's laptop and nowhere else; the build
+# passed locally and exited 9 on Vercel. The build job below runs with no
+# .env.local for exactly that reason — that is the whole point of running it in
+# CI rather than trusting a local build.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: Lockfile is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4          # version comes from packageManager
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      # The exact command Vercel runs. A package.json changed without its
+      # lockfile fails HERE, on the commit that did it.
+      - name: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+  build:
+    name: Both apps build without .env.local
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # No .env.local, no DATABASE_URL: the same shape as the build container.
+      # The gates must degrade to a skip, not exit non-zero.
+      - name: Build the console (gates + next build)
+        run: pnpm --filter @mop/ops-console build
+      - name: Build the field app
+        run: pnpm --filter @mop/field-pwa build
+
+  auth-gate:
+    name: Auth cannot be switched off outside development
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # DEBT D6. The console holds every customer record the business owns, so
+      # the matrix is asserted, not assumed — a future edit to auth-flags.ts
+      # that quietly reopens the door fails here.
+      - name: enforced when nothing is set
+        working-directory: apps/ops-console
+        run: node --import tsx scripts/auth-gate.mjs
+      - name: enforced in production
+        working-directory: apps/ops-console
+        run: MOP_ENV=production node --import tsx scripts/auth-gate.mjs
+      - name: REFUSES to run with auth off outside development
+        working-directory: apps/ops-console
+        run: |
+          for env in production staging test ""; do
+            if MOP_ENV="$env" AUTH_REQUIRED=false node --import tsx scripts/auth-gate.mjs 2>/dev/null; then
+              echo "::error::auth-gate ALLOWED AUTH_REQUIRED=false with MOP_ENV='${env:-unset}'"
+              exit 1
+            fi
+            echo "refused with MOP_ENV='${env:-unset}' — correct"
+          done
+
+  no-shared-client-concurrency:
+    name: No overlapping queries on one client
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Two queries issued on one PoolClient without awaiting the first is the
+      # pg@9 breakage, and inside a transaction it is statements interleaving
+      # within one BEGIN — a correctness bug, not a style one.
+      - run: node scripts/no-concurrent-client-queries.mjs
